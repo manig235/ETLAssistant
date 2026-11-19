@@ -40,6 +40,8 @@ sealed class SessionEvent {
     data class Busy(val busy: Boolean) : SessionEvent()
     /** 답변을 만드는 동안 "지금 하는 일" 한 줄(`조회하는 중…` 등). null이면 숨긴다. */
     data class Activity(val label: String?) : SessionEvent()
+    /** 선택 가능한 모델 목록이 갱신됨(또는 선택이 바뀜). */
+    data class Models(val models: List<ModelInfo>, val loading: Boolean = false) : SessionEvent()
     data class LoginPrompt(val kind: LoginKind, val url: String, val code: String?) : SessionEvent()
     data class LoginDone(val success: Boolean, val error: String?) : SessionEvent()
 }
@@ -58,6 +60,16 @@ object AppSettings {
     var authMode: String
         get() = prefs.getString("authMode", AUTH_CHATGPT) ?: AUTH_CHATGPT
         set(v) = prefs.edit().putString("authMode", v).apply()
+
+    /** 선택한 모델(null = 자동, Codex 기본값). */
+    var model: String?
+        get() = prefs.getString("model", null)
+        set(v) = prefs.edit().apply { if (v == null) remove("model") else putString("model", v) }.apply()
+
+    /** 선택한 추론 강도(null = 모델 기본값). */
+    var effort: String?
+        get() = prefs.getString("effort", null)
+        set(v) = prefs.edit().apply { if (v == null) remove("effort") else putString("effort", v) }.apply()
 
     var threadId: String?
         get() = prefs.getString("threadId", null)
@@ -98,6 +110,25 @@ object CodexSession {
         private set
     @Volatile var activity: String? = null
         private set
+
+    /** `model/list` 결과. **스텁**: 모델 담당이 불러오기를 구현한다. */
+    @Volatile var models: List<ModelInfo> = emptyList()
+        private set
+    @Volatile var modelsLoading: Boolean = false
+        private set
+
+    /** 지금 저장된 선택. */
+    val modelChoice: ModelChoice get() = ModelChoice(AppSettings.model, AppSettings.effort)
+
+    /** 선택을 저장한다. 다음 질문부터 적용된다. */
+    fun setModelChoice(c: ModelChoice) {
+        AppSettings.model = c.model
+        AppSettings.effort = c.effort
+        emit(SessionEvent.Models(models, modelsLoading))
+    }
+
+    /** 모델 목록을 (다시) 불러온다. **스텁**: 모델 담당이 구현. */
+    fun refreshModels() {}
     private val tracker = ActivityTracker() // 메인 스레드에서만
 
     @Volatile private var client: AppServerClient? = null
@@ -124,6 +155,7 @@ object CodexSession {
         account?.let { l.onEvent(SessionEvent.Account(it)) }
         l.onEvent(SessionEvent.Busy(busy))
         l.onEvent(SessionEvent.Activity(activity))
+        l.onEvent(SessionEvent.Models(models, modelsLoading))
         lastLogin?.let { l.onEvent(it) }
     }
 

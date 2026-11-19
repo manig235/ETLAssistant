@@ -32,7 +32,7 @@ object OnboardingLogic {
         else -> true
     }
 
-    /** `users/self`의 이름 필드에서 표시용 이름을 뽑는다. "박영민(2021-12345)" → "박영민". 비면 null. */
+    /** `users/self`의 이름 필드에서 표시용 이름을 뽑는다. "홍길동(2021-12345)" → "홍길동". 비면 null. */
     fun displayName(raw: String?): String? =
         raw?.substringBefore('(')?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
 

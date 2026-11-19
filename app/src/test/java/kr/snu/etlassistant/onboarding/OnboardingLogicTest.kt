@@ -46,7 +46,7 @@ class OnboardingLogicTest {
     }
 
     @Test fun displayNameDropsStudentNumber() {
-        assertEquals("박영민", OnboardingLogic.displayName("박영민(2021-12345)"))
+        assertEquals("홍길동", OnboardingLogic.displayName("홍길동(2021-12345)"))
         assertEquals("Alex Kim", OnboardingLogic.displayName("Alex Kim"))
         assertNull(OnboardingLogic.displayName(null))
         assertNull(OnboardingLogic.displayName(""))
