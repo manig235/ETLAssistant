@@ -7,5 +7,6 @@ class Phase0App : Application() {
         super.onCreate()
         CodexRunner.init(this)
         kr.snu.etlassistant.codex.CodexSession.init(this)
+        kr.snu.etlassistant.notify.NotifyScheduler.apply(this)
     }
 }

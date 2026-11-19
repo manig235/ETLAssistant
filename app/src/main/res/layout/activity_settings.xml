@@ -145,6 +145,178 @@
             android:layout_height="wrap_content"
             android:text="eTL 토큰 만들러 가기 (브라우저)" />
 
+        <!-- 알림 -->
+        <TextView
+            style="@style/SectionTitle"
+            android:text="알림" />
+
+        <TextView
+            android:id="@+id/notifyTokenWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="eTL 토큰을 먼저 저장해야 알림이 동작합니다."
+            android:textColor="@color/notice_text"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="마감·공지 확인은 몇 시간마다 백그라운드에서 합니다. AI는 쓰지 않으며 eTL 토큰이 필요합니다."
+            android:textColor="@color/notice_text"
+            android:textSize="13sp" />
+
+        <CheckBox
+            android:id="@+id/notifyDeadline"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="마감 임박 알림 (3일 전, 24시간 전)" />
+
+        <CheckBox
+            android:id="@+id/notifyAnnouncement"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="새 공지 알림" />
+
+        <CheckBox
+            android:id="@+id/notifyBrief"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="정기 브리핑" />
+
+        <LinearLayout
+            android:id="@+id/briefArea"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout style="@style/ButtonRow">
+                <Button android:id="@+id/btnBrief1" style="@style/RowButton" android:text="오전 8:00" />
+                <Button android:id="@+id/btnBriefAdd" style="@style/RowButton" android:text="+ 시각 추가" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/briefRow2"
+                style="@style/ButtonRow"
+                android:visibility="gone">
+                <Button android:id="@+id/btnBrief2" style="@style/RowButton" android:text="오후 8:00" />
+                <Button android:id="@+id/btnBriefRemove2" style="@style/RowButton" android:text="삭제" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="확인 주기"
+            android:textSize="14sp" />
+
+        <RadioGroup
+            android:id="@+id/intervalGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <RadioButton
+                android:id="@+id/interval1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="1시간"
+                android:textSize="13sp" />
+            <RadioButton
+                android:id="@+id/interval3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="3시간"
+                android:textSize="13sp" />
+            <RadioButton
+                android:id="@+id/interval6"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="6시간"
+                android:textSize="13sp" />
+            <RadioButton
+                android:id="@+id/interval12"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="12시간"
+                android:textSize="13sp" />
+        </RadioGroup>
+
+        <CheckBox
+            android:id="@+id/notifyQuiet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="방해 금지 시간에는 마감·공지 알림 미루기" />
+
+        <LinearLayout
+            android:id="@+id/quietArea"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout style="@style/ButtonRow">
+                <Button android:id="@+id/btnQuietStart" style="@style/RowButton" android:text="시작 23:00" />
+                <Button android:id="@+id/btnQuietEnd" style="@style/RowButton" android:text="종료 07:00" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="정기 브리핑은 방해 금지와 무관하게 정해진 시각에 옵니다."
+                android:textColor="@color/notice_text"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/notifyHide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="잠금화면에서 알림 내용 숨기기" />
+
+        <TextView
+            android:id="@+id/notifyPermStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="알림 권한: 확인하는 중…"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnNotifyPerm"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="권한 요청"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/notifyLastCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/notifyLastBrief"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="14sp" />
+
+        <LinearLayout style="@style/ButtonRow">
+            <Button android:id="@+id/btnCheckNow" style="@style/RowButton" android:text="지금 확인" />
+            <Button android:id="@+id/btnBriefNow" style="@style/RowButton" android:text="브리핑 미리 보내기" />
+        </LinearLayout>
+
         <Button
             android:id="@+id/btnDev"
             style="@style/Widget.MaterialComponents.Button.TextButton"
