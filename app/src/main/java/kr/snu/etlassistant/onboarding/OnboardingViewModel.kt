@@ -84,13 +84,9 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                 sessionState = e.state
                 sessionDetail = e.detail
             }
-            is SessionEvent.Account -> {
-                account = e.info
-                if (e.info.loggedIn) {
-                    loginPrompt = null
-                    loginMessage = null
-                }
-            }
+            // 로그인 진행 화면은 LoginDone에서만 닫는다. 계정 전환 중에는 이전 계정이 계속 보고될 수 있어서,
+            // 계정 이벤트로 닫으면 진행 화면이 사라져 버린다.
+            is SessionEvent.Account -> account = e.info
             is SessionEvent.LoginPrompt -> {
                 loginPrompt = e
                 loginMessage = null

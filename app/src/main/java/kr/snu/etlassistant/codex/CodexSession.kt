@@ -127,8 +127,53 @@ object CodexSession {
         emit(SessionEvent.Models(models, modelsLoading))
     }
 
-    /** 모델 목록을 (다시) 불러온다. **스텁**: 모델 담당이 구현. */
-    fun refreshModels() {}
+    private val modelsLock = Any()
+    @Volatile private var modelsClient: AppServerClient? = null // 지금 목록을 불러오는 중인 클라이언트
+
+    /** 요청을 만들 때 쓰는 유효한 선택. 저장값은 건드리지 않고, 목록에 없는 모델/강도는 이번 요청에서만 뺀다. */
+    private fun effectiveChoice(): ModelChoice = ModelCatalog.sanitize(modelChoice, models)
+
+    /** 모델 목록을 (다시) 불러온다. 세션이 없거나 이미 불러오는 중이면 아무것도 하지 않는다. */
+    fun refreshModels() {
+        val c = client ?: return
+        synchronized(modelsLock) {
+            if (modelsLoading && modelsClient === c) return
+            modelsLoading = true
+            modelsClient = c
+        }
+        emit(SessionEvent.Models(models, true))
+        calls.execute {
+            var loaded: List<ModelInfo>? = null
+            try {
+                val all = ArrayList<ModelInfo>()
+                var cursor: String? = null
+                for (page in 0 until MODELS_MAX_PAGES) {
+                    val params = JSONObject().put("limit", 100)
+                    if (cursor != null) params.put("cursor", cursor)
+                    val r = c.request("model/list", params, 30)
+                    all += ModelCatalog.parse(r)
+                    cursor = r.optString("nextCursor").takeIf { it.isNotEmpty() && it != "null" }
+                    if (cursor == null) break
+                }
+                loaded = all
+                CodexRunner.log.line("[session] 모델 ${all.size}개를 불러왔습니다")
+            } catch (e: IOException) {
+                CodexRunner.log.line("[session] 모델 목록을 불러오지 못했습니다: ${e.message}")
+            } catch (e: Exception) {
+                CodexRunner.log.line("[session] 모델 목록을 불러오지 못했습니다: ${e.javaClass.simpleName}")
+            } finally {
+                synchronized(modelsLock) {
+                    if (modelsClient === c) {
+                        modelsClient = null
+                        modelsLoading = false
+                    }
+                }
+            }
+            if (loaded != null && client === c) models = loaded
+            emit(SessionEvent.Models(models, modelsLoading))
+        }
+    }
+
     private val tracker = ActivityTracker() // 메인 스레드에서만
 
     @Volatile private var client: AppServerClient? = null
@@ -242,6 +287,7 @@ object CodexSession {
         refreshAccountBlocking()
         setState(SessionState.READY)
         CodexRunner.log.line("[session] 준비됨")
+        refreshModels()
     }
 
     private fun teardown() {
@@ -294,8 +340,11 @@ object CodexSession {
             "apiKey" -> AccountInfo(AccountInfo.Kind.API_KEY)
             else -> AccountInfo(AccountInfo.Kind.UNKNOWN)
         }
+        val before = account
         account = info
         emit(SessionEvent.Account(info))
+        // 계정이 바뀌면 쓸 수 있는 모델도 달라질 수 있다(처음 읽을 때는 시작 과정에서 불러온다).
+        if (before != null && (before.kind != info.kind || before.loggedIn != info.loggedIn)) refreshModels()
     }
 
     fun loginBrowser() = startLogin(LoginKind.BROWSER)
@@ -377,8 +426,12 @@ object CodexSession {
         calls.execute {
             try {
                 val thread = ensureThread(c)
-                val r = c.request("turn/start", JSONObject().put("threadId", thread)
-                    .put("input", JSONArray().put(JSONObject().put("type", "text").put("text", text).put("text_elements", JSONArray()))))
+                val turnParams = JSONObject().put("threadId", thread)
+                    .put("input", JSONArray().put(JSONObject().put("type", "text").put("text", text).put("text_elements", JSONArray())))
+                val choice = effectiveChoice()
+                choice.model?.let { turnParams.put("model", it) }
+                choice.effort?.let { turnParams.put("effort", it) }
+                val r = c.request("turn/start", turnParams)
                 currentTurnId = r.optJSONObject("turn")?.optString("id")
             } catch (e: IOException) {
                 main.post {
@@ -414,18 +467,24 @@ object CodexSession {
     private fun ensureThread(c: AppServerClient): String {
         val cwd = File(app.filesDir, "workspace").path
         val saved = AppSettings.threadId
+        val choice = effectiveChoice()
+        CodexRunner.log.line("[session] 모델: ${choice.model ?: "자동"}, 강도: ${choice.effort ?: "기본"}")
         if (saved != null) {
             try {
-                c.request("thread/resume", JSONObject().put("threadId", saved).put("cwd", cwd)
-                    .put("approvalPolicy", "never").put("sandbox", "read-only"))
+                val resume = JSONObject().put("threadId", saved).put("cwd", cwd)
+                    .put("approvalPolicy", "never").put("sandbox", "read-only")
+                choice.model?.let { resume.put("model", it) }
+                c.request("thread/resume", resume)
                 return saved
             } catch (e: IOException) {
                 CodexRunner.log.line("[session] 스레드 재개 실패, 새로 시작합니다: ${e.message}")
                 AppSettings.threadId = null
             }
         }
-        val r = c.request("thread/start", JSONObject().put("cwd", cwd)
-            .put("approvalPolicy", "never").put("sandbox", "read-only"))
+        val start = JSONObject().put("cwd", cwd)
+            .put("approvalPolicy", "never").put("sandbox", "read-only")
+        choice.model?.let { start.put("model", it) }
+        val r = c.request("thread/start", start)
         val id = r.optJSONObject("thread")?.optString("id")?.takeIf { it.isNotEmpty() }
             ?: throw IOException("스레드를 만들지 못했습니다")
         AppSettings.threadId = id
@@ -451,7 +510,10 @@ object CodexSession {
                 val err = turn?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() && it != "null" }
                 main.post {
                     model.closeStreaming()
-                    if (status == "failed") model.addNotice(err ?: "답변을 만들지 못했습니다")
+                    if (status == "failed") {
+                        model.addNotice(err ?: "답변을 만들지 못했습니다")
+                        if (!modelChoice.isAuto) model.addNotice("선택한 모델 설정 때문일 수 있어요. 설정에서 '자동'으로 되돌려 보세요.")
+                    }
                     if (status == "interrupted") model.addNotice("답변을 중단했습니다")
                     currentTurnId = null
                     setActivity(tracker.turnEnded())
@@ -554,4 +616,5 @@ object CodexSession {
     }
 
     const val IDLE_STOP_MS = 120_000L
+    private const val MODELS_MAX_PAGES = 5
 }

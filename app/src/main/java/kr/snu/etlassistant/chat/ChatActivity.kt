@@ -1,53 +1,48 @@
 package kr.snu.etlassistant.chat
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import kr.snu.etlassistant.codex.AccountInfo
+import androidx.activity.viewModels
 import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.SessionEvent
-import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.etl.EtlService
 import kr.snu.etlassistant.onboarding.OnboardingActivity
 import kr.snu.etlassistant.onboarding.OnboardingLogic
 import kr.snu.etlassistant.onboarding.OnboardingPrefs
-import kr.snu.etlassistant.phase0.R
 
 /**
- * 채팅 화면. Codex 세션은 이 화면이 열려 있을 때만 돌린다([CodexSession]이 화면이 모두 사라지면 일정 시간 뒤 멈춘다).
+ * 채팅 화면(Montage). Codex 세션은 이 화면이 열려 있을 때만 돌린다([CodexSession]이 화면이 모두 사라지면 일정 시간 뒤 멈춘다).
+ * 그리기는 [ChatRoot]가 하고, 이 클래스는 세션 이벤트와 대화 변경을 [ChatViewModel]의 상태로 옮겨 준다.
  */
-class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Listener {
+class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Listener {
 
-    private lateinit var list: RecyclerView
-    private lateinit var adapter: ChatAdapter
-    private lateinit var input: EditText
-    private lateinit var btnSend: Button
-    private lateinit var banner: TextView
-    private lateinit var empty: TextView
-    private lateinit var activityLine: TextView
-    private var pulse: android.animation.ObjectAnimator? = null
+    private val vm: ChatViewModel by viewModels()
     private val main = Handler(Looper.getMainLooper())
-    private var bannerAction: (() -> Unit)? = null
-    private val changed = HashSet<Int>()
     private var flushPosted = false
+    private var ready = false
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** 스트리밍 중에는 변경이 아주 잦으므로 묶어서(약 70ms) 한 번에 다시 그린다. */
+    private val flush = Runnable {
+        flushPosted = false
+        vm.bump()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,33 +52,32 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
             finish()
             return
         }
-        setContentView(R.layout.activity_chat)
-        val root = findViewById<View>(R.id.chatRoot)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-
-        list = findViewById(R.id.list)
-        input = findViewById(R.id.input)
-        btnSend = findViewById(R.id.btnSend)
-        banner = findViewById(R.id.banner)
-        empty = findViewById(R.id.empty)
-        activityLine = findViewById(R.id.activityLine)
-
-        adapter = ChatAdapter(this, CodexSession.model)
-        list.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
-        list.adapter = adapter
-        list.itemAnimator = null
-
-        btnSend.setOnClickListener { onSendClicked() }
-        findViewById<Button>(R.id.btnSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
-        findViewById<Button>(R.id.btnNew).setOnClickListener {
-            if (CodexSession.busy) Toast.makeText(this, "답변이 끝난 뒤에 새 대화를 시작할 수 있습니다", Toast.LENGTH_SHORT).show()
-            else CodexSession.newConversation()
-        }
-        banner.setOnClickListener { bannerAction?.invoke() }
+        ready = true
+        enableEdgeToEdge()
+        val actions = ChatActions(
+            onSend = { onSendClicked() },
+            onSuggestion = { text -> send(text, clearInput = false) },
+            onNewChat = {
+                if (CodexSession.busy) Toast.makeText(this, "답변이 끝난 뒤에 새 대화를 시작할 수 있어요", Toast.LENGTH_SHORT).show()
+                else CodexSession.newConversation()
+            },
+            onSettings = { openSettings() },
+            onBanner = { action ->
+                when (action) {
+                    BannerAction.SETTINGS -> openSettings()
+                    BannerAction.RETRY -> CodexSession.restart()
+                    BannerAction.NONE -> {}
+                }
+            },
+            onCopy = { text -> copy(text) },
+            onLink = { url -> openLink(url) },
+            onRefreshModels = { CodexSession.refreshModels() },
+            onModelChoice = { choice ->
+                vm.choice = choice
+                CodexSession.setModelChoice(choice)
+            },
+        )
+        setContent { ChatRoot(vm, actions) }
         applyPrefill(intent)
 
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -98,33 +92,35 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        applyPrefill(intent)
+        if (ready) applyPrefill(intent)
     }
 
     /** 첫 실행 안내에서 고른 추천 질문을 입력창에 채워 둔다(자동으로 보내지는 않는다). */
     private fun applyPrefill(i: Intent?) {
         val text = i?.getStringExtra(EXTRA_PREFILL) ?: return
         i.removeExtra(EXTRA_PREFILL)
-        input.setText(text)
-        input.setSelection(text.length)
+        vm.setInput(text)
     }
 
     override fun onStart() {
         super.onStart()
+        if (!ready) return
         CodexSession.model.listener = this
-        adapter.notifyDataSetChanged()
-        scrollToEnd()
-        updateEmpty()
+        vm.syncFromSession()
+        vm.bump()
+        vm.scrollToBottom()
         CodexSession.attach(this)
         CodexSession.ensureStarted()
         updateBanner()
     }
 
     override fun onStop() {
-        pulse?.cancel()
-        pulse = null
-        CodexSession.detach(this)
-        CodexSession.model.listener = null
+        if (ready) {
+            main.removeCallbacks(flush)
+            flushPosted = false
+            CodexSession.detach(this)
+            CodexSession.model.listener = null
+        }
         super.onStop()
     }
 
@@ -135,101 +131,78 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
             CodexSession.interrupt()
             return
         }
-        val text = input.text.toString().trim()
+        val text = vm.input.text.trim()
         if (text.isEmpty()) return
+        send(text, clearInput = true)
+    }
+
+    /** 문제가 있으면(예: 아직 준비 중) 이유를 토스트로 알리고 입력은 그대로 둔다. */
+    private fun send(text: String, clearInput: Boolean) {
         val problem = CodexSession.send(text)
-        if (problem != null) Toast.makeText(this, problem, Toast.LENGTH_SHORT).show() else input.setText("")
+        if (problem != null) Toast.makeText(this, problem, Toast.LENGTH_SHORT).show()
+        else if (clearInput) vm.setInput("")
+    }
+
+    private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
+
+    private fun copy(text: String) {
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("message", text))
+        Toast.makeText(this, "복사했어요", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 답변 속 링크(http/https만 남겨 둔 것)를 브라우저로 연다. */
+    private fun openLink(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "링크를 열 수 있는 앱이 없어요", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ---- 세션 이벤트 -----------------------------------------------------------
 
     override fun onEvent(e: SessionEvent) {
         when (e) {
-            is SessionEvent.Busy -> btnSend.text = if (e.busy) "중단" else "보내기"
-            is SessionEvent.Activity -> showActivity(e.label)
-            is SessionEvent.LoginDone -> if (e.success) Toast.makeText(this, "로그인했습니다", Toast.LENGTH_SHORT).show()
+            is SessionEvent.Busy -> vm.busy = e.busy
+            is SessionEvent.Activity -> vm.activity = e.label
+            is SessionEvent.Models -> {
+                vm.models = e.models
+                vm.modelsLoading = e.loading
+                vm.choice = CodexSession.modelChoice
+            }
+            is SessionEvent.LoginDone -> if (e.success) Toast.makeText(this, "로그인했어요", Toast.LENGTH_SHORT).show()
             else -> {}
         }
         updateBanner()
     }
 
-    /** 답변을 만드는 동안 "조회하는 중…" 같은 한 줄을 입력창 위에 보여 주고, 끝나면 숨긴다. */
-    private fun showActivity(label: String?) {
-        if (label == null) {
-            pulse?.cancel()
-            pulse = null
-            activityLine.alpha = 1f
-            activityLine.visibility = View.GONE
-            return
-        }
-        activityLine.text = label
-        if (activityLine.visibility != View.VISIBLE) {
-            activityLine.visibility = View.VISIBLE
-            // 살아 있다는 느낌을 주는 느린 깜빡임
-            pulse = android.animation.ObjectAnimator.ofFloat(activityLine, "alpha", 1f, 0.35f).apply {
-                duration = 700
-                repeatCount = android.animation.ObjectAnimator.INFINITE
-                repeatMode = android.animation.ObjectAnimator.REVERSE
-                start()
-            }
-        }
-        // 상태 줄이 생기거나 문구가 바뀌어도 목록 끝이 가려지지 않게
-        if (!list.canScrollVertically(1)) scrollToEnd()
-    }
-
-    /** 지금 상태에 맞는 안내를 위쪽 배너로 보여 준다. 누르면 해당 화면으로 간다. */
+    /** 지금 상태에 맞는 안내를 위쪽 배너로 보여 준다. 누르면 해당 화면으로 가거나 다시 시도한다. */
     private fun updateBanner() {
-        val goSettings = { startActivity(Intent(this, SettingsActivity::class.java)); Unit }
-        val (text, action) = when {
-            !EtlService.tokens(this).hasToken() -> "eTL 토큰이 필요합니다. 눌러서 설정으로 이동" to goSettings
-            CodexSession.state == SessionState.FAILED ->
-                "비서를 시작하지 못했습니다: ${CodexSession.stateDetail ?: ""}\n눌러서 다시 시도" to { CodexSession.restart(); Unit }
-            CodexSession.state != SessionState.READY -> "비서를 준비하는 중입니다…" to null
-            CodexSession.account?.loggedIn != true -> "로그인이 필요합니다. 눌러서 설정으로 이동" to goSettings
-            else -> null to null
-        }
-        bannerAction = action
-        banner.visibility = if (text == null) View.GONE else View.VISIBLE
-        banner.text = text
+        vm.banner = ChatLogic.banner(
+            hasToken = EtlService.tokens(this).hasToken(),
+            state = CodexSession.state,
+            detail = CodexSession.stateDetail,
+            loggedIn = CodexSession.account?.loggedIn == true,
+        )
     }
 
     // ---- 대화 변경 -------------------------------------------------------------
 
     override fun onAdded(index: Int) {
-        val atBottom = !list.canScrollVertically(1)
-        adapter.notifyItemInserted(index)
-        updateEmpty()
-        if (atBottom || index == adapter.itemCount - 1) scrollToEnd()
+        vm.bump()
+        vm.scrollToBottom()
     }
 
-    /** 스트리밍 중에는 변경이 아주 잦으므로 묶어서 갱신한다. */
     override fun onChanged(index: Int) {
-        changed += index
         if (!flushPosted) {
             flushPosted = true
-            main.postDelayed({
-                flushPosted = false
-                val atBottom = !list.canScrollVertically(1)
-                changed.forEach { if (it < adapter.itemCount) adapter.notifyItemChanged(it) }
-                changed.clear()
-                if (atBottom) scrollToEnd()
-            }, 70)
+            main.postDelayed(flush, 70)
         }
     }
 
     override fun onReset() {
-        adapter.notifyDataSetChanged()
-        updateEmpty()
-        scrollToEnd()
-    }
-
-    private fun updateEmpty() {
-        empty.visibility = if (CodexSession.model.messages.isEmpty()) View.VISIBLE else View.GONE
-    }
-
-    private fun scrollToEnd() {
-        val n = adapter.itemCount
-        if (n > 0) list.scrollToPosition(n - 1)
+        vm.bump()
+        vm.scrollToBottom()
     }
 
     companion object {

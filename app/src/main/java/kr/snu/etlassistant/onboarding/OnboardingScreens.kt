@@ -395,10 +395,16 @@ private fun LoginStep(vm: OnboardingViewModel, a: OnboardingActions) {
         subtitle = "AI 비서는 내 ChatGPT 계정으로 실행돼요. 별도의 API 요금은 없고, 내 플랜의 사용량 안에서 쓰여요.",
         bottom = {
             when {
-                loggedIn -> PrimaryButton("다음") { vm.goNext() }
+                // 진행 중인 로그인이 있으면(계정 전환 포함) 로그인 여부와 상관없이 먼저 보여 준다.
                 prompt != null -> {
                     SecondaryButton("브라우저 다시 열기") { a.reopenLogin(prompt.url) }
                     WantedTextButton(text = "취소", modifier = Modifier.fillMaxWidth(), onClick = { a.cancelLogin() })
+                }
+                loggedIn -> {
+                    PrimaryButton("다음") { vm.goNext() }
+                    if (ready) {
+                        WantedTextButton(text = "다른 계정으로 로그인", modifier = Modifier.fillMaxWidth(), onClick = { a.loginBrowser() })
+                    }
                 }
                 ready -> {
                     PrimaryButton("ChatGPT로 로그인") { a.loginBrowser() }
@@ -414,14 +420,6 @@ private fun LoginStep(vm: OnboardingViewModel, a: OnboardingActions) {
         },
     ) {
         when {
-            loggedIn -> {
-                val who = when (account?.kind) {
-                    AccountInfo.Kind.CHATGPT -> account.email ?: "ChatGPT"
-                    AccountInfo.Kind.API_KEY -> "API 키"
-                    else -> "계정"
-                }
-                StatusCard("로그인됐어요 · $who")
-            }
             prompt != null -> {
                 Card {
                     if (prompt.kind == LoginKind.DEVICE_CODE && prompt.code != null) {
@@ -451,6 +449,20 @@ private fun LoginStep(vm: OnboardingViewModel, a: OnboardingActions) {
                         )
                     }
                 }
+            }
+            loggedIn -> {
+                val who = when (account?.kind) {
+                    AccountInfo.Kind.CHATGPT -> account.email ?: "ChatGPT"
+                    AccountInfo.Kind.API_KEY -> "API 키"
+                    else -> "계정"
+                }
+                StatusCard("로그인됐어요 · $who")
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "다른 계정을 쓰고 싶으면 아래 '다른 계정으로 로그인'을 눌러요. 브라우저에 이미 로그인된 계정이 있으면 그 계정이 먼저 선택될 수 있어요. 원하는 계정이 아니면 로그인 화면에서 계정을 바꿔 주세요.",
+                    style = t.caption1Regular,
+                    color = c.foregroundNeutralSecondary,
+                )
             }
             ready -> {
                 Card {
