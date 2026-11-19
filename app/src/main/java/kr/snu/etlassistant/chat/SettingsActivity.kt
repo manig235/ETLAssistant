@@ -213,6 +213,9 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         findViewById<Button>(R.id.btnOpenEtl).setOnClickListener {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myetl.snu.ac.kr/profile/settings")))
         }
+        findViewById<Button>(R.id.btnReplayOnboarding).setOnClickListener {
+            startActivity(Intent(this, kr.snu.etlassistant.onboarding.OnboardingActivity::class.java))
+        }
         findViewById<Button>(R.id.btnDev).setOnClickListener { startActivity(Intent(this, MainActivity::class.java)) }
 
         setupNotifySection()

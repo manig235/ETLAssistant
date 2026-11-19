@@ -1,11 +1,12 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "kr.snu.etlassistant.phase0"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "kr.snu.etlassistant.phase0"
@@ -28,8 +29,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+    buildFeatures {
+        compose = true
     }
 
     packaging {
@@ -42,8 +43,24 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
+    // Montage(Wanted 디자인 시스템, MIT, Jetpack Compose). 첫 실행 안내 화면에 쓴다.
+    implementation("com.github.wanteddev:montage-android:v4.0.3")
+    implementation(platform("androidx.compose:compose-bom:2026.03.01"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    // Montage는 Compose 라이브러리를 runtime 범위로만 선언하므로, 화면에서 직접 쓰는 것은 여기서 선언한다(버전은 BOM이 맞춘다).
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.animation:animation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")

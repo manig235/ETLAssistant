@@ -24,6 +24,9 @@ import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.etl.EtlService
+import kr.snu.etlassistant.onboarding.OnboardingActivity
+import kr.snu.etlassistant.onboarding.OnboardingLogic
+import kr.snu.etlassistant.onboarding.OnboardingPrefs
 import kr.snu.etlassistant.phase0.R
 
 /**
@@ -46,6 +49,12 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 처음 쓰는 사람(안내를 끝내지 않았고 eTL 토큰도 없음)은 첫 실행 안내로 보낸다.
+        if (!OnboardingLogic.shouldSkip(OnboardingPrefs(this).completed, EtlService.tokens(this).hasToken())) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+            return
+        }
         setContentView(R.layout.activity_chat)
         val root = findViewById<View>(R.id.chatRoot)
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
@@ -72,6 +81,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
             else CodexSession.newConversation()
         }
         banner.setOnClickListener { bannerAction?.invoke() }
+        applyPrefill(intent)
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
@@ -80,6 +90,20 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
             getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putBoolean("askedNotif", true).apply()
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyPrefill(intent)
+    }
+
+    /** 첫 실행 안내에서 고른 추천 질문을 입력창에 채워 둔다(자동으로 보내지는 않는다). */
+    private fun applyPrefill(i: Intent?) {
+        val text = i?.getStringExtra(EXTRA_PREFILL) ?: return
+        i.removeExtra(EXTRA_PREFILL)
+        input.setText(text)
+        input.setSelection(text.length)
     }
 
     override fun onStart() {
@@ -176,5 +200,9 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     private fun scrollToEnd() {
         val n = adapter.itemCount
         if (n > 0) list.scrollToPosition(n - 1)
+    }
+
+    companion object {
+        const val EXTRA_PREFILL = "prefill"
     }
 }
