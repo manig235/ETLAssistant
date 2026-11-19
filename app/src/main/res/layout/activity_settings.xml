@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settingsRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="설정"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <!-- 계정 -->
+        <TextView
+            style="@style/SectionTitle"
+            android:text="ChatGPT 계정" />
+
+        <TextView
+            android:id="@+id/accountStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp" />
+
+        <LinearLayout style="@style/ButtonRow">
+            <Button android:id="@+id/btnLoginBrowser" style="@style/RowButton" android:text="브라우저로 로그인" />
+            <Button android:id="@+id/btnLoginDevice" style="@style/RowButton" android:text="기기 코드로 로그인" />
+            <Button android:id="@+id/btnLogout" style="@style/RowButton" android:text="로그아웃" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/loginPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@color/panel_bg"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/loginInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/loginCode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.1"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:textIsSelectable="true"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <LinearLayout style="@style/ButtonRow">
+                <Button android:id="@+id/btnCopyCode" style="@style/RowButton" android:text="코드 복사" />
+                <Button android:id="@+id/btnOpenLogin" style="@style/RowButton" android:text="브라우저 다시 열기" />
+                <Button android:id="@+id/btnCancelLogin" style="@style/RowButton" android:text="취소" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- API 키 -->
+        <TextView
+            style="@style/SectionTitle"
+            android:text="OpenAI API 키 (고급, 선택)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="ChatGPT 계정 대신 본인의 API 키를 쓸 수 있습니다. 사용한 만큼 본인의 OpenAI 계정에 요금이 청구됩니다. 키는 이 폰의 Keystore에 암호화해 저장하고, 실행할 때만 환경변수로 넘깁니다."
+            android:textColor="@color/notice_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/apiKeyStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="14sp" />
+
+        <LinearLayout style="@style/ButtonRow">
+            <EditText
+                android:id="@+id/apiKeyInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:fontFamily="monospace"
+                android:hint="sk-… 붙여넣기"
+                android:importantForAutofill="no"
+                android:inputType="textPassword"
+                android:textSize="13sp" />
+            <Button android:id="@+id/btnApiKeySave" style="@style/RowButton" android:text="저장" />
+            <Button android:id="@+id/btnApiKeyClear" style="@style/RowButton" android:text="삭제" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/useApiKey"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="API 키로 사용 (끄면 ChatGPT 계정)" />
+
+        <!-- eTL -->
+        <TextView
+            style="@style/SectionTitle"
+            android:text="eTL 토큰" />
+
+        <TextView
+            android:id="@+id/etlStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp" />
+
+        <LinearLayout style="@style/ButtonRow">
+            <EditText
+                android:id="@+id/etlTokenInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:fontFamily="monospace"
+                android:hint="eTL 토큰 붙여넣기"
+                android:importantForAutofill="no"
+                android:inputType="textPassword"
+                android:textSize="13sp" />
+            <Button android:id="@+id/btnTokenSave" style="@style/RowButton" android:text="저장" />
+            <Button android:id="@+id/btnTokenClear" style="@style/RowButton" android:text="삭제" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnOpenEtl"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="eTL 토큰 만들러 가기 (브라우저)" />
+
+        <Button
+            android:id="@+id/btnDev"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="개발자 도구" />
+    </LinearLayout>
+</ScrollView>

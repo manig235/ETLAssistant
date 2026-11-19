@@ -1,0 +1,15 @@
+<resources>
+    <color name="bubble_user">#2F6FED</color>
+    <color name="bubble_user_text">#FFFFFF</color>
+    <color name="bubble_assistant">#EEF0F3</color>
+    <color name="bubble_assistant_text">#16181D</color>
+    <color name="chip_bg">#E4ECFB</color>
+    <color name="chip_text">#2B3F6B</color>
+    <color name="chip_error_bg">#FBE4E4</color>
+    <color name="chip_error_text">#7A1F1F</color>
+    <color name="notice_text">#6B7280</color>
+    <color name="banner_bg">#FFF3CD</color>
+    <color name="banner_text">#5C4400</color>
+    <color name="code_bg">#22888888</color>
+    <color name="panel_bg">#11888888</color>
+</resources>
