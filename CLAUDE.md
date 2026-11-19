@@ -75,12 +75,17 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 로그인은 브라우저 방식을 기본으로, 기기 코드를 폴백으로, API 키는 선택(Keystore, 환경변수로만 전달)으로 둔다. 상세와 검증 현황은 `docs/phase2-log.md`, `docs/auth-design.md`.
 프로토콜은 사용하는 Codex 버전 기준으로 확인하고, 버전을 고정한다(현재 rust-v0.170.0).
 
-**Phase 3: 알림**
-WorkManager로 몇 시간마다 eTL을 조회해 마감 임박(24h, 3일)과 새 공지를 로컬 알림으로 띄운다. AI는 쓰지 않는다.
+**Phase 3: 알림 — 구현됨, 기기 장기 검증 남음.** WorkManager로 주기 확인(1/3/6/12시간)해 마감 임박(24h, 3일)과 새 공지를
+로컬 알림으로 띄운다. AI는 쓰지 않는다. 정기 브리핑(최대 2개 시각), 방해 금지, 잠금화면 숨김, 중복 방지(`NotifyState`),
+공지 기준선을 갖췄다. 상세는 `docs/phase3-log.md`. 백그라운드 장기 동작(삼성 절전 등)은 아직 실측하지 못했다.
 
-**Phase 4: 첫 실행 마법사**
-eTL 토큰 발급 안내(웹뷰로 https://myetl.snu.ac.kr/profile/settings 열기 → 생성 → 붙여넣기), ChatGPT 로그인,
-알림 권한 요청을 넣는다.
+**Phase 4: 첫 실행 안내 — 구현됨.** Montage(Compose) 기반. 환영 → eTL 토큰(실제로 접속해 확인한 뒤 저장) → ChatGPT 로그인
+(브라우저 기본, 코드 방식은 브라우저가 안 될 때만 예비로 노출, 로그인된 상태에서 계정 전환 가능) → 알림 → 완료(추천 질문).
+
+**UI와 모델 선택:** 채팅·설정·안내 화면은 모두 Compose + Montage(`DesignSystemTheme`)다. 툴체인은 Gradle 8.14.3 / AGP 8.13.0 /
+Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계정이 쓸 수 있는 것만 보여 주고(기본 "자동"),
+`thread/start|resume`의 `model`, `turn/start`의 `model`·`effort`로 전달한다. 목록에 없는 선택은 요청에서만 빼고 저장값은 건드리지 않는다.
+계정(플랜 포함)이 바뀌면 목록을 다시 받는다. `thread/resume`에 model을 넣는 것과 effort 적용 여부는 기기에서 아직 확인하지 못했다.
 
 ## eTL API 레퍼런스
 

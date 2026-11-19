@@ -398,6 +398,14 @@ private fun LoginStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 // 진행 중인 로그인이 있으면(계정 전환 포함) 로그인 여부와 상관없이 먼저 보여 준다.
                 prompt != null -> {
                     SecondaryButton("브라우저 다시 열기") { a.reopenLogin(prompt.url) }
+                    // 코드 방식은 평소엔 숨기고, 브라우저 로그인이 막혔을 때만 예비로 보여 준다.
+                    if (prompt.kind == LoginKind.BROWSER) {
+                        WantedTextButton(
+                            text = "브라우저가 안 되나요? 코드로 로그인",
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { a.cancelLogin(); a.loginDevice() },
+                        )
+                    }
                     WantedTextButton(text = "취소", modifier = Modifier.fillMaxWidth(), onClick = { a.cancelLogin() })
                 }
                 loggedIn -> {
@@ -408,7 +416,6 @@ private fun LoginStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 }
                 ready -> {
                     PrimaryButton("ChatGPT로 로그인") { a.loginBrowser() }
-                    SecondaryButton("기기 코드로 로그인") { a.loginDevice() }
                     WantedTextButton(text = "나중에 할게요", modifier = Modifier.fillMaxWidth(), onClick = { vm.goNext() })
                 }
                 vm.sessionState == SessionState.FAILED -> {

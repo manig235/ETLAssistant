@@ -344,7 +344,8 @@ object CodexSession {
         account = info
         emit(SessionEvent.Account(info))
         // 계정이 바뀌면 쓸 수 있는 모델도 달라질 수 있다(처음 읽을 때는 시작 과정에서 불러온다).
-        if (before != null && (before.kind != info.kind || before.loggedIn != info.loggedIn)) refreshModels()
+        // 같은 ChatGPT라도 플랜(Plus→Free 등)이나 계정이 바뀌면 쓸 수 있는 모델이 달라진다.
+        if (before != null && before != info) refreshModels()
     }
 
     fun loginBrowser() = startLogin(LoginKind.BROWSER)

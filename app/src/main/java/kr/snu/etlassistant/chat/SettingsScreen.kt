@@ -319,7 +319,6 @@ private fun AccountSection(s: SettingsState, a: SettingsActions) {
                     enabled = ready && !loggingIn,
                     onClick = a.loginBrowser,
                 )
-                SoftButton(if (loggedIn) "코드로 다른 계정 로그인" else "기기 코드로 로그인", enabled = ready && !loggingIn, onClick = a.loginDevice)
                 SoftButton("로그아웃", enabled = ready && s.account?.kind == AccountInfo.Kind.CHATGPT, onClick = a.logout)
             }
             if (loggedIn && !loggingIn) {
@@ -392,6 +391,8 @@ private fun LoginPanel(prompt: SessionEvent.LoginPrompt, expiresAt: Long, a: Set
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (device && prompt.code != null) MainButton("코드 복사") { a.copyCode(prompt.code) }
             SoftButton("브라우저 다시 열기") { a.reopenLogin(prompt.url) }
+            // 코드 방식은 평소엔 숨기고, 브라우저 로그인이 막혔을 때만 예비로 보여 준다.
+            if (!device) SoftButton("브라우저가 안 되나요? 코드로 로그인") { a.cancelLogin(); a.loginDevice() }
             SoftButton("취소", onClick = a.cancelLogin)
         }
     }

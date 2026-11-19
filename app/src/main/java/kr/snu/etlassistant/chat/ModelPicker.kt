@@ -73,6 +73,7 @@ fun ModelPickerContent(
                 description = "Codex가 정한 기본 모델을 써요",
                 selected = choice.model == null,
                 onClick = { onChoice(ModelChoice(null, choice.effort)) },
+                extra = { EffortPicker(target, choice.effort, auto = true) { onChoice(choice.copy(effort = it)) } },
             )
             if (models.isEmpty()) {
                 if (loading) {
@@ -110,6 +111,7 @@ fun ModelPickerContent(
                             val keep = choice.effort?.takeIf { e -> m.efforts.any { it.effort == e } }
                             onChoice(choice.copy(model = m.model, effort = keep))
                         },
+                        extra = { EffortPicker(m, choice.effort, auto = false) { onChoice(choice.copy(effort = it)) } },
                     )
                 }
                 if (unknownSelected) {
@@ -122,40 +124,6 @@ fun ModelPickerContent(
                     )
                 }
             }
-        }
-
-        // ---- 추론 강도 ----
-        Spacer(Modifier.height(28.dp))
-        Text("생각의 깊이", style = t.headline1Bold, color = c.foregroundNeutralPrimary)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "높을수록 천천히 오래 생각해서 어려운 문제(채점, 풀이 검토)에 좋고, 낮을수록 빨라요. 사용량도 더 쓸 수 있어요.",
-            style = t.body2Regular,
-            color = c.foregroundNeutralSecondary,
-        )
-        Spacer(Modifier.height(12.dp))
-        // 줄이 넘치면 다음 줄로 넘긴다(옆으로 잘리면 안 된다).
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            WantedChip(
-                text = "기본",
-                isActive = choice.effort == null,
-                onClick = { onChoice(choice.copy(effort = null)) },
-            )
-            for (e in target?.efforts.orEmpty()) {
-                WantedChip(
-                    text = ModelCatalog.effortLabel(e.effort),
-                    isActive = choice.effort == e.effort,
-                    onClick = { onChoice(choice.copy(effort = e.effort)) },
-                )
-            }
-        }
-        val effortNote = effortNote(target, choice.effort)
-        if (effortNote != null) {
-            Spacer(Modifier.height(10.dp))
-            Text(effortNote, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
         }
     }
 }
@@ -176,6 +144,8 @@ private fun OptionCard(
     onClick: () -> Unit,
     tag: String? = null,
     dimmed: Boolean = false,
+    /** 선택됐을 때만 카드 안(설명 아래)에 보이는 내용. */
+    extra: (@Composable () -> Unit)? = null,
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
@@ -189,7 +159,7 @@ private fun OptionCard(
             .then(if (selected) Modifier.border(BorderStroke(2.dp, c.lineBrandPrimary), shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -211,6 +181,7 @@ private fun OptionCard(
                 Spacer(Modifier.height(4.dp))
                 Text(description, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
             }
+            if (selected && extra != null) extra()
         }
         if (selected) {
             Spacer(Modifier.width(12.dp))
@@ -222,4 +193,38 @@ private fun OptionCard(
             )
         }
     }
+}
+
+/** 선택된 모델 카드 안의 '생각의 깊이' 칩. 지원하는 강도가 없으면 아무것도 그리지 않는다. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EffortPicker(model: ModelInfo?, effort: String?, auto: Boolean, onEffort: (String?) -> Unit) {
+    if (model == null || model.efforts.isEmpty()) return
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Spacer(Modifier.height(14.dp))
+    Text("생각의 깊이", style = t.body2Medium, color = c.foregroundNeutralPrimary)
+    Spacer(Modifier.height(8.dp))
+    // 줄이 넘치면 다음 줄로 넘긴다(옆으로 잘리면 안 된다).
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        WantedChip(text = "기본", isActive = effort == null, onClick = { onEffort(null) })
+        for (e in model.efforts) {
+            WantedChip(
+                text = ModelCatalog.effortLabel(e.effort),
+                isActive = effort == e.effort,
+                onClick = { onEffort(e.effort) },
+            )
+        }
+    }
+    val note = effortNote(model, effort)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        (if (auto) "기본 모델(${model.displayName}) 기준이에요. " else "") + "높을수록 오래 생각해서 어려운 문제에 좋고, 낮을수록 빨라요." +
+            (note?.let { " $it" } ?: ""),
+        style = t.caption1Regular,
+        color = c.foregroundNeutralSecondary,
+    )
 }

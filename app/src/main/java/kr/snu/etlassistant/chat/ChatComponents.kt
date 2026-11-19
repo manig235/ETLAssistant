@@ -64,6 +64,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.wanted.android.wanted.design.actions.button.textbutton.WantedTextButton
 import com.wanted.android.wanted.design.theme.DesignSystemTheme
 import kr.snu.etlassistant.codex.ModelChoice
 import kr.snu.etlassistant.codex.ModelInfo
@@ -382,9 +383,7 @@ fun ModelSheetContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("AI 모델", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
-            IconButton(onClick = onClose) {
-                Icon(Icons.Outlined.Close, contentDescription = "닫기", tint = c.foregroundNeutralPrimary)
-            }
+            WantedTextButton(text = "완료", onClick = onClose)
         }
         Column(
             Modifier
