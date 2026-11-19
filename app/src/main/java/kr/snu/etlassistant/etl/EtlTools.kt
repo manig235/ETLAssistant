@@ -15,6 +15,7 @@ import kr.snu.etlassistant.mcp.UnknownToolException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.URLEncoder
 import java.time.Instant
@@ -53,9 +54,18 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_search_files", "강의 파일을 이름으로 검색한다.",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("term", "string", "검색어(2글자 이상)"),
                 required = listOf("course_id", "term"))))
-        .put(tool("etl_download", "eTL 파일을 폰의 Download/etl/ 폴더에 저장하고 경로, 크기, 크기 일치 여부를 돌려준다.",
+        .put(tool("etl_download", "eTL 파일을 내려받아 ① 비서가 읽을 수 있는 작업 폴더(etl-files/)에 저장하고 ② 기본적으로 폰의 Download/etl/에도 사본을 저장한다. 파일을 읽거나 채점·요약만 할 거라면 save_to_phone=false로 폰 사본을 건너뛴다. 돌려주는 workspace_path를 etl_read_file, etl_render_pages에 넘긴다.",
             schema(Triple("file_id_or_url", "string", "파일 ID 또는 eTL 파일 URL(…/files/<id>)"),
+                Triple("save_to_phone", "boolean", "폰의 Download/etl/에도 저장할지. 기본 true"),
                 required = listOf("file_id_or_url"))))
+        .put(tool("etl_read_file", "etl_download로 받은 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일은 본문을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
+            schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf)"),
+                Triple("max_chars", "integer", "텍스트 최대 글자 수. 기본 20000, 최대 60000"),
+                required = listOf("path"))))
+        .put(tool("etl_render_pages", "PDF의 쪽을 이미지(PNG)로 만든다. 돌려준 경로의 이미지를 이미지 보기 기능으로 열어 내용(손글씨, 수식, 스캔본 포함)을 확인한다. 한 번에 최대 ${EtlFiles.MAX_RENDER_PAGES}쪽.",
+            schema(Triple("path", "string", "etl_download가 돌려준 workspace_path"),
+                Triple("pages", "string", "쪽 번호(1부터). 예: \"1-3,5\". 비우면 앞쪽부터"),
+                required = listOf("path"))))
         .put(tool("etl_verify_submission", "제출이 제대로 됐는지 검사한다(제출 기록, 지각, 형식, 확장자, 0바이트, 내려받은 크기).",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("assignment_id", "integer", "과제 ID"),
                 required = listOf("course_id", "assignment_id"))))
@@ -63,7 +73,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("path", "string", "예: /api/v1/users/self"), required = listOf("path"))))
 
     override fun call(name: String, args: JSONObject): ToolResult {
-        val known = setOf("etl_digest", "etl_courses", "etl_assignment", "etl_search_files", "etl_download", "etl_verify_submission", "etl_get")
+        val known = setOf("etl_digest", "etl_courses", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get")
         if (name !in known) throw UnknownToolException(name)
         return try {
             val out: Any = when (name) {
@@ -71,7 +81,9 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_courses" -> courses(client())
                 "etl_assignment" -> assignment(client(), id(args, "course_id"), id(args, "assignment_id"))
                 "etl_search_files" -> searchFiles(client(), id(args, "course_id"), args.optString("term", ""))
-                "etl_download" -> downloadFile(client(), args.optString("file_id_or_url", ""))
+                "etl_download" -> downloadFile(client(), args.optString("file_id_or_url", ""), args.optBoolean("save_to_phone", true))
+                "etl_read_file" -> readFile(args.optString("path", ""), args.optInt("max_chars", EtlFiles.DEFAULT_TEXT_CHARS))
+                "etl_render_pages" -> renderPages(args.optString("path", ""), args.optString("pages", "").ifEmpty { null })
                 "etl_verify_submission" -> verify(client(), id(args, "course_id"), id(args, "assignment_id"))
                 else -> getRaw(client(), args.optString("path", ""))
             }
@@ -255,12 +267,18 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     // ---- 다운로드 -----------------------------------------------------------
 
-    private fun downloadFile(c: EtlClient, ref: String): JSONObject {
+    private val workspace: File get() = File(context.filesDir, "workspace")
+
+    private fun downloadFile(c: EtlClient, ref: String, saveToPhone: Boolean = true): JSONObject {
         val meta = c.getObject("/api/v1/files/${EtlLogic.fileId(ref)}")
-        return saveAttachment(c, meta)
+        return saveAttachment(c, meta, saveToPhone)
     }
 
-    private fun saveAttachment(c: EtlClient, meta: JSONObject): JSONObject {
+    /**
+     * 파일을 받아 **작업 폴더(`workspace/etl-files/`)에 먼저 저장**하고(비서가 읽을 수 있음), [saveToPhone]이면
+     * 폰의 `Download/etl/`에도 사본을 둔다. 작업 폴더 이름은 `{파일ID}-{이름}`이라 같은 파일을 다시 받아도 덮어쓴다.
+     */
+    private fun saveAttachment(c: EtlClient, meta: JSONObject, saveToPhone: Boolean = true): JSONObject {
         val fid = meta.optLong("id")
         if (meta.optBoolean("locked_for_user", false)) {
             throw EtlException("파일 $fid 은(는) 잠겨 있습니다: ${meta.str("lock_explanation") ?: "아직 열람할 수 없음"}")
@@ -270,24 +288,81 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val mime = meta.str("content-type") ?: MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
 
-        val sink = DownloadSink.open(context, name, mime)
+        val dir = File(workspace, EtlFiles.DIR).apply { mkdirs() }
+        EtlFiles.prune(dir, System.currentTimeMillis())
+        val stored = File(dir, EtlFiles.storedName(fid, name))
+        val tmp = File(dir, stored.name + ".part")
         val result = try {
-            val r = sink.stream.use { c.download(url, it) }
-            sink.finish()
-            r
+            FileOutputStream(tmp).use { c.download(url, it) }
         } catch (e: Exception) {
-            sink.abort()
+            tmp.delete()
             throw e
+        }
+        if (!tmp.renameTo(stored)) {
+            tmp.copyTo(stored, overwrite = true)
+            tmp.delete()
+        }
+
+        var savedTo: String? = null
+        var phoneError: String? = null
+        if (saveToPhone) {
+            val sink = DownloadSink.open(context, name, mime)
+            try {
+                sink.stream.use { out -> stored.inputStream().use { it.copyTo(out) } }
+                sink.finish()
+                savedTo = sink.shownPath
+            } catch (e: Exception) {
+                sink.abort()
+                phoneError = "폰 사본을 저장하지 못했습니다(${e.javaClass.simpleName}). 작업 폴더 사본은 있습니다"
+            }
         }
         val expected = if (meta.has("size") && !meta.isNull("size")) meta.optLong("size") else null
         return JSONObject()
             .put("id", fid)
             .put("name", meta.str("display_name"))
-            .put("saved_to", sink.shownPath)
+            .put("workspace_path", EtlFiles.relPath(workspace, stored))
+            .put("saved_to", savedTo ?: JSONObject.NULL)
             .put("bytes", result.bytes)
             .put("expected_bytes", expected ?: JSONObject.NULL)
             .put("size_ok", expected == null || expected == result.bytes)
             .put("sha256", result.sha256)
+            .apply { if (phoneError != null) put("warning", phoneError) }
+    }
+
+    // ---- 파일 읽기 ----------------------------------------------------------
+
+    private fun readFile(path: String, maxChars: Int): JSONObject {
+        val f = EtlFiles.resolveInside(workspace, path)
+        val rel = EtlFiles.relPath(workspace, f)
+        val o = JSONObject().put("path", rel).put("size", f.length())
+        return when {
+            EtlFiles.isTextLike(f.name) -> {
+                val limit = maxChars.coerceIn(1, EtlFiles.MAX_TEXT_CHARS)
+                val buf = CharArray(limit + 1)
+                val n = f.reader(Charsets.UTF_8).use { it.read(buf) }.coerceAtLeast(0)
+                o.put("kind", "text").put("truncated", n > limit).put("text", String(buf, 0, minOf(n, limit)))
+            }
+            EtlFiles.isPdf(f.name) ->
+                o.put("kind", "pdf").put("pages", PdfPages.pageCount(f))
+                    .put("hint", "내용은 etl_render_pages로 쪽 이미지를 만들어 확인하세요")
+            else -> o.put("kind", "binary").put("hint", "이 형식은 내용을 읽을 수 없습니다")
+        }
+    }
+
+    private fun renderPages(path: String, spec: String?): JSONObject {
+        val f = EtlFiles.resolveInside(workspace, path)
+        if (!EtlFiles.isPdf(f.name)) throw EtlException("PDF만 쪽 이미지를 만들 수 있습니다")
+        val total = PdfPages.pageCount(f)
+        val pages = EtlFiles.parsePages(spec, total)
+        val outDir = File(workspace, "${EtlFiles.DIR}/${EtlFiles.RENDER_DIR}")
+        val base = f.name.substringBefore('-').takeIf { it.isNotEmpty() && it.all(Char::isDigit) } ?: Integer.toHexString(f.name.hashCode())
+        val rendered = PdfPages.render(f, pages, outDir, base)
+        val arr = JSONArray()
+        for (r in rendered) {
+            arr.put(JSONObject().put("page", r.page).put("path", EtlFiles.relPath(workspace, r.file)).put("width", r.width).put("height", r.height))
+        }
+        return JSONObject().put("path", EtlFiles.relPath(workspace, f)).put("pages_total", total).put("rendered", arr)
+            .put("note", "이미지 보기 기능으로 rendered[].path의 파일을 열어 확인하세요. 더 보려면 pages를 바꿔 다시 호출하세요")
     }
 
     /** MediaStore(API 29+)로 Download/etl/에 저장한다. 낮은 버전은 앱 전용 다운로드 폴더. */
