@@ -38,7 +38,7 @@ class ChatAdapter(private val ctx: Context, private val model: ChatModel) : Recy
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val role = Role.values()[viewType]
         val tv = TextView(ctx).apply {
-            textSize = if (role == Role.TOOL || role == Role.NOTICE) 12.5f else 15.5f
+            textSize = if (role == Role.NOTICE) 12.5f else 15.5f
             setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
             maxWidth = (dm.widthPixels * 0.86f).toInt()
             movementMethod = LinkMovementMethod.getInstance()
@@ -71,13 +71,6 @@ class ChatAdapter(private val ctx: Context, private val model: ChatModel) : Recy
                 h.tv.setTextColor(color(R.color.bubble_assistant_text))
                 h.tv.text = if (m.text.isEmpty()) "…" else toSpannable(MarkdownLite.render(m.text))
             }
-            Role.TOOL -> {
-                val failed = m.status == "failed"
-                bg.setColor(color(if (failed) R.color.chip_error_bg else R.color.chip_bg))
-                bg.cornerRadius = dp(12f).toFloat()
-                h.tv.setTextColor(color(if (failed) R.color.chip_error_text else R.color.chip_text))
-                h.tv.text = toolLabel(m)
-            }
             Role.NOTICE -> {
                 h.tv.setTextColor(color(R.color.notice_text))
                 h.tv.text = m.text
@@ -94,15 +87,6 @@ class ChatAdapter(private val ctx: Context, private val model: ChatModel) : Recy
                 Toast.makeText(ctx, "복사했습니다", Toast.LENGTH_SHORT).show()
                 true
             } else false
-        }
-    }
-
-    private fun toolLabel(m: Message): String {
-        val name = TOOL_NAMES[m.text] ?: m.text
-        return when (m.status) {
-            "completed" -> "✓ $name"
-            "failed" -> "✕ $name — ${m.error ?: "실패"}"
-            else -> "⏳ $name 중…"
         }
     }
 
@@ -129,17 +113,5 @@ class ChatAdapter(private val ctx: Context, private val model: ChatModel) : Recy
             }
         }
         return sb
-    }
-
-    companion object {
-        private val TOOL_NAMES = mapOf(
-            "etl_digest" to "마감·공지 요약",
-            "etl_courses" to "강의 목록",
-            "etl_assignment" to "과제 상세",
-            "etl_search_files" to "파일 검색",
-            "etl_download" to "파일 다운로드",
-            "etl_verify_submission" to "제출 확인",
-            "etl_get" to "eTL 조회",
-        )
     }
 }

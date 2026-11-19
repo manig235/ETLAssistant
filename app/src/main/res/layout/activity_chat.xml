@@ -65,6 +65,18 @@
         android:textColor="@color/notice_text"
         android:visibility="gone" />
 
+    <TextView
+        android:id="@+id/activityLine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="18dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="2dp"
+        android:textColor="@color/notice_text"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

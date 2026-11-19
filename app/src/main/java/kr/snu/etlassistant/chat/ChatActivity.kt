@@ -40,6 +40,8 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     private lateinit var btnSend: Button
     private lateinit var banner: TextView
     private lateinit var empty: TextView
+    private lateinit var activityLine: TextView
+    private var pulse: android.animation.ObjectAnimator? = null
     private val main = Handler(Looper.getMainLooper())
     private var bannerAction: (() -> Unit)? = null
     private val changed = HashSet<Int>()
@@ -68,6 +70,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         btnSend = findViewById(R.id.btnSend)
         banner = findViewById(R.id.banner)
         empty = findViewById(R.id.empty)
+        activityLine = findViewById(R.id.activityLine)
 
         adapter = ChatAdapter(this, CodexSession.model)
         list.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
@@ -118,6 +121,8 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     }
 
     override fun onStop() {
+        pulse?.cancel()
+        pulse = null
         CodexSession.detach(this)
         CodexSession.model.listener = null
         super.onStop()
@@ -141,10 +146,35 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     override fun onEvent(e: SessionEvent) {
         when (e) {
             is SessionEvent.Busy -> btnSend.text = if (e.busy) "중단" else "보내기"
+            is SessionEvent.Activity -> showActivity(e.label)
             is SessionEvent.LoginDone -> if (e.success) Toast.makeText(this, "로그인했습니다", Toast.LENGTH_SHORT).show()
             else -> {}
         }
         updateBanner()
+    }
+
+    /** 답변을 만드는 동안 "조회하는 중…" 같은 한 줄을 입력창 위에 보여 주고, 끝나면 숨긴다. */
+    private fun showActivity(label: String?) {
+        if (label == null) {
+            pulse?.cancel()
+            pulse = null
+            activityLine.alpha = 1f
+            activityLine.visibility = View.GONE
+            return
+        }
+        activityLine.text = label
+        if (activityLine.visibility != View.VISIBLE) {
+            activityLine.visibility = View.VISIBLE
+            // 살아 있다는 느낌을 주는 느린 깜빡임
+            pulse = android.animation.ObjectAnimator.ofFloat(activityLine, "alpha", 1f, 0.35f).apply {
+                duration = 700
+                repeatCount = android.animation.ObjectAnimator.INFINITE
+                repeatMode = android.animation.ObjectAnimator.REVERSE
+                start()
+            }
+        }
+        // 상태 줄이 생기거나 문구가 바뀌어도 목록 끝이 가려지지 않게
+        if (!list.canScrollVertically(1)) scrollToEnd()
     }
 
     /** 지금 상태에 맞는 안내를 위쪽 배너로 보여 준다. 누르면 해당 화면으로 간다. */

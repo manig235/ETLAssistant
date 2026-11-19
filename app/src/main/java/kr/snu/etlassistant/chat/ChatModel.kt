@@ -5,11 +5,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 
-enum class Role { USER, ASSISTANT, TOOL, NOTICE }
+enum class Role { USER, ASSISTANT, NOTICE }
 
 /**
- * 화면에 보이는 대화 한 줄.
- * TOOL이면 [text]는 도구 이름이고 [status]는 inProgress/completed/failed, [error]는 실패 문구다.
+ * 화면에 보이는 대화 한 줄. 도구 호출은 대화에 남기지 않는다(진행 상태는 [ActivityTracker]가 한 줄로 알려 준다).
  */
 class Message(
     val id: Long,
@@ -67,29 +66,12 @@ class ChatModel(private val file: File?) {
         save()
     }
 
-    fun updateTool(itemId: String, tool: String, status: String, error: String?) {
-        val i = indexOfItem(itemId, Role.TOOL)
-        if (i < 0) {
-            add(Message(nextId++, Role.TOOL, tool, status = status, error = error, itemId = itemId))
-        } else {
-            messages[i].status = status
-            messages[i].error = error
-            listener?.onChanged(i)
-        }
-    }
-
     /** 턴이 끝났을 때: 아직 스트리밍 상태로 남은 메시지를 닫는다(중단된 경우 등). */
     fun closeStreaming() {
         var changed = false
         for ((i, m) in messages.withIndex()) {
             if (m.role == Role.ASSISTANT && m.status == "streaming") {
                 m.status = "done"
-                listener?.onChanged(i)
-                changed = true
-            }
-            if (m.role == Role.TOOL && m.status == "inProgress") {
-                m.status = "failed"
-                m.error = m.error ?: "중단됨"
                 listener?.onChanged(i)
                 changed = true
             }

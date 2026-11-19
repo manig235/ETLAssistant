@@ -49,29 +49,16 @@ class ChatModelTest {
     @Test fun separateItemsStaySeparate() {
         val m = ChatModel(null)
         m.appendAssistant("a1", "첫째")
-        m.updateTool("t1", "etl_digest", "inProgress", null)
         m.appendAssistant("a2", "둘째")
-        assertEquals(listOf(Role.ASSISTANT, Role.TOOL, Role.ASSISTANT), m.messages.map { it.role })
+        assertEquals(listOf("첫째", "둘째"), m.messages.map { it.text })
+        assertEquals(listOf(Role.ASSISTANT, Role.ASSISTANT), m.messages.map { it.role })
     }
 
-    @Test fun toolCallLifecycle() {
-        val m = ChatModel(null)
-        m.updateTool("t1", "etl_digest", "inProgress", null)
-        m.updateTool("t1", "etl_digest", "completed", null)
-        assertEquals(1, m.messages.size)
-        assertEquals("completed", m.messages[0].status)
-        m.updateTool("t2", "etl_get", "failed", "허용되지 않은 경로")
-        assertEquals("허용되지 않은 경로", m.messages[1].error)
-    }
-
-    @Test fun closeStreamingClosesUnfinishedWork() {
+    @Test fun closeStreamingClosesUnfinishedAssistantMessage() {
         val m = ChatModel(null)
         m.appendAssistant("a1", "중간에 끊긴")
-        m.updateTool("t1", "etl_download", "inProgress", null)
         m.closeStreaming()
         assertEquals("done", m.messages[0].status)
-        assertEquals("failed", m.messages[1].status)
-        assertEquals("중단됨", m.messages[1].error)
     }
 
     @Test fun saveAndLoadKeepOnlyUserAndAssistant() {
@@ -79,7 +66,6 @@ class ChatModelTest {
         try {
             val m = ChatModel(f)
             m.addUser("질문")
-            m.updateTool("t1", "etl_courses", "completed", null)
             m.addNotice("안내")
             m.appendAssistant("a1", "답")
             m.finishAssistant("a1", "답변입니다")

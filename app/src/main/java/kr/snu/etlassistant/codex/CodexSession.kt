@@ -11,6 +11,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import kr.snu.etlassistant.chat.ActivityTracker
 import kr.snu.etlassistant.chat.ChatModel
 import kr.snu.etlassistant.etl.ApiKeyStore
 import kr.snu.etlassistant.etl.EtlService
@@ -37,6 +38,8 @@ sealed class SessionEvent {
     data class State(val state: SessionState, val detail: String?) : SessionEvent()
     data class Account(val info: AccountInfo) : SessionEvent()
     data class Busy(val busy: Boolean) : SessionEvent()
+    /** 답변을 만드는 동안 "지금 하는 일" 한 줄(`조회하는 중…` 등). null이면 숨긴다. */
+    data class Activity(val label: String?) : SessionEvent()
     data class LoginPrompt(val kind: LoginKind, val url: String, val code: String?) : SessionEvent()
     data class LoginDone(val success: Boolean, val error: String?) : SessionEvent()
 }
@@ -93,6 +96,9 @@ object CodexSession {
         private set
     @Volatile var lastLogin: SessionEvent.LoginPrompt? = null
         private set
+    @Volatile var activity: String? = null
+        private set
+    private val tracker = ActivityTracker() // 메인 스레드에서만
 
     @Volatile private var client: AppServerClient? = null
     @Volatile private var host: CodexRunner.Host? = null
@@ -117,6 +123,7 @@ object CodexSession {
         l.onEvent(SessionEvent.State(state, stateDetail))
         account?.let { l.onEvent(SessionEvent.Account(it)) }
         l.onEvent(SessionEvent.Busy(busy))
+        l.onEvent(SessionEvent.Activity(activity))
         lastLogin?.let { l.onEvent(it) }
     }
 
@@ -219,6 +226,7 @@ object CodexSession {
         lastLogin = null
         main.post {
             model.closeStreaming()
+            setActivity(tracker.turnEnded())
             setBusy(false)
             releaseLoginHold()
         }
@@ -333,6 +341,7 @@ object CodexSession {
         if (busy) return "이전 답변이 끝날 때까지 기다려 주세요"
         model.addUser(text)
         setBusy(true)
+        setActivity(tracker.turnStarted())
         calls.execute {
             try {
                 val thread = ensureThread(c)
@@ -343,6 +352,7 @@ object CodexSession {
                 main.post {
                     model.addNotice("보내지 못했습니다: ${e.message}")
                     model.closeStreaming()
+                    setActivity(tracker.turnEnded())
                     setBusy(false)
                 }
             }
@@ -397,7 +407,10 @@ object CodexSession {
             "item/agentMessage/delta" -> {
                 val id = p.optString("itemId")
                 val d = p.optString("delta")
-                main.post { model.appendAssistant(id, d) }
+                main.post {
+                    model.appendAssistant(id, d)
+                    setActivity(tracker.textDelta())
+                }
             }
             "item/started", "item/completed" -> p.optJSONObject("item")?.let { item(it, method == "item/completed") }
             "turn/completed" -> {
@@ -409,6 +422,7 @@ object CodexSession {
                     if (status == "failed") model.addNotice(err ?: "답변을 만들지 못했습니다")
                     if (status == "interrupted") model.addNotice("답변을 중단했습니다")
                     currentTurnId = null
+                    setActivity(tracker.turnEnded())
                     setBusy(false)
                 }
             }
@@ -439,15 +453,23 @@ object CodexSession {
         when (item.optString("type")) {
             "agentMessage" -> if (completed) {
                 val text = item.optString("text")
-                main.post { model.finishAssistant(id, text) }
+                main.post {
+                    model.finishAssistant(id, text)
+                    setActivity(tracker.messageDone())
+                }
             }
+            // 도구 호출은 대화에 남기지 않고, 진행 중인 일을 한 줄로만 알린다.
             "mcpToolCall" -> {
                 val tool = item.optString("tool")
-                val status = item.optString("status")
-                val err = item.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() && it != "null" }
-                main.post { model.updateTool(id, tool, status, err) }
+                main.post { setActivity(if (completed) tracker.toolFinished(id) else tracker.toolStarted(id, tool)) }
             }
         }
+    }
+
+    private fun setActivity(label: String?) {
+        if (activity == label) return
+        activity = label
+        emit(SessionEvent.Activity(label))
     }
 
     private fun onServerRequest(method: String, params: JSONObject?) {
