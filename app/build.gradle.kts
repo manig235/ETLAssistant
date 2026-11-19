@@ -21,7 +21,13 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 코드와 리소스를 줄여 APK 크기를 낮춘다. 규칙은 app/proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // 지인에게 직접 파일로 전달하는 용도라 debug 키로 서명한다(같은 키라야 기존 설치 위에 업데이트된다).
+            // 스토어 배포 전에는 전용 서명 키로 바꿔야 한다.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
