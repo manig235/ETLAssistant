@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -475,6 +477,7 @@ private fun LoginStep(vm: OnboardingViewModel, a: OnboardingActions) {
 
 // ---- 4. 알림 --------------------------------------------------------------------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
     val c = DesignSystemTheme.colors
@@ -507,7 +510,11 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
         SwitchRow("정기 브리핑", "마감·누락·새 공지를 한 번에 요약해서", vm.briefEnabled) { vm.briefEnabled = it }
         if (vm.briefEnabled) {
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 한 줄에 다 안 들어가면 다음 줄로 넘긴다(옆으로 밀어야만 보이는 선택지는 놓치기 쉽고, 잘리기까지 했다).
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 for (m in OnboardingLogic.briefTimeChoices) {
                     WantedChip(
                         text = NotifyUiFormat.formatTime(m, is24h = false),
