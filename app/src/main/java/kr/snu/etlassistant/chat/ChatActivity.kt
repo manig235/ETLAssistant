@@ -16,8 +16,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.FileProvider
 import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.etl.EtlService
@@ -25,6 +27,8 @@ import kr.snu.etlassistant.onboarding.OnboardingActivity
 import kr.snu.etlassistant.onboarding.OnboardingLogic
 import kr.snu.etlassistant.onboarding.OnboardingPrefs
 import kr.snu.etlassistant.phase0.R
+import java.io.File
+import java.util.concurrent.Executors
 
 /**
  * 채팅 화면(Montage). Codex 세션은 이 화면이 열려 있을 때만 돌린다([CodexSession]이 화면이 모두 사라지면 일정 시간 뒤 멈춘다).
@@ -38,6 +42,22 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
     private var ready = false
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    // ---- 첨부 고르기(권한 없이 쓰는 시스템 선택기) ----
+    private val pickPhotos = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(AttachmentLogic.MAX_PENDING)) { uris ->
+        importAll(uris)
+    }
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        importAll(uris)
+    }
+    /** 카메라가 찍은 사진을 받을 임시 파일. 가져온 뒤 지운다. */
+    private var cameraFile: File? = null
+    private val takePicture = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = cameraFile
+        cameraFile = null
+        if (ok && f != null && f.length() > 0) importAll(listOf(providerUri(f)), cleanup = f) else f?.delete()
+    }
+    private val importer = Executors.newSingleThreadExecutor()
 
     /** 스트리밍 중에는 변경이 아주 잦으므로 묶어서(약 70ms) 한 번에 다시 그린다. */
     private val flush = Runnable {
@@ -78,6 +98,8 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
                 vm.choice = choice
                 CodexSession.setModelChoice(choice)
             },
+            onAttach = { source -> attach(source) },
+            attachments = AttachmentActions(onOpen = { openAttachment(it) }, onShare = { shareAttachment(it) }),
         )
         setContent { ChatRoot(vm, actions) }
         applyPrefill(intent)
@@ -134,16 +156,117 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
             return
         }
         val text = vm.input.text.trim()
-        if (text.isEmpty()) return
-        send(text, clearInput = true)
+        if (vm.importing > 0) return
+        if (text.isEmpty() && vm.pending.isEmpty()) return
+        send(text, clearInput = true, attachments = vm.pending.toList())
     }
 
-    /** 문제가 있으면(예: 아직 준비 중) 이유를 토스트로 알리고 입력은 그대로 둔다. */
-    private fun send(text: String, clearInput: Boolean) {
-        val problem = CodexSession.send(text)
-        if (problem != null) Toast.makeText(this, problem, Toast.LENGTH_SHORT).show()
-        else if (clearInput) vm.setInput("")
+    /** 문제가 있으면(예: 아직 준비 중) 이유를 토스트로 알리고 입력과 첨부는 그대로 둔다. */
+    private fun send(text: String, clearInput: Boolean, attachments: List<Attachment> = emptyList()) {
+        val problem = CodexSession.send(text, attachments)
+        if (problem != null) {
+            Toast.makeText(this, problem, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (clearInput) vm.setInput("")
+        if (attachments.isNotEmpty()) vm.pending.removeAll(attachments)
     }
+
+    // ---- 첨부 ----------------------------------------------------------------
+
+    private fun attach(source: AttachSource) {
+        if (vm.pending.size + vm.importing >= AttachmentLogic.MAX_PENDING) {
+            toast("한 번에 ${AttachmentLogic.MAX_PENDING}개까지 첨부할 수 있어요")
+            return
+        }
+        try {
+            when (source) {
+                AttachSource.PHOTO -> pickPhotos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                AttachSource.FILE -> pickFiles.launch(arrayOf("*/*"))
+                AttachSource.CAMERA -> {
+                    val dir = File(cacheDir, "camera").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() } // 지난번에 남은 임시 사진
+                    val f = File(dir, "shot-${System.currentTimeMillis()}.jpg")
+                    cameraFile = f
+                    takePicture.launch(providerUri(f))
+                }
+            }
+        } catch (_: ActivityNotFoundException) {
+            toast(if (source == AttachSource.CAMERA) "카메라 앱을 찾지 못했어요" else "파일을 고를 수 있는 앱이 없어요")
+        }
+    }
+
+    /** 고른 항목을 작업 폴더로 복사해 보내기 대기 목록에 넣는다. 남은 자리보다 많이 고르면 앞에서부터. */
+    private fun importAll(uris: List<Uri>, cleanup: File? = null) {
+        val room = AttachmentLogic.MAX_PENDING - vm.pending.size - vm.importing
+        val take = uris.take(room.coerceAtLeast(0))
+        if (uris.size > take.size) toast("한 번에 ${AttachmentLogic.MAX_PENDING}개까지 첨부할 수 있어요")
+        if (take.isEmpty()) {
+            cleanup?.delete()
+            return
+        }
+        vm.importing += take.size
+        importer.execute {
+            for (uri in take) {
+                val result = runCatching { AttachmentImporter.import(this, uri) }
+                main.post {
+                    vm.importing -= 1
+                    result.onSuccess { vm.pending += it }
+                    result.onFailure { e ->
+                        toast((e as? AttachmentImporter.ImportException)?.message ?: "첨부하지 못했어요")
+                    }
+                }
+            }
+            cleanup?.delete()
+        }
+    }
+
+    private fun providerUri(f: File): Uri = FileProvider.getUriForFile(this, "$packageName.files", f)
+
+    /**
+     * 다른 앱에 넘길 주소. 폰 Download/etl/ 사본이 남아 있으면 그것(뷰어에 원래 파일 이름이 보인다),
+     * 사용자가 지웠거나 없으면 앱 작업 폴더의 파일(`{파일ID}-이름`)을 쓴다.
+     */
+    private fun shareableUri(a: Attachment): Uri? {
+        a.uri?.let { Uri.parse(it) }?.takeIf { u ->
+            runCatching { contentResolver.openFileDescriptor(u, "r")?.use { true } ?: false }.getOrDefault(false)
+        }?.let { return it }
+        a.path?.let { File(it) }?.takeIf { it.isFile }?.let { f ->
+            return runCatching { providerUri(f) }.getOrNull()
+        }
+        return null
+    }
+
+    /** 폰에 깔린 기본 앱(PDF 뷰어, 갤러리, 오피스 등)으로 연다. */
+    private fun openAttachment(a: Attachment) {
+        val uri = shareableUri(a) ?: return toast("파일이 정리되어 더는 없어요")
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, a.mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            toast("이 파일을 열 수 있는 앱이 없어요. 길게 눌러 다른 앱으로 보낼 수 있어요")
+        } catch (_: SecurityException) {
+            toast("파일을 열 수 없어요")
+        }
+    }
+
+    private fun shareAttachment(a: Attachment) {
+        val uri = shareableUri(a) ?: return toast("파일이 정리되어 더는 없어요")
+        val send = Intent(Intent.ACTION_SEND)
+            .setType(a.mime)
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        send.clipData = ClipData.newRawUri(a.name, uri)
+        try {
+            startActivity(Intent.createChooser(send, a.name))
+        } catch (_: ActivityNotFoundException) {
+            toast("공유할 수 있는 앱이 없어요")
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
 

@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +56,10 @@ class ChatViewModel : ViewModel() {
     var modelsLoading by mutableStateOf(false)
     var choice by mutableStateOf(ModelChoice())
     var sheetOpen by mutableStateOf(false)
+    /** 보내기 전에 고른 첨부(이미 작업 폴더로 복사된 것). */
+    val pending = mutableStateListOf<Attachment>()
+    /** 첨부를 가져오는 중인 개수. */
+    var importing by mutableIntStateOf(0)
 
     fun bump() { version++ }
 
@@ -83,6 +88,8 @@ class ChatActions(
     val onLink: (String) -> Unit,
     val onRefreshModels: () -> Unit,
     val onModelChoice: (ModelChoice) -> Unit,
+    val onAttach: (AttachSource) -> Unit,
+    val attachments: AttachmentActions,
 )
 
 @Composable
@@ -142,6 +149,8 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                                 maxBubbleWidth = maxBubble,
                                 onCopy = a.onCopy,
                                 onLink = a.onLink,
+                                attachments = m.attachments,
+                                attachmentActions = a.attachments,
                             )
                         }
                     }
@@ -150,11 +159,19 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
         }
 
         vm.activity?.let { ActivityLine(it) }
+        PendingAttachments(
+            items = vm.pending,
+            importing = vm.importing > 0,
+            onRemove = { vm.pending.remove(it) },
+            actions = a.attachments,
+        )
         InputBar(
             value = vm.input,
             onValueChange = { vm.input = it },
-            mode = ChatLogic.sendMode(vm.busy, vm.input.text),
+            mode = ChatLogic.sendMode(vm.busy, vm.input.text, vm.pending.isNotEmpty(), vm.importing > 0),
             onSend = a.onSend,
+            onAttach = a.onAttach,
+            attachEnabled = vm.pending.size + vm.importing < AttachmentLogic.MAX_PENDING,
         )
     }
 

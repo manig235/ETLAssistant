@@ -58,12 +58,12 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("file_id_or_url", "string", "파일 ID 또는 eTL 파일 URL(…/files/<id>)"),
                 Triple("save_to_phone", "boolean", "폰의 Download/etl/에도 저장할지. 기본 true"),
                 required = listOf("file_id_or_url"))))
-        .put(tool("etl_read_file", "etl_download로 받은 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일은 본문을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
-            schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf)"),
+        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일은 본문을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
+            schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf) 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("max_chars", "integer", "텍스트 최대 글자 수. 기본 20000, 최대 60000"),
                 required = listOf("path"))))
         .put(tool("etl_render_pages", "PDF의 쪽을 이미지(PNG)로 만든다. 돌려준 경로의 이미지를 이미지 보기 기능으로 열어 내용(손글씨, 수식, 스캔본 포함)을 확인한다. 한 번에 최대 ${EtlFiles.MAX_RENDER_PAGES}쪽.",
-            schema(Triple("path", "string", "etl_download가 돌려준 workspace_path"),
+            schema(Triple("path", "string", "etl_download가 돌려준 workspace_path 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("pages", "string", "쪽 번호(1부터). 예: \"1-3,5\". 비우면 앞쪽부터"),
                 required = listOf("path"))))
         .put(tool("etl_verify_submission", "제출이 제대로 됐는지 검사한다(제출 기록, 지각, 형식, 확장자, 0바이트, 내려받은 크기).",
@@ -304,6 +304,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         }
 
         var savedTo: String? = null
+        var phoneUri: String? = null
         var phoneError: String? = null
         if (saveToPhone) {
             val sink = DownloadSink.open(context, name, mime)
@@ -311,12 +312,15 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 sink.stream.use { out -> stored.inputStream().use { it.copyTo(out) } }
                 sink.finish()
                 savedTo = sink.shownPath
+                phoneUri = sink.uri
             } catch (e: Exception) {
                 sink.abort()
                 phoneError = "폰 사본을 저장하지 못했습니다(${e.javaClass.simpleName}). 작업 폴더 사본은 있습니다"
             }
         }
         val expected = if (meta.has("size") && !meta.isNull("size")) meta.optLong("size") else null
+        // 채팅 화면에 파일 카드로 보여 준다(앱 안에서만 전달하고, 모델에게 주는 결과에는 content URI를 넣지 않는다).
+        EtlEvents.fileSaved(EtlEvents.SavedFile(meta.str("display_name") ?: name, mime, result.bytes, stored, phoneUri, savedTo))
         return JSONObject()
             .put("id", fid)
             .put("name", meta.str("display_name"))
@@ -357,6 +361,9 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val outDir = File(workspace, "${EtlFiles.DIR}/${EtlFiles.RENDER_DIR}")
         val base = f.name.substringBefore('-').takeIf { it.isNotEmpty() && it.all(Char::isDigit) } ?: Integer.toHexString(f.name.hashCode())
         val rendered = PdfPages.render(f, pages, outDir, base)
+        EtlEvents.pagesRendered(rendered.map { r ->
+            EtlEvents.SavedFile("${f.name.substringAfter('-')} ${r.page}쪽", "image/png", r.file.length(), r.file, null, null)
+        })
         val arr = JSONArray()
         for (r in rendered) {
             arr.put(JSONObject().put("page", r.page).put("path", EtlFiles.relPath(workspace, r.file)).put("width", r.width).put("height", r.height))
@@ -369,6 +376,8 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
     private class DownloadSink private constructor(
         val stream: OutputStream,
         var shownPath: String,
+        /** MediaStore 사본의 content URI(API 29+). 낮은 버전은 null. */
+        val uri: String?,
         private val onFinish: () -> String?,
         private val onAbort: () -> Unit,
     ) {
@@ -400,7 +409,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                             if (it.moveToFirst()) it.getString(0) else null
                         }
                     }
-                    return DownloadSink(out, "Download/etl/${displayName() ?: name}",
+                    return DownloadSink(out, "Download/etl/${displayName() ?: name}", uri.toString(),
                         onFinish = {
                             resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
                             // 이름 충돌 처리는 IS_PENDING을 풀 때 일어나므로, 그 뒤의 이름을 읽는다.
@@ -410,7 +419,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 }
                 val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "etl").apply { mkdirs() }
                 val f = File(dir, name)
-                return DownloadSink(f.outputStream(), f.path, onFinish = { null }, onAbort = { f.delete() })
+                return DownloadSink(f.outputStream(), f.path, null, onFinish = { null }, onAbort = { f.delete() })
             }
         }
     }

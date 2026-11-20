@@ -12,8 +12,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
 import kr.snu.etlassistant.chat.ActivityTracker
+import kr.snu.etlassistant.chat.Attachment
+import kr.snu.etlassistant.chat.AttachmentLogic
 import kr.snu.etlassistant.chat.ChatModel
 import kr.snu.etlassistant.etl.ApiKeyStore
+import kr.snu.etlassistant.etl.EtlEvents
 import kr.snu.etlassistant.etl.EtlService
 import kr.snu.etlassistant.phase0.CodexRunner
 import kr.snu.etlassistant.phase0.RunService
@@ -209,6 +212,16 @@ object CodexSession {
         app = context.applicationContext
         AppSettings.init(app)
         model = ChatModel(File(app.filesDir, "chat.json")).also { it.load() }
+        // 비서가 eTL 파일을 받거나 PDF 쪽 이미지를 만들면 대화에 카드로 붙인다. 답변 중일 때만(개발자 도구의 시험 실행은 제외).
+        EtlEvents.listener = object : EtlEvents.Listener {
+            override fun onFilesSaved(files: List<EtlEvents.SavedFile>, pagePreview: Boolean) {
+                if (!busy) return
+                val atts = files.map { f ->
+                    Attachment(f.name, f.mime, f.size, f.file.absolutePath, f.phoneUri, f.shownPath, pagePreview)
+                }
+                main.post { model.addFiles(atts) }
+            }
+        }
     }
 
     // ---- 화면 연결 -----------------------------------------------------------
@@ -447,19 +460,27 @@ object CodexSession {
     // ---- 대화 ---------------------------------------------------------------
 
     /** @return 보낼 수 없는 상태면 이유 문구, 보냈으면 null */
-    fun send(text: String): String? {
+    fun send(text: String, attachments: List<Attachment> = emptyList()): String? {
         val c = client
         if (state != SessionState.READY || c == null) return "비서가 아직 준비되지 않았습니다"
         if (account?.loggedIn != true) return "먼저 로그인해야 합니다"
         if (busy) return "이전 답변이 끝날 때까지 기다려 주세요"
-        model.addUser(text)
+        val workspace = File(app.filesDir, "workspace")
+        val images = attachments.filter { it.isImage && it.path != null }
+        val files = (attachments - images.toSet()).filter { it.path != null }.map { a ->
+            Triple(File(a.path!!).relativeTo(workspace).path, a.mime, a.size)
+        }
+        val prompt = AttachmentLogic.promptText(text, files, images.size)
+        val input = JSONArray().put(JSONObject().put("type", "text").put("text", prompt).put("text_elements", JSONArray()))
+        // 사진은 Codex가 직접 읽어 모델에게 이미지로 보낸다.
+        images.forEach { input.put(JSONObject().put("type", "localImage").put("path", it.path)) }
+        model.addUser(text, attachments)
         setBusy(true)
         setActivity(tracker.turnStarted())
         calls.execute {
             try {
                 val thread = ensureThread(c)
-                val turnParams = JSONObject().put("threadId", thread)
-                    .put("input", JSONArray().put(JSONObject().put("type", "text").put("text", text).put("text_elements", JSONArray())))
+                val turnParams = JSONObject().put("threadId", thread).put("input", input)
                 val choice = effectiveChoice()
                 choice.model?.let { turnParams.put("model", it) }
                 choice.effort?.let { turnParams.put("effort", it) }

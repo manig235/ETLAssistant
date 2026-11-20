@@ -116,4 +116,43 @@ class ChatModelTest {
             f.delete()
         }
     }
+
+    // ---- 첨부 ------------------------------------------------------------------
+
+    private fun att(name: String, path: String = "/w/etl-files/$name", mime: String = "application/pdf") =
+        Attachment(name, mime, 10, path)
+
+    @Test fun filesMergeIntoPreviousFilesRowAndSkipDuplicates() {
+        val m = ChatModel(null)
+        m.addUser("받아줘")
+        m.addFiles(listOf(att("a.pdf")))
+        m.addFiles(listOf(att("b.pdf"), att("a.pdf")))
+        assertEquals(listOf(Role.USER, Role.FILES), m.messages.map { it.role })
+        assertEquals(listOf("a.pdf", "b.pdf"), m.messages[1].attachments.map { it.name })
+        // 사이에 답변이 끼면 새 묶음
+        m.finishAssistant("x", "받았어요")
+        m.addFiles(listOf(att("c.pdf")))
+        assertEquals(Role.FILES, m.messages.last().role)
+        assertEquals(1, m.messages.last().attachments.size)
+    }
+
+    @Test fun attachmentsSurviveSaveAndLoad() {
+        val f = File.createTempFile("chat", ".json")
+        try {
+            val m = ChatModel(f)
+            m.addUser("", listOf(Attachment("p.jpg", "image/jpeg", 5, "/w/p.jpg")))
+            m.addFiles(listOf(Attachment("강의.pdf", "application/pdf", 9, "/w/x.pdf", "content://media/1", "Download/etl/강의.pdf")))
+            m.addFiles(listOf(Attachment("강의 1쪽", "image/png", 3, "/w/r.png", pagePreview = true)))
+            val loaded = ChatModel(f).also { it.load() }
+            assertEquals(listOf(Role.USER, Role.FILES), loaded.messages.map { it.role })
+            assertEquals("p.jpg", loaded.messages[0].attachments.single().name)
+            val files = loaded.messages[1].attachments
+            assertEquals("content://media/1", files[0].uri)
+            assertEquals("Download/etl/강의.pdf", files[0].shownPath)
+            assertTrue(files[1].pagePreview)
+            assertEquals(null, files[1].uri)
+        } finally {
+            f.delete()
+        }
+    }
 }

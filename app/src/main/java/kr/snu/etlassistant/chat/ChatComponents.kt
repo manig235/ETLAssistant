@@ -42,6 +42,15 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -212,10 +221,22 @@ fun MessageRow(
     maxBubbleWidth: Dp,
     onCopy: (String) -> Unit,
     onLink: (String) -> Unit,
+    attachments: List<Attachment> = emptyList(),
+    attachmentActions: AttachmentActions? = null,
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
+    if (attachments.isNotEmpty() && attachmentActions != null && role == Role.USER) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AttachmentGroup(attachments, alignEnd = true, maxWidth = maxBubbleWidth, actions = attachmentActions)
+            if (text.isNotBlank()) MessageRow(role, text, maxBubbleWidth, onCopy, onLink)
+        }
+        return
+    }
     when (role) {
+        Role.FILES -> if (attachmentActions != null) {
+            AttachmentGroup(attachments, alignEnd = false, maxWidth = maxBubbleWidth, actions = attachmentActions)
+        }
         Role.NOTICE -> Text(
             text,
             style = t.caption1Regular,
@@ -295,12 +316,17 @@ fun ActivityLine(label: String, modifier: Modifier = Modifier) {
 
 // ---- 입력창 -------------------------------------------------------------------
 
+/** 첨부를 어디서 고를지. */
+enum class AttachSource { PHOTO, CAMERA, FILE }
+
 @Composable
 fun InputBar(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     mode: SendMode,
     onSend: () -> Unit,
+    onAttach: (AttachSource) -> Unit,
+    attachEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val c = DesignSystemTheme.colors
@@ -314,12 +340,13 @@ fun InputBar(
             .heightIn(min = 52.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
+        AttachButton(enabled = attachEnabled, onAttach = onAttach, modifier = Modifier.padding(start = 6.dp, bottom = 6.dp))
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 18.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
+                .padding(start = 4.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
             textStyle = t.body1Regular.copy(color = c.foregroundNeutralPrimary),
             cursorBrush = SolidColor(c.foregroundBrandPrimary),
             maxLines = 5,
@@ -335,6 +362,37 @@ fun InputBar(
         )
         SendButton(mode, onSend, Modifier.padding(6.dp))
     }
+}
+
+@Composable
+private fun AttachButton(enabled: Boolean, onAttach: (AttachSource) -> Unit, modifier: Modifier = Modifier) {
+    val c = DesignSystemTheme.colors
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        IconButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.size(40.dp)) {
+            Icon(
+                Icons.Outlined.Add,
+                contentDescription = "첨부",
+                tint = if (enabled) c.foregroundNeutralPrimary else c.foregroundDisablePrimary,
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = c.backgroundNeutralPrimary) {
+            AttachItem(Icons.Outlined.PhotoLibrary, "사진") { open = false; onAttach(AttachSource.PHOTO) }
+            AttachItem(Icons.Outlined.PhotoCamera, "사진 찍기") { open = false; onAttach(AttachSource.CAMERA) }
+            AttachItem(Icons.Outlined.AttachFile, "파일") { open = false; onAttach(AttachSource.FILE) }
+        }
+    }
+}
+
+@Composable
+private fun AttachItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    DropdownMenuItem(
+        text = { Text(label, style = t.body1Regular, color = c.foregroundNeutralPrimary) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = c.foregroundNeutralSecondary) },
+        onClick = onClick,
+    )
 }
 
 @Composable

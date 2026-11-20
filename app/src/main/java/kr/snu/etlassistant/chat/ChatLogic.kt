@@ -36,9 +36,11 @@ object ChatLogic {
         else -> null
     }
 
-    fun sendMode(busy: Boolean, input: String): SendMode = when {
+    /** 글이 비어 있어도 첨부가 있으면 보낼 수 있다. 첨부를 준비하는 중이면 기다린다. */
+    fun sendMode(busy: Boolean, input: String, hasAttachments: Boolean = false, importing: Boolean = false): SendMode = when {
         busy -> SendMode.STOP
-        input.isBlank() -> SendMode.DISABLED
+        importing -> SendMode.DISABLED
+        input.isBlank() && !hasAttachments -> SendMode.DISABLED
         else -> SendMode.SEND
     }
 

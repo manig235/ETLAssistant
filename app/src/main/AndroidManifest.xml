@@ -16,6 +16,17 @@
         android:theme="@style/Theme.Phase0"
         tools:ignore="DataExtractionRules">
 
+        <!-- 받은 파일과 첨부를 다른 앱으로 열거나 공유할 때 쓰는 임시 권한 URI. 외부에 공개하지 않는다. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <receiver
             android:name="kr.snu.etlassistant.notify.DeadlineAlarmReceiver"
             android:exported="false" />
