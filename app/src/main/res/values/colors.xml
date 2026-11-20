@@ -1,4 +1,6 @@
 <resources>
+    <!-- 런처 아이콘 배경(로고 이미지의 남색). -->
+    <color name="ic_launcher_background">#121533</color>
     <color name="etl_launch_background">#FFFFFF</color>
     <color name="bubble_user">#2F6FED</color>
     <color name="bubble_user_text">#FFFFFF</color>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 테마 아이콘(Android 13+)용 한 가지 색 레이어. 시스템이 색을 입힌다. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="2080"
+    android:viewportHeight="2080">
+    <!-- 로고 이미지(etl_logo.png, 1254px)의 좌표로 그리고, 내용의 가운데(627.5, 630)를 캔버스 가운데(1040)로 옮긴다.
+         가장 먼 점까지 약 27.8dp라 적응형 아이콘의 안전 영역(지름 66dp) 안에 들어간다. -->
+    <group
+        android:translateX="412.5"
+        android:translateY="410">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M187.5,375 a84.5,84.5 0 1,0 169,0 a84.5,84.5 0 1,0 -169,0 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M187.5,627 a84.5,84.5 0 1,0 169,0 a84.5,84.5 0 1,0 -169,0 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M187.5,885 a84.5,84.5 0 1,0 169,0 a84.5,84.5 0 1,0 -169,0 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M467,325 H1016 A50,50 0 0,1 1016,425 H467 A50,50 0 0,1 467,325 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M467,577 H853 A50,50 0 0,1 853,677 H467 A50,50 0 0,1 467,577 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M467,835 H676 A50,50 0 0,1 676,935 H467 A50,50 0 0,1 467,835 Z" />
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="15"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M863,840 H808 V931 H862 M808,885 H855 M898,840 H968 M932.5,840 V931 M1007.5,840 V931 H1060" />
+    </group>
+</vector>
