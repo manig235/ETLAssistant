@@ -773,7 +773,7 @@ private fun AboutSection() {
         SettingsCard {
             Text("미니 eTL 비서", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
             Spacer(Modifier.height(4.dp))
-            Caption("만든 사람: 미니 · 버전 $version")
+            Caption("만든 사람: 박영민 · 버전 $version")
             Spacer(Modifier.height(10.dp))
             Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
         }

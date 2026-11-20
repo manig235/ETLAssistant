@@ -29,6 +29,11 @@ import kr.snu.etlassistant.onboarding.OnboardingPrefs
 import kr.snu.etlassistant.phase0.R
 import java.io.File
 import java.util.concurrent.Executors
+import android.app.NotificationManager
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
+import kr.snu.etlassistant.notify.Channel
+import kr.snu.etlassistant.notify.NotifySettingsStore
 
 /**
  * 채팅 화면(Montage). Codex 세션은 이 화면이 열려 있을 때만 돌린다([CodexSession]이 화면이 모두 사라지면 일정 시간 뒤 멈춘다).
@@ -41,7 +46,7 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
     private var flushPosted = false
     private var ready = false
 
-    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { updateBanner() }
 
     // ---- 첨부 고르기(권한 없이 쓰는 시스템 선택기) ----
     private val pickPhotos = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(AttachmentLogic.MAX_PENDING)) { uris ->
@@ -88,8 +93,13 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
                 when (action) {
                     BannerAction.SETTINGS -> openSettings()
                     BannerAction.RETRY -> CodexSession.restart()
+                    BannerAction.NOTIFICATIONS -> fixNotifications()
                     BannerAction.NONE -> {}
                 }
+            },
+            onDismissBanner = {
+                uiPrefs().edit().putLong(KEY_NOTIFY_BANNER_DISMISSED, System.currentTimeMillis()).apply()
+                updateBanner()
             },
             onCopy = { text -> copy(text) },
             onLink = { url -> openLink(url) },
@@ -136,6 +146,12 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
         CodexSession.attach(this)
         CodexSession.ensureStarted()
         updateBanner()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 알림 설정이나 권한 창에서 돌아오면 바로 다시 판정한다(켜면 배너가 사라진다).
+        if (ready) updateBanner()
     }
 
     override fun onStop() {
@@ -308,7 +324,53 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
             state = CodexSession.state,
             detail = CodexSession.stateDetail,
             loggedIn = CodexSession.account?.loggedIn == true,
+            notifyProblem = notifyProblem(),
+            notifyDismissedAt = uiPrefs().getLong(KEY_NOTIFY_BANNER_DISMISSED, 0L),
+            nowMs = System.currentTimeMillis(),
         )
+    }
+
+    private fun uiPrefs() = getSharedPreferences("ui", Context.MODE_PRIVATE)
+
+    /** 켜 둔 마감·공지·브리핑 알림이 실제로 올 수 있는지(권한, 앱 전체 알림, 그 알림의 채널). */
+    private fun notifyProblem(): NotifyProblem? {
+        val s = NotifySettingsStore(this).load()
+        val used = buildList {
+            if (s.deadlineAlerts) add(Channel.DEADLINE.id)
+            if (s.announcementAlerts) add(Channel.ANNOUNCEMENT.id)
+            if (s.briefEnabled) add(Channel.BRIEF.id)
+        }
+        val nm = NotificationManagerCompat.from(this)
+        val permitted = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val blocked = used.filter { id -> nm.getNotificationChannel(id)?.importance == NotificationManager.IMPORTANCE_NONE }.toSet()
+        return ChatLogic.notifyProblem(permitted && nm.areNotificationsEnabled(), used, blocked)
+    }
+
+    /** 배너를 눌렀을 때: 권한을 물을 수 있으면 묻고, 아니면 앱 알림 설정(채널만 꺼졌으면 그 채널 설정)으로 보낸다. */
+    private fun fixNotifications() {
+        val problem = notifyProblem() ?: return updateBanner()
+        val needPermission = Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needPermission && (!uiPrefs().getBoolean("askedNotif", false) ||
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS))
+        ) {
+            uiPrefs().edit().putBoolean("askedNotif", true).apply()
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        val intent = if (problem is NotifyProblem.ChannelOff && !needPermission) {
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                .putExtra(Settings.EXTRA_CHANNEL_ID, problem.channelId)
+        } else {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
     }
 
     // ---- 대화 변경 -------------------------------------------------------------
@@ -332,5 +394,6 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
 
     companion object {
         const val EXTRA_PREFILL = "prefill"
+        private const val KEY_NOTIFY_BANNER_DISMISSED = "notifyBannerDismissedAt"
     }
 }

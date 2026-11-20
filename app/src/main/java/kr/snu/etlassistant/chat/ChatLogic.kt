@@ -4,9 +4,16 @@ import kr.snu.etlassistant.chat.MarkdownLite.Kind
 import kr.snu.etlassistant.codex.SessionState
 
 /** 위쪽 배너를 눌렀을 때 할 일. */
-enum class BannerAction { SETTINGS, RETRY, NONE }
+enum class BannerAction { SETTINGS, RETRY, NOTIFICATIONS, NONE }
 
-data class BannerSpec(val text: String, val action: BannerAction)
+/** [dismissible]이면 ×(나중에)로 닫을 수 있다. */
+data class BannerSpec(val text: String, val action: BannerAction, val dismissible: Boolean = false)
+
+/** 알림이 오지 않는 이유. [AppOff]는 권한이나 앱 전체 알림이 꺼짐, [ChannelOff]는 쓰는 채널 하나가 꺼짐. */
+sealed class NotifyProblem {
+    object AppOff : NotifyProblem()
+    data class ChannelOff(val channelId: String) : NotifyProblem()
+}
 
 /** 전송 버튼의 모습: 보내기 / 답변 중단 / 비활성. */
 enum class SendMode { SEND, STOP, DISABLED }
@@ -26,14 +33,40 @@ data class MdStyle(
 /** 채팅 화면의 순수 판정 로직(단위 테스트 대상). */
 object ChatLogic {
 
-    /** 지금 상태에 맞는 안내 배너. 우선순위: 토큰 없음 → 세션 실패 → 준비 중 → 로그인 안 됨. 보여 줄 게 없으면 null. */
-    fun banner(hasToken: Boolean, state: SessionState, detail: String?, loggedIn: Boolean): BannerSpec? = when {
+    /** 알림 꺼짐 배너를 닫으면 이 기간 동안 숨긴다. */
+    const val NOTIFY_BANNER_SNOOZE_MS = 7L * 24 * 3600 * 1000
+
+    /**
+     * 지금 상태에 맞는 안내 배너. 우선순위: 토큰 없음 → 세션 실패 → 준비 중 → 로그인 안 됨 → 알림 꺼짐. 보여 줄 게 없으면 null.
+     * 알림 꺼짐은 닫은 뒤 [NOTIFY_BANNER_SNOOZE_MS] 동안 숨긴다([notifyDismissedAt], 0이면 닫은 적 없음).
+     */
+    fun banner(
+        hasToken: Boolean,
+        state: SessionState,
+        detail: String?,
+        loggedIn: Boolean,
+        notifyProblem: NotifyProblem? = null,
+        notifyDismissedAt: Long = 0L,
+        nowMs: Long = 0L,
+    ): BannerSpec? = when {
         !hasToken -> BannerSpec("eTL 토큰이 필요해요. 눌러서 설정으로 이동", BannerAction.SETTINGS)
         state == SessionState.FAILED ->
             BannerSpec("비서를 시작하지 못했어요: ${detail ?: ""}\n눌러서 다시 시도", BannerAction.RETRY)
         state != SessionState.READY -> BannerSpec("비서를 준비하는 중이에요…", BannerAction.NONE)
         !loggedIn -> BannerSpec("로그인이 필요해요. 눌러서 설정으로 이동", BannerAction.SETTINGS)
+        notifyProblem != null && !(notifyDismissedAt > 0 && nowMs - notifyDismissedAt < NOTIFY_BANNER_SNOOZE_MS) ->
+            BannerSpec("알림이 꺼져 있어서 마감·공지 알림이 오지 않아요. 눌러서 켜기", BannerAction.NOTIFICATIONS, dismissible = true)
         else -> null
+    }
+
+    /**
+     * 켜 둔 알림(마감/공지/브리핑)이 실제로 올 수 있는지. 하나도 켜지 않았으면 null.
+     * [usedChannels]는 켜 둔 알림의 채널 ID, [blockedChannels]는 중요도가 NONE인 채널 ID.
+     */
+    fun notifyProblem(appEnabled: Boolean, usedChannels: List<String>, blockedChannels: Set<String>): NotifyProblem? = when {
+        usedChannels.isEmpty() -> null
+        !appEnabled -> NotifyProblem.AppOff
+        else -> usedChannels.firstOrNull { it in blockedChannels }?.let { NotifyProblem.ChannelOff(it) }
     }
 
     /** 글이 비어 있어도 첨부가 있으면 보낼 수 있다. 첨부를 준비하는 중이면 기다린다. */

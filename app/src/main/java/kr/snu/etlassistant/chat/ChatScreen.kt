@@ -84,6 +84,7 @@ class ChatActions(
     val onNewChat: () -> Unit,
     val onSettings: () -> Unit,
     val onBanner: (BannerAction) -> Unit,
+    val onDismissBanner: () -> Unit,
     val onCopy: (String) -> Unit,
     val onLink: (String) -> Unit,
     val onRefreshModels: () -> Unit,
@@ -126,7 +127,12 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
             )
         }
         vm.banner?.let { spec ->
-            StatusBanner(spec, onClick = { a.onBanner(spec.action) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            StatusBanner(
+                spec,
+                onClick = { a.onBanner(spec.action) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                onDismiss = a.onDismissBanner,
+            )
         }
 
         Column(Modifier.weight(1f)) {

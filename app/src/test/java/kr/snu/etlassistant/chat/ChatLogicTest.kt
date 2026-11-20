@@ -90,4 +90,37 @@ class ChatLogicTest {
         val kinds = ChatLogic.styleRanges(r).map { it.kind }
         assertEquals(listOf(Kind.HEADER, Kind.BOLD), kinds)
     }
+
+    // ---- 알림 꺼짐 배너 --------------------------------------------------------
+
+    private val day = 24L * 3600 * 1000
+
+    @Test fun notifyBannerHasLowestPriority() {
+        val p = NotifyProblem.AppOff
+        assertEquals(BannerAction.SETTINGS, ChatLogic.banner(false, SessionState.READY, null, true, p)!!.action)
+        assertEquals(BannerAction.RETRY, ChatLogic.banner(true, SessionState.FAILED, null, true, p)!!.action)
+        assertEquals(BannerAction.NONE, ChatLogic.banner(true, SessionState.STARTING, null, true, p)!!.action)
+        assertEquals(BannerAction.SETTINGS, ChatLogic.banner(true, SessionState.READY, null, false, p)!!.action)
+        val b = ChatLogic.banner(true, SessionState.READY, null, true, p)!!
+        assertEquals(BannerAction.NOTIFICATIONS, b.action)
+        assertTrue(b.dismissible)
+        assertEquals(null, ChatLogic.banner(true, SessionState.READY, null, true, null))
+    }
+
+    @Test fun notifyBannerSnoozesFor7Days() {
+        val p = NotifyProblem.AppOff
+        val now = 100 * day
+        assertEquals(null, ChatLogic.banner(true, SessionState.READY, null, true, p, notifyDismissedAt = now - 6 * day, nowMs = now))
+        assertNotNull(ChatLogic.banner(true, SessionState.READY, null, true, p, notifyDismissedAt = now - 7 * day, nowMs = now))
+        assertNotNull(ChatLogic.banner(true, SessionState.READY, null, true, p, notifyDismissedAt = 0, nowMs = now))
+    }
+
+    @Test fun notifyProblemDetection() {
+        // 알림을 모두 껐으면 경고하지 않는다
+        assertEquals(null, ChatLogic.notifyProblem(false, emptyList(), emptySet()))
+        assertEquals(NotifyProblem.AppOff, ChatLogic.notifyProblem(false, listOf("deadline"), emptySet()))
+        assertEquals(NotifyProblem.ChannelOff("announcement"), ChatLogic.notifyProblem(true, listOf("deadline", "announcement"), setOf("announcement", "brief")))
+        // 꺼진 채널이 쓰지 않는 알림이면 괜찮다
+        assertEquals(null, ChatLogic.notifyProblem(true, listOf("deadline"), setOf("brief")))
+    }
 }

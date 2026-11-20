@@ -124,7 +124,7 @@ fun ModelChip(label: String, onClick: () -> Unit, modifier: Modifier = Modifier)
 // ---- 배너 ---------------------------------------------------------------------
 
 @Composable
-fun StatusBanner(spec: BannerSpec, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun StatusBanner(spec: BannerSpec, onClick: () -> Unit, modifier: Modifier = Modifier, onDismiss: (() -> Unit)? = null) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     val clickable = spec.action != BannerAction.NONE
@@ -140,7 +140,12 @@ fun StatusBanner(spec: BannerSpec, onClick: () -> Unit, modifier: Modifier = Mod
         Icon(Icons.Outlined.Info, contentDescription = null, tint = c.foregroundCautionaryPrimary, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(10.dp))
         Text(spec.text, style = t.body2Medium, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
-        if (clickable) {
+        if (spec.dismissible && onDismiss != null) {
+            // 닫기(나중에). 일정 기간 숨기고, 조건이 그대로면 다시 보인다.
+            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Outlined.Close, contentDescription = "나중에", tint = c.foregroundNeutralSecondary, modifier = Modifier.size(18.dp))
+            }
+        } else if (clickable) {
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = c.foregroundNeutralSecondary, modifier = Modifier.size(20.dp))
         }
     }
