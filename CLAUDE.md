@@ -94,6 +94,8 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 
 - Base는 `https://myetl.snu.ac.kr`이고, 인증은 `Authorization: Bearer <token>`, `Accept: application/json`이다.
 - 응답 앞에 `while(1);`(XSSI 방지 접두어)가 붙을 수 있으니 제거한 뒤 JSON으로 파싱한다.
+- JSON 요청은 앱 전체에서 동시에 3개까지만 보내고, 연결 8초·읽기 10초에서 끊는다(파일 내려받기는 읽기 30초).
+  비서가 `etl_get`을 여러 개 동시에 보내 eTL 응답이 막힌 적이 있다.
 - 페이지네이션은 `Link` 헤더의 `rel="next"`를 따른다. **다음 URL이 base origin 밖이면 중단한다**(토큰 유출 방지). 최대 20페이지까지만 받는다.
 - 401 응답:
   - 본문에 "not authorized"가 있고 "token"이 없으면 권한 없음.
@@ -141,6 +143,8 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 
 - `etl_digest(days=7, ann_days=1)`: 마감 임박, 누락, 최근 공지
 - `etl_courses()`
+- `etl_assignments(range=this_week|next_week|days, days=7, include_submitted=true)`: 기간 안에 마감인 모든 강의의 과제를 마감순으로
+  (제출 여부·누락·점수 포함). "이번 주"는 KST 월요일 00:00~일요일 23:59. 마감·과제 목록 질문은 이것을 먼저 쓴다.
 - `etl_assignment(course_id, assignment_id)`
 - `etl_search_files(course_id, term)`
 - `etl_download(file_id_or_url)`: 폰 `Download/etl/`에 저장하고 경로, 크기, 일치 여부를 반환

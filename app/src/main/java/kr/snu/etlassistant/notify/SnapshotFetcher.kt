@@ -1,5 +1,6 @@
 package kr.snu.etlassistant.notify
 
+import kr.snu.etlassistant.etl.CourseAssignments
 import kr.snu.etlassistant.etl.EtlAuthException
 import kr.snu.etlassistant.etl.EtlClient
 import kr.snu.etlassistant.etl.EtlException
@@ -8,9 +9,6 @@ import kr.snu.etlassistant.etl.EtlLogic.str
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZonedDateTime
-import java.util.concurrent.Callable
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
 
 /**
  * eTL을 조회해 [Snapshot]을 만든다. 네트워크는 [EtlClient]만 쓴다(GET 전용).
@@ -19,43 +17,20 @@ import java.util.concurrent.Executors
  */
 object SnapshotFetcher {
 
-    private const val COURSES_PATH = "/api/v1/courses?enrollment_state=active&include[]=total_scores&include[]=term&per_page=100"
-    private const val POOL_SIZE = 6
 
     /**
      * [EtlAuthException]은 그대로 던진다(토큰 거부는 사용자에게 알려야 한다).
      * 그 외 [EtlException]은 해당 강의(또는 공지)만 건너뛰고 [Snapshot.errors]에 모은다.
      */
     fun fetch(client: EtlClient, now: Instant, announcementDays: Int = 2): Snapshot {
-        val courses = EtlLogic.currentCourses(client.getAll(COURSES_PATH))
+        val courses = CourseAssignments.currentCourses(client)
         val errors = mutableListOf<String>()
 
-        // ---- 과제 (강의별 병렬) ----
+        // ---- 과제 (강의별 병렬, 동시 요청 수는 EtlClient가 제한) ----
         val assignments = mutableListOf<AssignmentItem>()
-        val pool = Executors.newFixedThreadPool(POOL_SIZE)
-        try {
-            val futures = courses.map { course ->
-                val cid = course.optLong("id")
-                pool.submit(Callable<List<JSONObject>> {
-                    client.getAll("/api/v1/courses/$cid/assignments?include[]=submission&order_by=due_at&per_page=100")
-                })
-            }
-            courses.forEachIndexed { i, course ->
-                val name = course.str("name").orEmpty()
-                try {
-                    val items = futures[i].get()
-                    assignments += mapAssignments(course.optLong("id"), name, items, now)
-                } catch (e: ExecutionException) {
-                    when (val cause = e.cause) {
-                        is EtlAuthException -> throw cause
-                        is EtlException -> errors += "$name: ${cause.message}"
-                        // 다른 예외의 내용은 노출하지 않는다.
-                        else -> errors += "$name: 과제 조회 실패"
-                    }
-                }
-            }
-        } finally {
-            pool.shutdownNow()
+        for (r in CourseAssignments.fetch(client, courses)) {
+            if (r.error != null) errors += "${r.courseName}: ${r.error}"
+            else assignments += mapAssignments(r.courseId, r.courseName, r.assignments, now)
         }
 
         // ---- 공지 ----

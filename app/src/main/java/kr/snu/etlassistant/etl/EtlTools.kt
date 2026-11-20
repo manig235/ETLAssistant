@@ -19,9 +19,6 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.URLEncoder
 import java.time.Instant
-import java.util.concurrent.Callable
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
 
 /**
  * Codex에 노출하는 eTL 도구. **전부 읽기 전용**(eTL에는 GET만 보낸다).
@@ -48,6 +45,13 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("days", "integer", "마감 임박으로 볼 기간(일). 기본 7"),
                 Triple("ann_days", "integer", "최근 공지로 볼 기간(일). 기본 1"))))
         .put(tool("etl_courses", "이번 학기(가장 최신 학기) 수강 강의 목록.", schema()))
+        .put(tool("etl_assignments", "이번 학기 모든 강의의 과제 중 기간 안에 마감인 것을 마감순으로 한 번에 돌려준다(제출 여부, 누락, 점수, 남은 시간 포함). \"이번 주 마감\", \"다음 주 과제\", \"N일 안에 마감\" 같은 질문에 먼저 쓴다. 이번 주는 KST 월요일 00:00~일요일 23:59.",
+            JSONObject().put("type", "object").put("properties", JSONObject()
+                .put("range", JSONObject().put("type", "string").put("enum", JSONArray(listOf("this_week", "next_week", "days")))
+                    .put("description", "this_week(기본): 이번 주 월~일, next_week: 다음 주 월~일, days: 지금부터 days일"))
+                .put("days", JSONObject().put("type", "integer").put("description", "range=days일 때 기간(일). 기본 7, 최대 60"))
+                .put("include_submitted", JSONObject().put("type", "boolean").put("description", "이미 제출한 과제도 포함할지. 기본 true")))
+                .put("required", JSONArray())))
         .put(tool("etl_assignment", "과제 하나의 상세(마감, 제출 유형, 설명, 내 제출 상태).",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("assignment_id", "integer", "과제 ID"),
                 required = listOf("course_id", "assignment_id"))))
@@ -73,12 +77,18 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("path", "string", "예: /api/v1/users/self"), required = listOf("path"))))
 
     override fun call(name: String, args: JSONObject): ToolResult {
-        val known = setOf("etl_digest", "etl_courses", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get")
+        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get")
         if (name !in known) throw UnknownToolException(name)
         return try {
             val out: Any = when (name) {
                 "etl_digest" -> digest(client(), args.optInt("days", 7).coerceIn(1, 60), args.optInt("ann_days", 1).coerceIn(1, 30))
                 "etl_courses" -> courses(client())
+                "etl_assignments" -> assignments(
+                    client(),
+                    AssignmentQuery.Range.parse(args.optString("range", "this_week")),
+                    args.optInt("days", 7),
+                    args.optBoolean("include_submitted", true),
+                )
                 "etl_assignment" -> assignment(client(), id(args, "course_id"), id(args, "assignment_id"))
                 "etl_search_files" -> searchFiles(client(), id(args, "course_id"), args.optString("term", ""))
                 "etl_download" -> downloadFile(client(), args.optString("file_id_or_url", ""), args.optBoolean("save_to_phone", true))
@@ -87,10 +97,24 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_verify_submission" -> verify(client(), id(args, "course_id"), id(args, "assignment_id"))
                 else -> getRaw(client(), args.optString("path", ""))
             }
-            ToolResult(out.toString())
+            ToolResult(out.toString(), detail = logDetail(name, args, null))
         } catch (e: EtlException) {
-            ToolResult(e.message ?: "eTL 오류", isError = true)
+            ToolResult(e.message ?: "eTL 오류", isError = true, detail = logDetail(name, args, e.kind))
         }
+    }
+
+    /**
+     * 로그 한 줄에 덧붙일 정보(모델에게는 보내지 않는다). etl_get은 요청 경로(쿼리 포함, /api/v1/ 상대 경로라 토큰·서명 URL이 없다),
+     * 그 밖에는 주요 인자. 오류면 종류(timeout, http-404 등).
+     */
+    private fun logDetail(name: String, args: JSONObject, kind: String?): String {
+        val what = when (name) {
+            "etl_get" -> args.optString("path", "").take(160)
+            "etl_assignments" -> args.optString("range", "this_week") + if (args.has("days")) " days=${args.optInt("days")}" else ""
+            "etl_digest" -> "days=${args.optInt("days", 7)}"
+            else -> ""
+        }
+        return listOfNotNull(what.takeIf { it.isNotEmpty() }, kind?.let { "[$it]" }).joinToString(" ")
     }
 
     private fun client(): EtlClient {
@@ -111,8 +135,25 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     // ---- 도구 본체 ----------------------------------------------------------
 
-    private fun currentCourses(c: EtlClient): List<JSONObject> =
-        EtlLogic.currentCourses(c.getAll("/api/v1/courses?enrollment_state=active&include[]=total_scores&include[]=term&per_page=100"))
+    private fun currentCourses(c: EtlClient): List<JSONObject> = CourseAssignments.currentCourses(c)
+
+    private fun assignments(c: EtlClient, range: AssignmentQuery.Range, days: Int, includeSubmitted: Boolean): JSONObject {
+        val now = Instant.now()
+        val window = AssignmentQuery.window(range, now, days)
+        val results = CourseAssignments.fetch(c, currentCourses(c))
+        val rows = AssignmentQuery.select(results, window, includeSubmitted, now)
+        return JSONObject()
+            .put("now", EtlLogic.fmtKst(now))
+            .put("range", range.id)
+            .put("start", EtlLogic.fmtKst(window.start))
+            .put("end", EtlLogic.fmtKst(window.endExclusive.minusSeconds(60)))
+            .put("include_submitted", includeSubmitted)
+            .put("courses", JSONArray(results.map { it.courseName }))
+            .put("count", rows.size)
+            .put("submitted_count", rows.count { it.optBoolean("submitted") })
+            .put("assignments", JSONArray(rows))
+            .put("errors", JSONArray(results.mapNotNull { r -> r.error?.let { "${r.courseName}: $it" } }))
+    }
 
     private fun courses(c: EtlClient): JSONArray {
         val out = JSONArray()
@@ -130,28 +171,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val now = Instant.now()
         val courses = currentCourses(c)
         val errors = JSONArray()
-        val pool = Executors.newFixedThreadPool(6)
-        val rows: List<Triple<JSONObject, List<JSONObject>, String?>> = try {
-            courses.map { course ->
-                pool.submit(Callable {
-                    try {
-                        Triple(course, c.getAll("/api/v1/courses/${course.optLong("id")}/assignments?include[]=submission&order_by=due_at&per_page=100"), null)
-                    } catch (e: EtlAuthException) {
-                        throw e
-                    } catch (e: EtlException) {
-                        Triple(course, emptyList<JSONObject>(), e.message)
-                    }
-                })
-            }.map {
-                try {
-                    it.get()
-                } catch (e: ExecutionException) {
-                    throw (e.cause as? EtlException ?: EtlException("과제 조회 실패"))
-                }
-            }
-        } finally {
-            pool.shutdown()
-        }
+        val rows = CourseAssignments.fetch(c, courses).map { Triple(it.course, it.assignments, it.error) }
 
         val horizon = now.plusSeconds(days * 86400L)
         data class Row(val due: Instant?, val json: JSONObject)

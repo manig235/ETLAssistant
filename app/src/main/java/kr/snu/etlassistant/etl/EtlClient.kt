@@ -9,15 +9,21 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
-open class EtlException(message: String) : Exception(message)
+/**
+ * eTL 오류. [kind]는 로그·판정용 짧은 분류(`timeout`, `network`, `http-404`, `forbidden`, `auth`, `parse`, `error`)이며
+ * 토큰이나 URL을 담지 않는다.
+ */
+open class EtlException(message: String, val kind: String = "error") : Exception(message)
 
-class EtlAuthException(message: String) : EtlException(message)
+class EtlAuthException(message: String) : EtlException(message, "auth")
 
 /**
  * eTL(Canvas) 읽기 전용 클라이언트. **GET만** 보낸다.
  *
  * - 토큰은 [origin]에만 보낸다. 페이지 링크나 리다이렉트가 다른 곳을 가리키면 토큰 없이 처리하거나 중단한다.
  * - 오류 메시지에는 경로(쿼리 제외)와 예외 클래스 이름만 넣는다. 토큰이나 서명 URL은 절대 넣지 않는다.
+ * - JSON 요청은 앱 전체에서 동시에 [MAX_CONCURRENT]개까지만 보낸다([gate]). 비서가 여러 조회를 한꺼번에 보내거나
+ *   알림 확인과 겹쳐도 eTL에 몰리지 않게 한다(동시 6개가 모두 20초 타임아웃으로 실패한 일이 있었다).
  */
 class EtlClient(token: String, private val origin: String = BASE_URL) {
 
@@ -66,12 +72,12 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
         val shownPath = URL(url).path
         repeat(MAX_REDIRECTS + 1) {
             val onEtl = url.startsWith("$origin/")
-            val c = open(url, withToken = onEtl, json = false)
+            val c = open(url, withToken = onEtl, json = false, readTimeoutMs = DOWNLOAD_READ_TIMEOUT_MS)
             try {
                 val code = try {
                     c.responseCode
                 } catch (e: IOException) {
-                    throw EtlException("다운로드 실패: $shownPath (${e.javaClass.simpleName})")
+                    throw EtlException("다운로드 실패: $shownPath (${e.javaClass.simpleName})", ioKind(e))
                 }
                 if (code in 300..399) {
                     val loc = c.getHeaderField("Location") ?: throw EtlException("리다이렉트 위치가 없습니다: $shownPath")
@@ -81,7 +87,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                     return@repeat
                 }
                 if (code == 401 && onEtl) throw EtlAuthException(AUTH_REJECTED)
-                if (code !in 200..299) throw EtlException("다운로드 실패($code): $shownPath")
+                if (code !in 200..299) throw EtlException("다운로드 실패($code): $shownPath", "http-$code")
                 val md = MessageDigest.getInstance("SHA-256")
                 var n = 0L
                 try {
@@ -97,7 +103,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                         }
                     }
                 } catch (e: IOException) {
-                    throw EtlException("다운로드 실패: $shownPath (${e.javaClass.simpleName})")
+                    throw EtlException("다운로드 실패: $shownPath (${e.javaClass.simpleName})", ioKind(e))
                 }
                 return Download(n, md.digest().joinToString("") { "%02x".format(it) })
             } finally {
@@ -114,11 +120,11 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
         return origin + path
     }
 
-    private fun open(url: String, withToken: Boolean, json: Boolean): HttpURLConnection {
+    private fun open(url: String, withToken: Boolean, json: Boolean, readTimeoutMs: Int = READ_TIMEOUT_MS): HttpURLConnection {
         val c = URL(url).openConnection() as HttpURLConnection
         c.instanceFollowRedirects = false
-        c.connectTimeout = TIMEOUT_MS
-        c.readTimeout = TIMEOUT_MS
+        c.connectTimeout = CONNECT_TIMEOUT_MS
+        c.readTimeout = readTimeoutMs
         c.requestMethod = "GET"
         if (json) c.setRequestProperty("Accept", "application/json")
         if (withToken) c.setRequestProperty("Authorization", "Bearer $tokenValue")
@@ -126,13 +132,22 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
     }
 
     private fun requestJson(url: String): Pair<Any, String?> {
+        gate.acquire()
+        try {
+            return requestJsonUngated(url)
+        } finally {
+            gate.release()
+        }
+    }
+
+    private fun requestJsonUngated(url: String): Pair<Any, String?> {
         val path = pathOnly(url)
         val c = open(url, withToken = true, json = true)
         try {
             val code = try {
                 c.responseCode
             } catch (e: IOException) {
-                throw EtlException("eTL 연결 실패: $path (${e.javaClass.simpleName})")
+                throw EtlException("eTL 연결 실패: $path (${e.javaClass.simpleName})", ioKind(e))
             }
             if (code == 401) {
                 val text = try {
@@ -142,14 +157,14 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                 }
                 // 서버가 준 오류 문구 일부를 덧붙인다(토큰 원문은 제거). 판정 규칙을 맞추는 데 쓴다.
                 val hint = errorHint(text)
-                if (isPermissionDenied(text)) throw EtlException("권한 없음(401): $path$hint")
+                if (isPermissionDenied(text)) throw EtlException("권한 없음(401): $path$hint", "forbidden")
                 throw EtlAuthException(AUTH_REJECTED + hint + " [$path]")
             }
-            if (code !in 200..299) throw EtlException("eTL 요청 실패($code): $path")
+            if (code !in 200..299) throw EtlException("eTL 요청 실패($code): $path", "http-$code")
             val body = try {
                 c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
             } catch (e: IOException) {
-                throw EtlException("eTL 응답 읽기 실패: $path (${e.javaClass.simpleName})")
+                throw EtlException("eTL 응답 읽기 실패: $path (${e.javaClass.simpleName})", ioKind(e))
             }
             val link = c.headerFields.entries
                 .firstOrNull { it.key.equals("Link", ignoreCase = true) }?.value?.joinToString(",")
@@ -163,7 +178,16 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
         const val BASE_URL = "https://myetl.snu.ac.kr"
         const val MAX_PAGES = 20
         const val MAX_REDIRECTS = 5
-        const val TIMEOUT_MS = 20_000
+        /** 연결·응답 대기. 응답 없는 요청을 20초씩 기다리던 것을 줄였다(비서의 답이 그만큼 늦어진다). */
+        const val CONNECT_TIMEOUT_MS = 8_000
+        const val READ_TIMEOUT_MS = 10_000
+        /** 파일 내려받기는 크고 느릴 수 있어 읽기 대기를 길게 둔다. */
+        const val DOWNLOAD_READ_TIMEOUT_MS = 30_000
+        /** 앱 전체에서 동시에 보내는 eTL JSON 요청 수. */
+        const val MAX_CONCURRENT = 3
+        private val gate = java.util.concurrent.Semaphore(MAX_CONCURRENT, true)
+
+        fun ioKind(e: IOException): String = if (e is java.net.SocketTimeoutException) "timeout" else "network"
         const val MAX_DOWNLOAD = 300L shl 20
         private const val AUTH_REJECTED = "eTL이 토큰을 거부했습니다(401): 만료되었거나 올바르지 않습니다"
         private val TOKEN_RE = Regex("[\\u0021-\\u007e]+")
@@ -193,7 +217,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             try {
                 return if (s.startsWith("[")) JSONArray(s) else JSONObject(s)
             } catch (_: JSONException) {
-                throw EtlException("읽을 수 없는 eTL 응답: $path")
+                throw EtlException("읽을 수 없는 eTL 응답: $path", "parse")
             }
         }
 

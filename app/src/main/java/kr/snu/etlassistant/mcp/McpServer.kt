@@ -23,7 +23,8 @@ interface ToolHost {
     fun call(name: String, args: JSONObject): ToolResult
 }
 
-data class ToolResult(val text: String, val isError: Boolean = false)
+/** [detail]은 앱 로그에만 남기는 짧은 정보(경로, 오류 종류). 모델에게는 보내지 않는다. 토큰을 넣지 않는다. */
+data class ToolResult(val text: String, val isError: Boolean = false, val detail: String? = null)
 
 class UnknownToolException(name: String) : Exception("unknown tool: $name")
 
@@ -234,7 +235,8 @@ class McpServer(private val host: ToolHost, private val log: (String) -> Unit = 
                     val args = params.optJSONObject("arguments") ?: JSONObject()
                     val started = System.nanoTime()
                     val result = host.call(name, args)
-                    log("[mcp] tools/call $name ${if (result.isError) "error" else "ok"} ${(System.nanoTime() - started) / 1_000_000}ms")
+                    val detail = result.detail?.takeIf { it.isNotBlank() }?.let { " · ${it.replace('\n', ' ').take(200)}" }.orEmpty()
+                    log("[mcp] tools/call $name ${if (result.isError) "error" else "ok"} ${(System.nanoTime() - started) / 1_000_000}ms$detail")
                     ok(id, JSONObject()
                         .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", result.text)))
                         .put("isError", result.isError))
