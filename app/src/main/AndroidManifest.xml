@@ -25,6 +25,7 @@
             android:name="kr.snu.etlassistant.chat.ChatActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:theme="@style/Theme.ETL.Starting"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -1,4 +1,5 @@
 <resources>
+    <color name="etl_launch_background">#FFFFFF</color>
     <color name="bubble_user">#2F6FED</color>
     <color name="bubble_user_text">#FFFFFF</color>
     <color name="bubble_assistant">#EEF0F3</color>

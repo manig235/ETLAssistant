@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -67,6 +69,7 @@ import kr.snu.etlassistant.chat.NotifyUiFormat
 import kr.snu.etlassistant.codex.AccountInfo
 import kr.snu.etlassistant.codex.LoginKind
 import kr.snu.etlassistant.codex.SessionState
+import kr.snu.etlassistant.phase0.R
 
 /** 화면이 바깥(액티비티, 세션, 시스템)에 부탁하는 일들. */
 class OnboardingActions(
@@ -147,6 +150,7 @@ private fun TopProgress(vm: OnboardingViewModel) {
 private fun StepFrame(
     title: String,
     subtitle: String? = null,
+    header: (@Composable ColumnScope.() -> Unit)? = null,
     bottom: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -160,6 +164,7 @@ private fun StepFrame(
                 .padding(horizontal = 24.dp)
         ) {
             Spacer(Modifier.height(12.dp))
+            header?.invoke(this)
             Text(title, style = t.title1Bold, color = c.foregroundNeutralPrimary)
             if (subtitle != null) {
                 Spacer(Modifier.height(10.dp))
@@ -249,6 +254,17 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
     StepFrame(
         title = "eTL 비서에 오신 것을\n환영해요",
         subtitle = "마감과 공지는 챙기고, 궁금한 건 물어보고, 강의 파일은 바로 받아 보세요.",
+        header = {
+            Image(
+                painter = painterResource(R.drawable.etl_logo),
+                contentDescription = "eTL 비서 로고",
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(120.dp)
+                    .clip(RoundedCornerShape(24.dp)),
+            )
+            Spacer(Modifier.height(28.dp))
+        },
         bottom = { PrimaryButton("시작하기") { vm.goNext() } },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {

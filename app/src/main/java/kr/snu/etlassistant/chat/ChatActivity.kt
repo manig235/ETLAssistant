@@ -24,6 +24,7 @@ import kr.snu.etlassistant.etl.EtlService
 import kr.snu.etlassistant.onboarding.OnboardingActivity
 import kr.snu.etlassistant.onboarding.OnboardingLogic
 import kr.snu.etlassistant.onboarding.OnboardingPrefs
+import kr.snu.etlassistant.phase0.R
 
 /**
  * 채팅 화면(Montage). Codex 세션은 이 화면이 열려 있을 때만 돌린다([CodexSession]이 화면이 모두 사라지면 일정 시간 뒤 멈춘다).
@@ -45,6 +46,7 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.Theme_Phase0)
         super.onCreate(savedInstanceState)
         // 처음 쓰는 사람(안내를 끝내지 않았고 eTL 토큰도 없음)은 첫 실행 안내로 보낸다.
         if (!OnboardingLogic.shouldSkip(OnboardingPrefs(this).completed, EtlService.tokens(this).hasToken())) {
