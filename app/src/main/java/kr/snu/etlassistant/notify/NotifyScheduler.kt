@@ -42,8 +42,8 @@ object NotifyScheduler {
         // ① 주기 확인
         if (settings.needsPeriodicCheck) {
             val req = PeriodicWorkRequestBuilder<NotifyCheckWorker>(
-                settings.checkIntervalHours.toLong(), TimeUnit.HOURS,
-                NotifySchedule.flexMillis(settings.checkIntervalHours), TimeUnit.MILLISECONDS,
+                NotifySettings.CHECK_INTERVAL_HOURS.toLong(), TimeUnit.HOURS,
+                NotifySchedule.flexMillis(NotifySettings.CHECK_INTERVAL_HOURS), TimeUnit.MILLISECONDS,
             )
                 .setConstraints(networkConstraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)

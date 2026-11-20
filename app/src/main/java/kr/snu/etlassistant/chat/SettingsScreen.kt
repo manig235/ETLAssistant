@@ -74,6 +74,11 @@ import kr.snu.etlassistant.codex.ModelInfo
 import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.notify.NotifySettings
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 /** 화면이 그리는 값. 액티비티가 세션 이벤트와 저장소 상태를 여기에 반영한다. */
 class SettingsState {
@@ -315,7 +320,32 @@ private fun EditableValue(text: String, clickLabel: String, onClick: () -> Unit)
     }
 }
 
-/** 마감 알림 시점 직접 추가: 숫자 + 단위(분/시간/일). */
+/** 켜진 알림 시점 하나. ×를 누르면 지운다. */
+@Composable
+private fun RemovableChip(label: String, onRemove: () -> Unit) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(c.surfaceBrandSubtle)
+            .padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = t.body2Medium, color = c.foregroundBrandPrimary)
+        Box(
+            Modifier
+                .size(36.dp)
+                .clickable(onClickLabel = "$label 지우기", role = Role.Button, onClick = onRemove)
+                .semantics { contentDescription = "$label 지우기" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Close, contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+/** 알림 시점 추가: 자주 쓰는 시점 빠른 버튼 + 숫자·단위(분/시간/일) 직접 입력. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CustomWindowDialog(current: List<Int>, onDismiss: () -> Unit, onAdd: (Int) -> Unit) {
@@ -327,11 +357,30 @@ private fun CustomWindowDialog(current: List<Int>, onDismiss: () -> Unit, onAdd:
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.backgroundNeutralPrimary,
-        title = { Text("알림 시점 직접 추가", style = t.title3Bold, color = c.foregroundNeutralPrimary) },
+        title = { Text("알림 시점 추가", style = t.title3Bold, color = c.foregroundNeutralPrimary) },
         text = {
             Column {
-                Text("마감 몇 분·시간·일 전에 알릴까요?", style = t.body2Regular, color = c.foregroundNeutralSecondary)
-                Spacer(Modifier.height(12.dp))
+                Text("자주 쓰는 시점", style = t.body2Medium, color = c.foregroundNeutralPrimary)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (m in SettingsLogic.quickWindows) {
+                        val has = m in current
+                        WantedChip(
+                            text = NotifyUiFormat.windowLabel(m) + if (has) " 전 ✓" else " 전",
+                            isEnable = !has,
+                            onClick = {
+                                if (has) return@WantedChip
+                                when (val r = SettingsLogic.checkWindow(m.toLong(), current)) {
+                                    is SettingsLogic.CustomWindow.Ok -> onAdd(r.minutes)
+                                    is SettingsLogic.CustomWindow.Error -> error = r.message
+                                }
+                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("직접 입력", style = t.body2Medium, color = c.foregroundNeutralPrimary)
+                Spacer(Modifier.height(8.dp))
                 WantedTextField(
                     text = amount,
                     placeholder = "예: 30",
@@ -513,35 +562,50 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
     val n = s.notify
     val is24h = DateFormat.is24HourFormat(LocalContext.current)
     val times = NotifyUiFormat.normalizeBriefTimes(n.briefMinutesOfDay)
-    val intervalOn = n.needsPeriodicCheck
     Section("알림") {
         SettingsCard {
-            Caption("마감·공지 확인은 몇 시간마다 백그라운드에서 해요. AI는 쓰지 않고, eTL 토큰이 필요해요.")
             if (!s.hasEtlToken) {
-                Spacer(Modifier.height(12.dp))
                 StatusBanner("eTL 토큰을 먼저 저장해야 알림이 동작해요.", StatusTone.CAUTION)
+                Spacer(Modifier.height(8.dp))
             }
-            Spacer(Modifier.height(8.dp))
             SwitchRow("마감 임박 알림", NotifyUiFormat.windowsSummary(n.deadlineWindowsMinutes), n.deadlineAlerts) { v -> a.updateNotify { it.copy(deadlineAlerts = v) } }
             if (n.deadlineAlerts) {
                 val windows = NotifySettings.normalizeWindows(n.deadlineWindowsMinutes)
                 var adding by remember { mutableStateOf(false) }
-                Caption("눌러서 켜고 끌 수 있어요. 원하는 시점은 직접 추가하세요.")
-                Spacer(Modifier.height(8.dp))
+                var windowError by remember { mutableStateOf<String?>(null) }
+                Spacer(Modifier.height(4.dp))
                 FlowRow(
-                    Modifier.padding(bottom = 8.dp),
+                    Modifier.padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     for (m in SettingsLogic.windowChips(windows)) {
-                        WantedChip(
-                            text = NotifyUiFormat.windowLabel(m) + " 전",
-                            isActive = m in windows,
-                            onClick = { a.updateNotify { it.copy(deadlineWindowsMinutes = SettingsLogic.toggleWindow(it.deadlineWindowsMinutes, m)) } },
-                        )
+                        RemovableChip(NotifyUiFormat.windowLabel(m) + " 전") {
+                            val next = SettingsLogic.removeWindow(windows, m)
+                            if (next == null) windowError = SettingsLogic.LAST_WINDOW_MESSAGE
+                            else {
+                                windowError = null
+                                a.updateNotify { it.copy(deadlineWindowsMinutes = next) }
+                            }
+                        }
                     }
-                    WantedChip(text = "+ 직접 추가", onClick = { adding = true })
+                    if (SettingsLogic.canAddWindow(windows)) {
+                        WantedChip(text = "+ 추가", onClick = { windowError = null; adding = true })
+                    }
                 }
+                windowError?.let {
+                    Text(it, style = DesignSystemTheme.typography.caption1Regular, color = DesignSystemTheme.colors.foregroundNegativePrimary)
+                }
+                if (!SettingsLogic.isDefaultWindows(windows)) {
+                    WantedTextButton(
+                        text = "기본값으로 되돌리기",
+                        onClick = {
+                            windowError = null
+                            a.updateNotify { it.copy(deadlineWindowsMinutes = SettingsLogic.defaultWindows()) }
+                        },
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
                 if (adding) {
                     CustomWindowDialog(
                         current = windows,
@@ -558,7 +622,6 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
             if (n.briefEnabled) {
                 Spacer(Modifier.height(4.dp))
                 Text("브리핑 시각", style = DesignSystemTheme.typography.body2Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
-                Caption("시각을 눌러 바꿀 수 있어요")
                 Spacer(Modifier.height(8.dp))
                 times.forEachIndexed { index, minutes ->
                     Row(
@@ -583,22 +646,6 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                     WantedTextButton(
                         text = "+ 시각 추가",
                         onClick = { a.updateNotify { it.copy(briefMinutesOfDay = SettingsLogic.addBriefTime(it.briefMinutesOfDay)) } },
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text("확인 주기", style = DesignSystemTheme.typography.body1Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
-            Spacer(Modifier.height(2.dp))
-            Caption(if (intervalOn) "마감·공지를 몇 시간마다 확인할지 정해요" else "마감 임박·새 공지 알림을 켜면 쓸 수 있어요")
-            Spacer(Modifier.height(10.dp))
-            // 옆으로 밀어야만 보이는 선택지는 놓치기 쉽다. 한 줄에 다 안 들어가면 다음 줄로 넘긴다.
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (h in SettingsLogic.intervalChoices) {
-                    WantedChip(
-                        text = "${h}시간",
-                        isActive = n.checkIntervalHours == h,
-                        isEnable = intervalOn,
-                        onClick = { if (intervalOn) a.updateNotify { it.copy(checkIntervalHours = h) } },
                     )
                 }
             }

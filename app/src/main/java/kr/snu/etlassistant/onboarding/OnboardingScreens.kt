@@ -521,7 +521,7 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
     val t = DesignSystemTheme.typography
     StepFrame(
         title = "알림을 켜 볼까요?",
-        subtitle = "마감과 공지는 AI 없이 앱이 몇 시간마다 조용히 확인해서 알려드려요.",
+        subtitle = "마감과 공지는 AI 없이 앱이 한 시간마다 조용히 확인해서 알려드려요.",
         bottom = {
             PrimaryButton("다음") {
                 a.applyNotifications()

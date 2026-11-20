@@ -126,8 +126,6 @@ data class NotifySettings(
     val briefEnabled: Boolean = false,
     /** 브리핑을 보낼 시각(하루 중 분, 0..1439). 최대 2개. 기기의 현재 시간대 기준. */
     val briefMinutesOfDay: List<Int> = listOf(8 * 60),
-    /** 마감·공지 확인 주기(시간): 1, 3, 6, 12 중 하나. */
-    val checkIntervalHours: Int = 3,
     /** 방해 금지 시간에는 마감·공지 알림을 미룬다(브리핑은 정해진 시각에 보낸다). */
     val quietEnabled: Boolean = true,
     val quietStartMinutes: Int = 23 * 60,
@@ -141,6 +139,9 @@ data class NotifySettings(
     val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts
 
     companion object {
+        /** 마감·공지 주기 확인 간격(시간). 사용자가 고르지 않고 1시간으로 고정한다. */
+        const val CHECK_INTERVAL_HOURS = 1
+
         private const val HOUR = 60
         private const val DAY = 24 * HOUR
         val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(3 * DAY, DAY, 3 * HOUR, HOUR)

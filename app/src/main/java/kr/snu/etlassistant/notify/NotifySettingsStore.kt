@@ -15,7 +15,6 @@ class NotifySettingsStore(context: Context) {
             deadlineWindowsMinutes = loadWindows(d.deadlineWindowsMinutes),
             briefEnabled = prefs.getBoolean("briefEnabled", d.briefEnabled),
             briefMinutesOfDay = readInts("briefMinutesOfDay", d.briefMinutesOfDay).map { it.coerceIn(0, 1439) }.distinct().take(2).ifEmpty { d.briefMinutesOfDay },
-            checkIntervalHours = prefs.getInt("checkIntervalHours", d.checkIntervalHours).let { if (it in setOf(1, 3, 6, 12)) it else d.checkIntervalHours },
             quietEnabled = prefs.getBoolean("quietEnabled", d.quietEnabled),
             quietStartMinutes = prefs.getInt("quietStartMinutes", d.quietStartMinutes).coerceIn(0, 1439),
             quietEndMinutes = prefs.getInt("quietEndMinutes", d.quietEndMinutes).coerceIn(0, 1439),
@@ -32,7 +31,7 @@ class NotifySettingsStore(context: Context) {
             .putInt("deadlineWindowsVersion", WINDOWS_VERSION)
             .putBoolean("briefEnabled", s.briefEnabled)
             .putString("briefMinutesOfDay", JSONArray(s.briefMinutesOfDay).toString())
-            .putInt("checkIntervalHours", s.checkIntervalHours)
+            .remove("checkIntervalHours") // 예전 버전의 확인 주기 선택(이제 1시간 고정)
             .putBoolean("quietEnabled", s.quietEnabled)
             .putInt("quietStartMinutes", s.quietStartMinutes)
             .putInt("quietEndMinutes", s.quietEndMinutes)

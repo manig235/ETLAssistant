@@ -2,6 +2,7 @@ package kr.snu.etlassistant.chat
 
 import kr.snu.etlassistant.codex.AccountInfo
 import kr.snu.etlassistant.codex.SessionState
+import kr.snu.etlassistant.notify.NotifySettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -66,33 +67,50 @@ class SettingsLogicTest {
 
     // ---- 마감 알림 시점(분) -----------------------------------------------------
 
+    private val def = listOf(4320, 1440, 180, 60)
+
     @Test fun customWindowParsing() {
-        val cur = listOf(4320, 1440, 180, 60)
-        assertEquals(SettingsLogic.CustomWindow.Ok(30), SettingsLogic.parseCustomWindow("30", SettingsLogic.WindowUnit.MINUTE, cur))
-        assertEquals(SettingsLogic.CustomWindow.Ok(300), SettingsLogic.parseCustomWindow(" 5 ", SettingsLogic.WindowUnit.HOUR, cur))
-        assertEquals(SettingsLogic.CustomWindow.Ok(14 * 1440), SettingsLogic.parseCustomWindow("14", SettingsLogic.WindowUnit.DAY, cur))
-        assertTrue(SettingsLogic.parseCustomWindow("", SettingsLogic.WindowUnit.HOUR, cur) is SettingsLogic.CustomWindow.Error)
-        assertTrue(SettingsLogic.parseCustomWindow("5", SettingsLogic.WindowUnit.MINUTE, cur) is SettingsLogic.CustomWindow.Error)
-        assertTrue(SettingsLogic.parseCustomWindow("15", SettingsLogic.WindowUnit.DAY, cur) is SettingsLogic.CustomWindow.Error)
-        assertTrue(SettingsLogic.parseCustomWindow("0", SettingsLogic.WindowUnit.HOUR, cur) is SettingsLogic.CustomWindow.Error)
+        assertEquals(SettingsLogic.CustomWindow.Ok(30), SettingsLogic.parseCustomWindow("30", SettingsLogic.WindowUnit.MINUTE, def))
+        assertEquals(SettingsLogic.CustomWindow.Ok(300), SettingsLogic.parseCustomWindow(" 5 ", SettingsLogic.WindowUnit.HOUR, def))
+        assertEquals(SettingsLogic.CustomWindow.Ok(14 * 1440), SettingsLogic.parseCustomWindow("14", SettingsLogic.WindowUnit.DAY, def))
+        assertTrue(SettingsLogic.parseCustomWindow("", SettingsLogic.WindowUnit.HOUR, def) is SettingsLogic.CustomWindow.Error)
+        assertTrue(SettingsLogic.parseCustomWindow("5", SettingsLogic.WindowUnit.MINUTE, def) is SettingsLogic.CustomWindow.Error)
+        assertTrue(SettingsLogic.parseCustomWindow("15", SettingsLogic.WindowUnit.DAY, def) is SettingsLogic.CustomWindow.Error)
+        assertTrue(SettingsLogic.parseCustomWindow("0", SettingsLogic.WindowUnit.HOUR, def) is SettingsLogic.CustomWindow.Error)
+        // 이미 있는 값, 개수 제한
+        assertTrue(SettingsLogic.parseCustomWindow("1", SettingsLogic.WindowUnit.HOUR, def) is SettingsLogic.CustomWindow.Error)
         val full = (1..12).map { it * 60 }
         assertTrue(SettingsLogic.parseCustomWindow("30", SettingsLogic.WindowUnit.MINUTE, full) is SettingsLogic.CustomWindow.Error)
-        // 이미 켜져 있는 값은 개수 제한에 걸리지 않는다
-        assertEquals(SettingsLogic.CustomWindow.Ok(60), SettingsLogic.parseCustomWindow("1", SettingsLogic.WindowUnit.HOUR, full))
+        assertFalse(SettingsLogic.canAddWindow(full))
+        assertTrue(SettingsLogic.canAddWindow(def))
     }
 
-    @Test fun addToggleAndChips() {
-        val cur = listOf(4320, 1440, 180, 60)
-        val added = SettingsLogic.addWindow(cur, 30)
-        assertEquals(listOf(4320, 1440, 180, 60, 30), added)
-        // 직접 추가한 값도 칩으로 보이고, 프리셋은 꺼져 있어도 보인다
-        val chips = SettingsLogic.windowChips(added)
-        assertTrue(30 in chips && 360 in chips && 10080 in chips)
-        assertEquals(chips.sorted(), chips)
-        // 끄면 칩에서도 사라진다(프리셋이 아니므로)
-        val off = SettingsLogic.toggleWindow(added, 30)
-        assertFalse(30 in SettingsLogic.windowChips(off))
-        // 마지막 하나는 끌 수 없다
-        assertEquals(listOf(60), SettingsLogic.toggleWindow(listOf(60), 60))
+    @Test fun chipsAreOnlyEnabledWindowsNearestFirst() {
+        assertEquals(listOf(60, 180, 1440, 4320), SettingsLogic.windowChips(def))
+        // 프리셋(6시간 등)이라도 켜져 있지 않으면 칩이 없다
+        assertFalse(360 in SettingsLogic.windowChips(def))
+    }
+
+    @Test fun removeAddAndReset() {
+        // 기본 칩(3시간)도 지울 수 있다
+        val noThree = SettingsLogic.removeWindow(def, 180)!!
+        assertEquals(listOf(4320, 1440, 60), noThree)
+        assertFalse(SettingsLogic.isDefaultWindows(noThree))
+        // 다시 추가
+        assertEquals(def, SettingsLogic.addWindow(noThree, 180))
+        // 직접 값 추가 후 삭제
+        val withThirty = SettingsLogic.addWindow(def, 30)
+        assertEquals(listOf(4320, 1440, 180, 60, 30), withThirty)
+        assertEquals(def, SettingsLogic.removeWindow(withThirty, 30))
+        // 마지막 하나는 지우지 않는다
+        assertEquals(null, SettingsLogic.removeWindow(listOf(30), 30))
+        // 없는 값 지우기는 그대로
+        assertEquals(def, SettingsLogic.removeWindow(def, 90))
+        // 되돌리기
+        assertTrue(SettingsLogic.isDefaultWindows(SettingsLogic.defaultWindows()))
+        assertTrue(SettingsLogic.isDefaultWindows(listOf(60, 180, 1440, 4320)))
+        // 개수 제한: 꽉 차면 더하지 않는다
+        val full = (1..12).map { it * 60 }
+        assertEquals(NotifySettings.normalizeWindows(full), SettingsLogic.addWindow(full, 30))
     }
 }
