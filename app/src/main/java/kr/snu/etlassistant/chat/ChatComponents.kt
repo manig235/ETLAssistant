@@ -92,7 +92,7 @@ fun ChatTopBar(onNewChat: () -> Unit, onSettings: () -> Unit) {
             .padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("eTL 비서", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
+        Text("미니 eTL 비서", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
         IconButton(onClick = onNewChat) {
             Icon(Icons.Outlined.AddComment, contentDescription = "새 대화", tint = c.foregroundNeutralPrimary)
         }

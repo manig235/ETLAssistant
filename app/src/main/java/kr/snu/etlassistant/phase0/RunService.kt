@@ -24,10 +24,10 @@ class RunService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Codex 실행 중", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, "비서 실행 중", NotificationManager.IMPORTANCE_LOW)
         )
         val notification = Notification.Builder(this, CHANNEL)
-            .setContentTitle("Codex 실행 중")
+            .setContentTitle("미니 eTL 비서가 일하는 중")
             .setContentText("작업이 끝나면 자동으로 사라집니다")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)

@@ -318,7 +318,7 @@ object CodexSession {
         holder[0] = c
         c.start()
         c.request("initialize", JSONObject()
-            .put("clientInfo", JSONObject().put("name", "etl-android").put("title", "eTL 비서").put("version", "0.1.0"))
+            .put("clientInfo", JSONObject().put("name", "etl-android").put("title", "미니 eTL 비서").put("version", "0.1.0"))
             .put("capabilities", JSONObject().put("experimentalApi", false)))
         c.notify("initialized")
         client = c
@@ -664,7 +664,7 @@ object CodexSession {
         val n = android.app.Notification.Builder(app, "login")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("로그인이 완료됐습니다")
-            .setContentText("탭하면 eTL 비서로 돌아갑니다")
+            .setContentText("탭하면 미니 eTL 비서로 돌아갑니다")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()

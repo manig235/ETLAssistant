@@ -130,7 +130,7 @@ data class NotifySettings(
     val quietEnabled: Boolean = true,
     val quietStartMinutes: Int = 23 * 60,
     val quietEndMinutes: Int = 7 * 60,
-    /** 잠금화면에서는 내용을 숨기고 "eTL 알림"만 보인다. */
+    /** 잠금화면에서는 내용을 숨기고 "미니 eTL 알림"만 보인다. */
     val hideContentOnLockScreen: Boolean = true,
 ) {
     /** 어떤 알림이든 켜져 있는가(전부 꺼져 있으면 예약 작업을 만들지 않는다). */

@@ -175,6 +175,8 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
                 ApiKeySection(s, a)
                 Spacer(Modifier.height(32.dp))
                 MiscSection(a)
+                Spacer(Modifier.height(32.dp))
+                AboutSection()
                 Spacer(Modifier.height(40.dp))
             }
         }
@@ -757,6 +759,23 @@ private fun MiscSection(a: SettingsActions) {
         SettingsCard {
             LinkRow("처음 안내 다시 보기", onClick = a.replayOnboarding)
             LinkRow("개발자 도구", onClick = a.openDevTools)
+        }
+    }
+}
+
+@Composable
+private fun AboutSection() {
+    val context = LocalContext.current
+    val version = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+    }
+    Section("앱 정보") {
+        SettingsCard {
+            Text("미니 eTL 비서", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+            Spacer(Modifier.height(4.dp))
+            Caption("만든 사람: 미니 · 버전 $version")
+            Spacer(Modifier.height(10.dp))
+            Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
         }
     }
 }
