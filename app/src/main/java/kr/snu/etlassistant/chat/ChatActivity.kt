@@ -119,6 +119,7 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
                 CodexSession.renameConversation(id, title)
                 refreshChats()
             },
+            onDrawerBusy = { toast("답변이 끝난 뒤에 바꾸거나 지울 수 있어요") },
             onDeleteChat = { id ->
                 if (!CodexSession.deleteConversation(id)) toast("답변이 끝난 뒤에 지울 수 있어요")
                 refreshChats()

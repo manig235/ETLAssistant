@@ -18,8 +18,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role as SemRole
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wanted.android.wanted.design.actions.button.textbutton.WantedTextButton
@@ -37,7 +42,11 @@ import com.wanted.android.wanted.design.input.textinput.textfield.WantedTextFiel
 import com.wanted.android.wanted.design.theme.DesignSystemTheme
 import java.time.ZoneId
 
-/** 대화 목록(서랍). 맨 위 "새 대화", 아래는 오늘/어제/지난 7일/이전으로 묶은 대화. 길게 누르면 이름 바꾸기·삭제. */
+/**
+ * 대화 목록(서랍). 맨 위 "새 대화", 아래는 오늘/어제/지난 7일/이전으로 묶은 대화.
+ * 항목마다 연필(이름 바꾸기)과 휴지통(삭제)을 항상 보인다(길게 누르기는 찾기 어려워서). 길게 누르기 메뉴도 남겨 둔다.
+ * 답변 중([busy])에는 두 버튼을 흐리게 하고 누르면 [onBusy]로 알린다.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatDrawer(
@@ -47,6 +56,8 @@ fun ChatDrawer(
     onOpen: (String) -> Unit,
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    busy: Boolean = false,
+    onBusy: () -> Unit = {},
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
@@ -86,13 +97,9 @@ fun ChatDrawer(
                 }
                 items(list, key = { it.id }) { m ->
                     val selected = m.id == currentId
-                    Text(
-                        m.title,
-                        style = t.body2Medium,
-                        color = if (selected) c.foregroundBrandPrimary else c.foregroundNeutralPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
+                    val iconTint = if (busy) c.foregroundDisablePrimary else c.foregroundNeutralSecondary
+                    Row(
+                        Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
                             .clip(RoundedCornerShape(12.dp))
@@ -104,8 +111,30 @@ fun ChatDrawer(
                                 onClick = { onOpen(m.id) },
                                 onLongClick = { menuFor = m },
                             )
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
-                    )
+                            .padding(start = 12.dp, end = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            m.title,
+                            style = t.body2Medium,
+                            color = if (selected) c.foregroundBrandPrimary else c.foregroundNeutralPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(vertical = 12.dp),
+                        )
+                        IconButton(
+                            onClick = { if (busy) onBusy() else renaming = m },
+                            modifier = Modifier.size(40.dp).semantics { contentDescription = "'${m.title}' 이름 바꾸기" },
+                        ) {
+                            Icon(Icons.Outlined.Edit, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(
+                            onClick = { if (busy) onBusy() else deleting = m },
+                            modifier = Modifier.size(40.dp).semantics { contentDescription = "'${m.title}' 지우기" },
+                        ) {
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+                        }
+                    }
                 }
             }
         }
@@ -118,8 +147,8 @@ fun ChatDrawer(
             title = { Text(m.title, style = t.headline2Bold, color = c.foregroundNeutralPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             text = {
                 Column {
-                    WantedTextButton(text = "이름 바꾸기", onClick = { menuFor = null; renaming = m })
-                    WantedTextButton(text = "삭제", onClick = { menuFor = null; deleting = m })
+                    WantedTextButton(text = "이름 바꾸기", onClick = { menuFor = null; if (busy) onBusy() else renaming = m })
+                    WantedTextButton(text = "삭제", onClick = { menuFor = null; if (busy) onBusy() else deleting = m })
                 }
             },
             confirmButton = { WantedTextButton(text = "닫기", onClick = { menuFor = null }) },

@@ -102,6 +102,8 @@ class ChatActions(
     val onDrawerOpened: () -> Unit,
     val onOpenChat: (String) -> Unit,
     val onRenameChat: (String, String) -> Unit,
+    /** 답변 중에 대화 이름 바꾸기·삭제를 누름. */
+    val onDrawerBusy: () -> Unit,
     val onDeleteChat: (String) -> Unit,
 )
 
@@ -144,6 +146,8 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                     onOpen = { id -> a.onOpenChat(id); closeDrawer() },
                     onRename = a.onRenameChat,
                     onDelete = a.onDeleteChat,
+                    busy = vm.busy,
+                    onBusy = a.onDrawerBusy,
                 )
             }
         },
