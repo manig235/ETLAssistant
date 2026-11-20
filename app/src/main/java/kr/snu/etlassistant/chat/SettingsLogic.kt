@@ -2,6 +2,7 @@ package kr.snu.etlassistant.chat
 
 import kr.snu.etlassistant.codex.AccountInfo
 import kr.snu.etlassistant.codex.SessionState
+import kr.snu.etlassistant.notify.NotifySettings
 
 /** 설정 화면의 색 톤(상태 줄). */
 enum class StatusTone { NEUTRAL, POSITIVE, CAUTION, NEGATIVE }
@@ -63,6 +64,13 @@ object SettingsLogic {
     /** 두 번째 브리핑 시각을 지운다(최소 1개는 남는다). */
     fun removeSecondBriefTime(times: List<Int>): List<Int> =
         NotifyUiFormat.normalizeBriefTimes(NotifyUiFormat.normalizeBriefTimes(times).take(1))
+
+    /** 마감 알림 시점을 켜고 끈다. 마지막 하나는 끌 수 없다(알림 자체는 스위치로 끈다). */
+    fun toggleWindow(current: List<Int>, hours: Int): List<Int> {
+        val base = NotifySettings.normalizeWindows(current)
+        val next = if (hours in base) base - hours else base + hours
+        return if (next.isEmpty()) base else NotifySettings.normalizeWindows(next)
+    }
 
     /** 확인 주기 선택지(시간). */
     val intervalChoices: List<Int> = listOf(1, 3, 6, 12)

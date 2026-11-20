@@ -84,6 +84,8 @@ class OnboardingActions(
     val reopenLogin: (String) -> Unit,
     val copyCode: (String) -> Unit,
     val applyNotifications: () -> Unit,
+    /** 시각 선택 창을 띄운다(하루 중 분). */
+    val pickTime: (initial: Int, onPicked: (Int) -> Unit) -> Unit,
     val finish: (prefill: String?) -> Unit,
 )
 
@@ -540,7 +542,7 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
             }
         }
         Spacer(Modifier.height(20.dp))
-        SwitchRow("마감 임박 알림", "3일 전과 24시간 전에 알려요", vm.deadlineAlerts) { vm.deadlineAlerts = it }
+        SwitchRow("마감 임박 알림", NotifyUiFormat.windowsSummary(vm.deadlineWindows) + " (설정에서 바꿀 수 있어요)", vm.deadlineAlerts) { vm.deadlineAlerts = it }
         SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면", vm.announcementAlerts) { vm.announcementAlerts = it }
         SwitchRow("정기 브리핑", "마감·누락·새 공지를 한 번에 요약해서", vm.briefEnabled) { vm.briefEnabled = it }
         if (vm.briefEnabled) {
@@ -557,6 +559,13 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
                         onClick = { vm.briefMinutes = m },
                     )
                 }
+                // 목록에 없는 시각은 "직접 선택"으로 고른다. 고른 뒤에는 그 시각이 칩에 보인다.
+                val custom = vm.briefMinutes !in OnboardingLogic.briefTimeChoices
+                WantedChip(
+                    text = if (custom) NotifyUiFormat.formatTime(vm.briefMinutes, is24h = false) + " · 바꾸기" else "직접 선택",
+                    isActive = custom,
+                    onClick = { a.pickTime(vm.briefMinutes) { vm.briefMinutes = it } },
+                )
             }
         }
     }

@@ -48,4 +48,28 @@ object NotifySchedule {
     /** 토큰 오류 알림은 마지막으로 띄운 뒤 [intervalMillis](기본 24시간)가 지나야 다시 띄운다. */
     fun authFailureDue(lastFiredMillis: Long?, nowMillis: Long, intervalMillis: Long = 24L * HOUR_MILLIS): Boolean =
         lastFiredMillis == null || nowMillis - lastFiredMillis >= intervalMillis
+
+    // ---- 마감 알람(권한 없는 알람의 지연 줄이기) ----------------------------------
+
+    /** 마지막 알람을 목표 시각에 직접 거는 거리. 시스템 지연은 남은 시간의 75%라 최대 약 6분. */
+    const val ALARM_FINAL_MILLIS = 8 * 60_000L
+    /** 시스템이 권한 없는 알람을 늦출 수 있는 최대 폭. */
+    private const val ALARM_MAX_WINDOW_MILLIS = HOUR_MILLIS
+
+    /**
+     * 권한 없는 알람(`setAndAllowWhileIdle`)은 [trigger, trigger + min(남은 시간 × 0.75, 1시간)] 사이 아무 때나 울린다.
+     * 목표가 멀면 중간 알람으로 다가가며(그때는 네트워크 없이 다시 걸기만 한다) 마지막 몇 분 안에서만 목표에 맞춘다.
+     * 중간 알람은 지연이 최대여도 목표를 넘지 않게 잡는다.
+     * @return (다음 알람 시각, 이 알람이 목표 시각의 확인인가)
+     */
+    fun nextAlarm(nowMillis: Long, targetMillis: Long): Pair<Long, Boolean> {
+        val left = targetMillis - nowMillis
+        return when {
+            left <= ALARM_FINAL_MILLIS -> targetMillis to true
+            // 멀면 지연 폭(최대 1시간)보다 조금 더 앞에 건다: 가장 늦어도 목표 5분 전.
+            left > 2 * ALARM_MAX_WINDOW_MILLIS -> (targetMillis - ALARM_MAX_WINDOW_MILLIS - 5 * 60_000L) to false
+            // 가까우면 남은 시간의 절반 뒤: 가장 늦어도 now + 0.5 × 1.75 × left < 목표.
+            else -> (nowMillis + left / 2) to false
+        }
+    }
 }

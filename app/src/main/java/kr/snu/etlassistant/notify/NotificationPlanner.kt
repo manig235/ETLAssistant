@@ -177,6 +177,27 @@ object NotificationPlanner {
 
     private fun key(a: AssignmentItem, w: Int) = "deadline:${a.courseId}:${a.assignmentId}:$w"
 
+    /**
+     * 다음 마감 알림 시점(어떤 과제가 아직 알리지 않은 창에 들어가는 가장 이른 시각). 없으면 null.
+     * 주기 확인만으로는 "1시간 전" 알림이 확인 간격만큼 늦을 수 있어서, 이 시각에 맞춰 한 번 더 확인하는 데 쓴다.
+     * [state]는 이번 확인에서 띄운 키까지 기록된 상태를 넘긴다.
+     */
+    fun nextDeadlineCheckAt(snapshot: Snapshot, state: NotifyState, now: Instant, settings: NotifySettings): Instant? {
+        if (!settings.deadlineAlerts) return null
+        val windows = settings.deadlineWindowsHours.filter { it > 0 }.distinct()
+        var best: Instant? = null
+        for (a in snapshot.assignments) {
+            val due = a.due ?: continue
+            if (a.submitted || a.missing || !due.isAfter(now)) continue
+            for (w in windows) {
+                if (state.fired.containsKey(key(a, w))) continue
+                val t = due.minus(Duration.ofHours(w.toLong()))
+                if (t.isAfter(now) && (best == null || t.isBefore(best))) best = t
+            }
+        }
+        return best
+    }
+
     private fun single(a: AssignmentItem, now: Instant, fired: List<String>): Notice {
         val title = NoticeText.cut("마감 임박 · " + NoticeText.clean(a.courseName), NoticeText.TITLE_MAX)
         val text = NoticeText.cut(

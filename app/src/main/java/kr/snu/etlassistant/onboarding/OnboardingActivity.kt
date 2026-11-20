@@ -1,6 +1,7 @@
 package kr.snu.etlassistant.onboarding
 
 import android.Manifest
+import android.app.TimePickerDialog
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -9,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -57,6 +59,10 @@ class OnboardingActivity : ComponentActivity(), CodexSession.Listener {
                 Toast.makeText(this, "코드를 복사했어요", Toast.LENGTH_SHORT).show()
             },
             applyNotifications = { vm.applyNotificationChoices() },
+            pickTime = { initial, onPicked ->
+                val m = initial.coerceIn(0, 1439)
+                TimePickerDialog(this, { _, h, min -> onPicked(h * 60 + min) }, m / 60, m % 60, DateFormat.is24HourFormat(this)).show()
+            },
             finish = { prefill -> finishOnboarding(prefill) },
         )
         setContent { OnboardingRoot(vm, actions) }

@@ -43,6 +43,9 @@ object NotifyRunner {
                 s.lastResult = "성공 · 마감 알림 ${deadlines}건, 공지 알림 ${anns}건"
                 s.prune(nowMs)
             }
+            // 다음 마감 알림 시점에 맞춰 한 번 더 확인한다(주기 확인만으로는 확인 간격만큼 늦을 수 있다).
+            val nextAt = NotificationPlanner.nextDeadlineCheckAt(snapshot, stateStore.load(), now, settings)
+            runCatching { DeadlineAlarm.schedule(app, nextAt) }
             log("확인 완료: 마감 $deadlines, 공지 $anns, 조회 오류 ${snapshot.errors.size}")
             Outcome.SUCCESS
         }

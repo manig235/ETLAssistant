@@ -120,8 +120,8 @@ data class NotifyState(
 data class NotifySettings(
     val deadlineAlerts: Boolean = true,
     val announcementAlerts: Boolean = true,
-    /** 마감 몇 시간 전에 알릴지(내림차순, 예: 72, 24). */
-    val deadlineWindowsHours: List<Int> = listOf(72, 24),
+    /** 마감 몇 시간 전에 알릴지(내림차순). 기본은 3일, 24시간, 3시간, 1시간 전. */
+    val deadlineWindowsHours: List<Int> = DEFAULT_DEADLINE_WINDOWS,
     val briefEnabled: Boolean = false,
     /** 브리핑을 보낼 시각(하루 중 분, 0..1439). 최대 2개. 기기의 현재 시간대 기준. */
     val briefMinutesOfDay: List<Int> = listOf(8 * 60),
@@ -138,6 +138,16 @@ data class NotifySettings(
     val anyEnabled: Boolean get() = deadlineAlerts || announcementAlerts || briefEnabled
     /** 마감·공지 주기 확인이 필요한가(브리핑도 데이터가 필요하므로 브리핑만 켜도 브리핑 시점에 조회한다). */
     val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts
+
+    companion object {
+        val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(72, 24, 3, 1)
+        /** 고를 수 있는 마감 알림 시점(시간). */
+        val DEADLINE_WINDOW_CHOICES: List<Int> = listOf(1, 3, 6, 12, 24, 48, 72, 168)
+
+        /** 저장·표시용으로 정리한다: 고를 수 있는 값만, 중복 제거, 내림차순. 비면 기본값. */
+        fun normalizeWindows(hours: List<Int>): List<Int> =
+            hours.filter { it in DEADLINE_WINDOW_CHOICES }.distinct().sortedDescending().ifEmpty { DEFAULT_DEADLINE_WINDOWS }
+    }
 }
 
 /** 방해 금지 시간 판정(자정을 넘는 구간 포함). [minuteOfDay]는 0..1439. */

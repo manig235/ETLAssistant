@@ -2,6 +2,7 @@ package kr.snu.etlassistant.chat
 
 import kr.snu.etlassistant.etl.EtlLogic
 import java.time.Instant
+import kr.snu.etlassistant.notify.NotifySettings
 
 /** 알림 설정 화면용 순수 포맷 헬퍼(안드로이드 클래스에 의존하지 않는다). */
 object NotifyUiFormat {
@@ -20,6 +21,13 @@ object NotifyUiFormat {
     /** 브리핑 시각 목록 정리: 0..1439로 보정, 중복 제거, 오름차순, 최대 2개, 비면 오전 8시. */
     fun normalizeBriefTimes(times: List<Int>): List<Int> =
         times.map { it.coerceIn(0, 1439) }.distinct().sorted().take(2).ifEmpty { listOf(8 * 60) }
+
+    /** 마감 알림 시점 이름: 48시간 이상이고 24의 배수면 `N일`, 아니면 `N시간`. */
+    fun windowLabel(hours: Int): String = if (hours >= 48 && hours % 24 == 0) "${hours / 24}일" else "${hours}시간"
+
+    /** "3일, 24시간, 3시간, 1시간 전에 알려요" */
+    fun windowsSummary(hours: List<Int>): String =
+        NotifySettings.normalizeWindows(hours).joinToString(", ") { windowLabel(it) } + " 전에 알려요"
 
     fun describeLastCheck(lastCheckAt: Long, lastResult: String): String {
         if (lastCheckAt <= 0L) return "아직 확인한 적이 없습니다"

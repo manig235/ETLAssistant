@@ -16,6 +16,10 @@
         android:theme="@style/Theme.Phase0"
         tools:ignore="DataExtractionRules">
 
+        <receiver
+            android:name="kr.snu.etlassistant.notify.DeadlineAlarmReceiver"
+            android:exported="false" />
+
         <service
             android:name=".RunService"
             android:exported="false"

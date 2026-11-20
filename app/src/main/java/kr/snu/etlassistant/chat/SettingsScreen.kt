@@ -450,7 +450,23 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                 StatusBanner("eTL 토큰을 먼저 저장해야 알림이 동작해요.", StatusTone.CAUTION)
             }
             Spacer(Modifier.height(8.dp))
-            SwitchRow("마감 임박 알림", "3일 전, 24시간 전에 알려요", n.deadlineAlerts) { v -> a.updateNotify { it.copy(deadlineAlerts = v) } }
+            SwitchRow("마감 임박 알림", NotifyUiFormat.windowsSummary(n.deadlineWindowsHours), n.deadlineAlerts) { v -> a.updateNotify { it.copy(deadlineAlerts = v) } }
+            if (n.deadlineAlerts) {
+                val windows = NotifySettings.normalizeWindows(n.deadlineWindowsHours)
+                FlowRow(
+                    Modifier.padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    for (h in NotifySettings.DEADLINE_WINDOW_CHOICES) {
+                        WantedChip(
+                            text = NotifyUiFormat.windowLabel(h) + " 전",
+                            isActive = h in windows,
+                            onClick = { a.updateNotify { it.copy(deadlineWindowsHours = SettingsLogic.toggleWindow(it.deadlineWindowsHours, h)) } },
+                        )
+                    }
+                }
+            }
             SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려요", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
             SwitchRow("정기 브리핑", "마감·누락·새 공지를 정해진 시각에 요약해서 보내요", n.briefEnabled) { v -> a.updateNotify { it.copy(briefEnabled = v) } }
             if (n.briefEnabled) {
