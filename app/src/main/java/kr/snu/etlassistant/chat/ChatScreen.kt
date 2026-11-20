@@ -37,6 +37,10 @@ import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.ModelCatalog
 import kr.snu.etlassistant.codex.ModelChoice
 import kr.snu.etlassistant.codex.ModelInfo
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
 
 /**
  * 채팅 화면이 그리는 상태. 회전해도 입력·시트 상태가 남도록 ViewModel에 둔다.
@@ -60,6 +64,9 @@ class ChatViewModel : ViewModel() {
     val pending = mutableStateListOf<Attachment>()
     /** 첨부를 가져오는 중인 개수. */
     var importing by mutableIntStateOf(0)
+    /** 대화 목록(서랍을 열 때 새로 읽는다)과 지금 대화. */
+    var chatList by mutableStateOf<List<ChatMeta>>(emptyList())
+    var currentChatId by mutableStateOf("")
 
     fun bump() { version++ }
 
@@ -91,6 +98,11 @@ class ChatActions(
     val onModelChoice: (ModelChoice) -> Unit,
     val onAttach: (AttachSource) -> Unit,
     val attachments: AttachmentActions,
+    /** 서랍이 열릴 때(목록 새로 읽기). */
+    val onDrawerOpened: () -> Unit,
+    val onOpenChat: (String) -> Unit,
+    val onRenameChat: (String, String) -> Unit,
+    val onDeleteChat: (String) -> Unit,
 )
 
 @Composable
@@ -112,6 +124,30 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
     // 위로 올려 보는 중이면 위치가 그대로다. 새 메시지가 생기면(scrollTick) 맨 아래로 내려간다.
     LaunchedEffect(vm.scrollTick) { listState.scrollToItem(0) }
 
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
+    // 손가락으로 끌어서 열어도 목록을 새로 읽는다.
+    LaunchedEffect(drawerState.targetValue) { if (drawerState.targetValue == DrawerValue.Open) a.onDrawerOpened() }
+    fun closeDrawer() { drawerScope.launch { drawerState.close() } }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = c.backgroundNeutralPrimary,
+                modifier = Modifier.systemBarsPadding(),
+            ) {
+                ChatDrawer(
+                    chats = vm.chatList,
+                    currentId = vm.currentChatId,
+                    onNew = { a.onNewChat(); closeDrawer() },
+                    onOpen = { id -> a.onOpenChat(id); closeDrawer() },
+                    onRename = a.onRenameChat,
+                    onDelete = a.onDeleteChat,
+                )
+            }
+        },
+    ) {
     Column(
         Modifier
             .fillMaxSize()
@@ -119,7 +155,7 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
             .systemBarsPadding()
             .imePadding()
     ) {
-        ChatTopBar(onNewChat = a.onNewChat, onSettings = a.onSettings)
+        ChatTopBar(onMenu = { drawerScope.launch { drawerState.open() } }, onNewChat = a.onNewChat, onSettings = a.onSettings)
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
             ModelChip(
                 label = ModelCatalog.choiceLabel(vm.choice, vm.models),
@@ -179,6 +215,8 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
             onAttach = a.onAttach,
             attachEnabled = vm.pending.size + vm.importing < AttachmentLogic.MAX_PENDING,
         )
+    }
+
     }
 
     if (vm.sheetOpen) {

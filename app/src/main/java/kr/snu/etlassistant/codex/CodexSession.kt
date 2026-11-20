@@ -15,6 +15,7 @@ import kr.snu.etlassistant.chat.ActivityTracker
 import kr.snu.etlassistant.chat.Attachment
 import kr.snu.etlassistant.chat.AttachmentLogic
 import kr.snu.etlassistant.chat.ChatModel
+import kr.snu.etlassistant.chat.ChatStore
 import kr.snu.etlassistant.etl.ApiKeyStore
 import kr.snu.etlassistant.etl.EtlEvents
 import kr.snu.etlassistant.etl.EtlService
@@ -79,9 +80,15 @@ object AppSettings {
         get() = prefs.getString("effort", null)
         set(v) = prefs.edit().apply { if (v == null) remove("effort") else putString("effort", v) }.apply()
 
-    var threadId: String?
+    /** 예전(대화 하나) 형식의 스레드 ID. 대화 목록으로 옮길 때만 읽는다. 지금은 대화마다 [ChatMeta.threadId]에 둔다. */
+    var legacyThreadId: String?
         get() = prefs.getString("threadId", null)
         set(v) = prefs.edit().apply { if (v == null) remove("threadId") else putString("threadId", v) }.apply()
+
+    /** 마지막으로 열어 둔 대화. 없거나 지워졌으면 빈 새 대화로 시작한다. */
+    var currentChatId: String?
+        get() = prefs.getString("currentChatId", null)
+        set(v) = prefs.edit().apply { if (v == null) remove("currentChatId") else putString("currentChatId", v) }.apply()
 }
 
 /**
@@ -104,6 +111,14 @@ object CodexSession {
     private val listeners = CopyOnWriteArraySet<Listener>()
 
     lateinit var model: ChatModel
+        private set
+
+    /** 대화 목록. */
+    lateinit var chats: ChatStore
+        private set
+
+    /** 지금 화면에 열린 대화(아직 아무것도 보내지 않았으면 목록에는 없다). */
+    @Volatile var chatId: String = ""
         private set
 
     @Volatile var state = SessionState.STOPPED
@@ -211,7 +226,16 @@ object CodexSession {
     fun init(context: Context) {
         app = context.applicationContext
         AppSettings.init(app)
-        model = ChatModel(File(app.filesDir, "chat.json")).also { it.load() }
+        chats = ChatStore(File(app.filesDir, "chats")).also { it.load() }
+        // 예전 형식(chat.json 하나 + 스레드 하나)이 있으면 첫 대화로 옮긴다.
+        chats.migrateLegacy(File(app.filesDir, "chat.json"), AppSettings.legacyThreadId, System.currentTimeMillis())?.let {
+            AppSettings.currentChatId = it
+        }
+        AppSettings.legacyThreadId = null
+        val current = AppSettings.currentChatId?.takeIf { ChatStore.isSafeId(it) } ?: chats.list().firstOrNull()?.id ?: chats.newId()
+        chatId = current
+        AppSettings.currentChatId = current
+        model = ChatModel(chats.fileFor(current)).also { it.load() }
         // 비서가 eTL 파일을 받거나 PDF 쪽 이미지를 만들면 대화에 카드로 붙인다. 답변 중일 때만(개발자 도구의 시험 실행은 제외).
         EtlEvents.listener = object : EtlEvents.Listener {
             override fun onFilesSaved(files: List<EtlEvents.SavedFile>, pagePreview: Boolean) {
@@ -475,11 +499,13 @@ object CodexSession {
         // 사진은 Codex가 직접 읽어 모델에게 이미지로 보낸다.
         images.forEach { input.put(JSONObject().put("type", "localImage").put("path", it.path)) }
         model.addUser(text, attachments)
+        val forChat = chatId
+        chats.noteUserMessage(forChat, text, attachments, System.currentTimeMillis())
         setBusy(true)
         setActivity(tracker.turnStarted())
         calls.execute {
             try {
-                val thread = ensureThread(c)
+                val thread = ensureThread(c, forChat)
                 val turnParams = JSONObject().put("threadId", thread).put("input", input)
                 val choice = effectiveChoice()
                 choice.model?.let { turnParams.put("model", it) }
@@ -500,7 +526,7 @@ object CodexSession {
 
     fun interrupt() {
         val c = client ?: return
-        val thread = AppSettings.threadId ?: return
+        val thread = chats.get(chatId)?.threadId ?: return
         val turn = currentTurnId ?: return
         calls.execute {
             try {
@@ -510,16 +536,61 @@ object CodexSession {
         }
     }
 
-    /** 새 대화를 시작한다(저장된 스레드를 잊는다). */
-    fun newConversation() {
-        AppSettings.threadId = null
-        main.post { model.clear() }
+    /**
+     * 빈 새 대화를 연다. 지금 대화는 목록에 그대로 남는다(아무것도 보내지 않은 대화는 목록에 쌓이지 않는다).
+     * 메인 스레드에서 부른다. 답변 중이면 false.
+     */
+    fun newConversation(): Boolean {
+        if (busy) return false
+        if (chats.get(chatId) == null && model.messages.isEmpty()) return true // 이미 빈 새 대화
+        openChat(chats.newId())
+        return true
+    }
+
+    /** 목록의 대화를 연다. 메인 스레드에서 부른다. 답변 중이면 false. */
+    fun openConversation(id: String): Boolean {
+        if (busy) return false
+        if (!ChatStore.isSafeId(id) || id == chatId) return true
+        openChat(id)
+        return true
+    }
+
+    private fun openChat(id: String) {
+        if (chats.get(chatId) != null) model.save() // 아무것도 보내지 않은 빈 대화는 파일을 만들지 않는다
+        chatId = id
+        AppSettings.currentChatId = id
+        model.switchTo(chats.fileFor(id))
+        setActivity(null)
+    }
+
+    fun renameConversation(id: String, title: String) = chats.rename(id, title)
+
+    /**
+     * 대화를 지운다(색인과 메시지 파일). Codex 쪽 스레드는 thread/archive로 보관 처리한다(실패해도 무시).
+     * 지금 대화를 지우면 빈 새 대화로 바꾼다. 메인 스레드에서 부른다. 답변 중이면 false.
+     */
+    fun deleteConversation(id: String): Boolean {
+        if (busy) return false
+        val removed = chats.delete(id) ?: return true
+        if (id == chatId) openChat(chats.newId())
+        val thread = removed.threadId
+        val c = client
+        if (thread != null && c != null) {
+            calls.execute {
+                try {
+                    c.request("thread/archive", JSONObject().put("threadId", thread), 15)
+                } catch (e: IOException) {
+                    CodexRunner.log.line("[session] 스레드 보관 실패(무시): ${e.message}")
+                }
+            }
+        }
+        return true
     }
 
     @Synchronized
-    private fun ensureThread(c: AppServerClient): String {
+    private fun ensureThread(c: AppServerClient, forChat: String): String {
         val cwd = File(app.filesDir, "workspace").path
-        val saved = AppSettings.threadId
+        val saved = chats.get(forChat)?.threadId
         val choice = effectiveChoice()
         CodexRunner.log.line("[session] 모델: ${choice.model ?: "자동"}, 강도: ${choice.effort ?: "기본"}")
         if (saved != null) {
@@ -531,7 +602,8 @@ object CodexSession {
                 return saved
             } catch (e: IOException) {
                 CodexRunner.log.line("[session] 스레드 재개 실패, 새로 시작합니다: ${e.message}")
-                AppSettings.threadId = null
+                chats.setThread(forChat, null)
+                main.post { if (chatId == forChat) model.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 갑니다.") }
             }
         }
         val start = JSONObject().put("cwd", cwd)
@@ -540,7 +612,7 @@ object CodexSession {
         val r = c.request("thread/start", start)
         val id = r.optJSONObject("thread")?.optString("id")?.takeIf { it.isNotEmpty() }
             ?: throw IOException("스레드를 만들지 못했습니다")
-        AppSettings.threadId = id
+        chats.setThread(forChat, id)
         return id
     }
 

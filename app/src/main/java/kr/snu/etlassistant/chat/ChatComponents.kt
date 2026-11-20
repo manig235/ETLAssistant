@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stop
@@ -82,16 +83,19 @@ import kr.snu.etlassistant.onboarding.OnboardingLogic
 // ---- 상단 바 / 모델 칩 --------------------------------------------------------
 
 @Composable
-fun ChatTopBar(onNewChat: () -> Unit, onSettings: () -> Unit) {
+fun ChatTopBar(onMenu: () -> Unit, onNewChat: () -> Unit, onSettings: () -> Unit) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     Row(
         Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .padding(start = 20.dp, end = 8.dp),
+            .padding(start = 4.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        IconButton(onClick = onMenu) {
+            Icon(Icons.Outlined.Menu, contentDescription = "대화 목록", tint = c.foregroundNeutralPrimary)
+        }
         Text("미니 eTL 비서", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
         IconButton(onClick = onNewChat) {
             Icon(Icons.Outlined.AddComment, contentDescription = "새 대화", tint = c.foregroundNeutralPrimary)

@@ -64,7 +64,11 @@ class Message(
  * 대화 상태. 화면(액티비티)이 사라져도 유지되는 싱글턴이 들고 있다.
  * **메인 스레드에서만** 만지고, 바뀌면 [listener]로 알린다.
  */
-class ChatModel(private val file: File?) {
+class ChatModel(file: File?) {
+
+    /** 지금 대화의 저장 파일. [switchTo]로 다른 대화로 바꾼다. */
+    var file: File? = file
+        private set
 
     interface Listener {
         fun onAdded(index: Int)
@@ -137,6 +141,14 @@ class ChatModel(private val file: File?) {
             }
         }
         if (changed) save()
+    }
+
+    /** 다른 대화로 바꾼다: 메시지를 비우고 [newFile]에서 읽는다(파일이 없으면 빈 대화). */
+    fun switchTo(newFile: File?) {
+        file = newFile
+        messages.clear()
+        load()
+        listener?.onReset()
     }
 
     fun clear() {

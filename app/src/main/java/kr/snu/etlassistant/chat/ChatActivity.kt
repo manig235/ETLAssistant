@@ -85,8 +85,8 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
             onSend = { onSendClicked() },
             onSuggestion = { text -> send(text, clearInput = false) },
             onNewChat = {
-                if (CodexSession.busy) Toast.makeText(this, "답변이 끝난 뒤에 새 대화를 시작할 수 있어요", Toast.LENGTH_SHORT).show()
-                else CodexSession.newConversation()
+                if (!CodexSession.newConversation()) toast("답변이 끝난 뒤에 새 대화를 시작할 수 있어요")
+                refreshChats()
             },
             onSettings = { openSettings() },
             onBanner = { action ->
@@ -109,6 +109,20 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
                 CodexSession.setModelChoice(choice)
             },
             onAttach = { source -> attach(source) },
+            onDrawerOpened = { refreshChats() },
+            onOpenChat = { id ->
+                if (!CodexSession.openConversation(id)) toast("답변이 끝난 뒤에 다른 대화로 옮길 수 있어요")
+                refreshChats()
+                vm.scrollToBottom()
+            },
+            onRenameChat = { id, title ->
+                CodexSession.renameConversation(id, title)
+                refreshChats()
+            },
+            onDeleteChat = { id ->
+                if (!CodexSession.deleteConversation(id)) toast("답변이 끝난 뒤에 지울 수 있어요")
+                refreshChats()
+            },
             attachments = AttachmentActions(onOpen = { openAttachment(it) }, onShare = { shareAttachment(it) }),
         )
         setContent { ChatRoot(vm, actions) }
@@ -331,6 +345,12 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
     }
 
     private fun uiPrefs() = getSharedPreferences("ui", Context.MODE_PRIVATE)
+
+    /** 대화 목록과 지금 대화를 화면 상태로 옮긴다. */
+    private fun refreshChats() {
+        vm.chatList = CodexSession.chats.list()
+        vm.currentChatId = CodexSession.chatId
+    }
 
     /** 켜 둔 마감·공지·브리핑 알림이 실제로 올 수 있는지(권한, 앱 전체 알림, 그 알림의 채널). */
     private fun notifyProblem(): NotifyProblem? {
