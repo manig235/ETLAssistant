@@ -148,7 +148,7 @@ object NotificationPlanner {
     // ---- 마감 ---------------------------------------------------------------
 
     private fun deadlineNotices(snapshot: Snapshot, state: NotifyState, now: Instant, settings: NotifySettings): List<Notice> {
-        val windows = settings.deadlineWindowsHours.filter { it > 0 }.distinct().sorted()
+        val windows = settings.deadlineWindowsMinutes.filter { it > 0 }.distinct().sorted()
         if (windows.isEmpty()) return emptyList()
 
         // 창 → (과제, 함께 기록할 키들)
@@ -160,8 +160,8 @@ object NotificationPlanner {
             if (a.submitted || a.missing || !due.isAfter(now)) continue
             if (!seen.add(a.courseId to a.assignmentId)) continue
             val left = Duration.between(now, due)
-            val w = windows.firstOrNull { left <= Duration.ofHours(it.toLong()) } ?: continue
-            if (state.fired.containsKey(key(a, w))) continue
+            val w = windows.firstOrNull { left <= Duration.ofMinutes(it.toLong()) } ?: continue
+            if (isFired(state, a, w)) continue
             groups.getOrPut(w) { mutableListOf() } += a
             val ks = keys.getOrPut(w) { linkedSetOf() }
             ks += key(a, w)
@@ -175,7 +175,13 @@ object NotificationPlanner {
         }
     }
 
-    private fun key(a: AssignmentItem, w: Int) = "deadline:${a.courseId}:${a.assignmentId}:$w"
+    /** 중복 방지 키(분 단위). 예전 시간 단위 키(`deadline:…:{시간}`)와 섞이지 않게 접두어를 바꿨다. */
+    private fun key(a: AssignmentItem, w: Int) = "deadline-m:${a.courseId}:${a.assignmentId}:$w"
+
+    /** 이미 알렸는가. 시간 단위로 떨어지는 창은 예전 키로 기록된 것도 인정한다(업데이트 직후 같은 알림이 다시 오지 않게). */
+    private fun isFired(state: NotifyState, a: AssignmentItem, w: Int): Boolean =
+        state.fired.containsKey(key(a, w)) ||
+            (w % 60 == 0 && state.fired.containsKey("deadline:${a.courseId}:${a.assignmentId}:${w / 60}"))
 
     /**
      * 다음 마감 알림 시점(어떤 과제가 아직 알리지 않은 창에 들어가는 가장 이른 시각). 없으면 null.
@@ -184,14 +190,14 @@ object NotificationPlanner {
      */
     fun nextDeadlineCheckAt(snapshot: Snapshot, state: NotifyState, now: Instant, settings: NotifySettings): Instant? {
         if (!settings.deadlineAlerts) return null
-        val windows = settings.deadlineWindowsHours.filter { it > 0 }.distinct()
+        val windows = settings.deadlineWindowsMinutes.filter { it > 0 }.distinct()
         var best: Instant? = null
         for (a in snapshot.assignments) {
             val due = a.due ?: continue
             if (a.submitted || a.missing || !due.isAfter(now)) continue
             for (w in windows) {
-                if (state.fired.containsKey(key(a, w))) continue
-                val t = due.minus(Duration.ofHours(w.toLong()))
+                if (isFired(state, a, w)) continue
+                val t = due.minus(Duration.ofMinutes(w.toLong()))
                 if (t.isAfter(now) && (best == null || t.isBefore(best))) best = t
             }
         }
@@ -226,13 +232,12 @@ object NotificationPlanner {
             text = text,
             bigText = NoticeText.joinLimited(items.map { NoticeText.dueLine(it, now) }, DEADLINE_BIG_LINES),
             url = null,
-            tag = "deadline:w$w",
+            tag = "deadline:wm$w",
             firedKeys = fired,
         )
     }
 
-    /** 48시간 이상이고 24의 배수면 `N일`, 아니면 `N시간`. */
-    private fun windowLabel(w: Int) = if (w >= 48 && w % 24 == 0) "${w / 24}일" else "${w}시간"
+    private fun windowLabel(w: Int) = NotifySettings.windowLabel(w)
 
     // ---- 공지 ---------------------------------------------------------------
 

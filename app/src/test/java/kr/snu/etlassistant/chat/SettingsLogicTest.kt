@@ -63,4 +63,36 @@ class SettingsLogicTest {
         assertFalse(SettingsLogic.isPlausibleEtlToken("has space 12345"))
         assertFalse(SettingsLogic.isPlausibleEtlToken("토큰토큰토큰토큰토큰"))
     }
+
+    // ---- 마감 알림 시점(분) -----------------------------------------------------
+
+    @Test fun customWindowParsing() {
+        val cur = listOf(4320, 1440, 180, 60)
+        assertEquals(SettingsLogic.CustomWindow.Ok(30), SettingsLogic.parseCustomWindow("30", SettingsLogic.WindowUnit.MINUTE, cur))
+        assertEquals(SettingsLogic.CustomWindow.Ok(300), SettingsLogic.parseCustomWindow(" 5 ", SettingsLogic.WindowUnit.HOUR, cur))
+        assertEquals(SettingsLogic.CustomWindow.Ok(14 * 1440), SettingsLogic.parseCustomWindow("14", SettingsLogic.WindowUnit.DAY, cur))
+        assertTrue(SettingsLogic.parseCustomWindow("", SettingsLogic.WindowUnit.HOUR, cur) is SettingsLogic.CustomWindow.Error)
+        assertTrue(SettingsLogic.parseCustomWindow("5", SettingsLogic.WindowUnit.MINUTE, cur) is SettingsLogic.CustomWindow.Error)
+        assertTrue(SettingsLogic.parseCustomWindow("15", SettingsLogic.WindowUnit.DAY, cur) is SettingsLogic.CustomWindow.Error)
+        assertTrue(SettingsLogic.parseCustomWindow("0", SettingsLogic.WindowUnit.HOUR, cur) is SettingsLogic.CustomWindow.Error)
+        val full = (1..12).map { it * 60 }
+        assertTrue(SettingsLogic.parseCustomWindow("30", SettingsLogic.WindowUnit.MINUTE, full) is SettingsLogic.CustomWindow.Error)
+        // 이미 켜져 있는 값은 개수 제한에 걸리지 않는다
+        assertEquals(SettingsLogic.CustomWindow.Ok(60), SettingsLogic.parseCustomWindow("1", SettingsLogic.WindowUnit.HOUR, full))
+    }
+
+    @Test fun addToggleAndChips() {
+        val cur = listOf(4320, 1440, 180, 60)
+        val added = SettingsLogic.addWindow(cur, 30)
+        assertEquals(listOf(4320, 1440, 180, 60, 30), added)
+        // 직접 추가한 값도 칩으로 보이고, 프리셋은 꺼져 있어도 보인다
+        val chips = SettingsLogic.windowChips(added)
+        assertTrue(30 in chips && 360 in chips && 10080 in chips)
+        assertEquals(chips.sorted(), chips)
+        // 끄면 칩에서도 사라진다(프리셋이 아니므로)
+        val off = SettingsLogic.toggleWindow(added, 30)
+        assertFalse(30 in SettingsLogic.windowChips(off))
+        // 마지막 하나는 끌 수 없다
+        assertEquals(listOf(60), SettingsLogic.toggleWindow(listOf(60), 60))
+    }
 }

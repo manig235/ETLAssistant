@@ -54,7 +54,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     var briefEnabled by mutableStateOf(true)
     var briefMinutes by mutableStateOf(OnboardingLogic.briefTimeChoices[1])
     /** 마감 알림 시점(안내에서는 보여 주기만 하고, 바꾸는 것은 설정 화면에서). */
-    val deadlineWindows: List<Int> = NotifySettingsStore(app).load().deadlineWindowsHours
+    val deadlineWindows: List<Int> = NotifySettingsStore(app).load().deadlineWindowsMinutes
 
     val tokenSaved: Boolean get() = tokenState is TokenState.Saved
 

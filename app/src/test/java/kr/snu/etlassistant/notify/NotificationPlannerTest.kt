@@ -44,13 +44,13 @@ class NotificationPlannerTest {
     @Test fun exactlyWindowBoundaryFires() {
         val p = plan(snap(listOf(asg(1, hours(24)))))
         assertEquals(1, p.notices.size)
-        assertEquals("deadline:1:1:24", p.notices[0].firedKeys.first())
+        assertEquals("deadline-m:1:1:1440", p.notices[0].firedKeys.first())
     }
 
     @Test fun oneSecondBeyondWindowFiresNextWindow() {
         val p = plan(snap(listOf(asg(1, hours(24).plusSeconds(1)))))
         assertEquals(1, p.notices.size)
-        assertEquals(listOf("deadline:1:1:72"), p.notices[0].firedKeys)
+        assertEquals(listOf("deadline-m:1:1:4320"), p.notices[0].firedKeys)
     }
 
     @Test fun beyondMaxWindowDoesNothing() {
@@ -77,19 +77,19 @@ class NotificationPlannerTest {
     @Test fun firstCheckInside24hRecordsLooserKeysToo() {
         val n = plan(snap(listOf(asg(7, hours(10), cid = 3)))).notices
         assertEquals(1, n.size)
-        assertEquals(setOf("deadline:3:7:24", "deadline:3:7:72"), n[0].firedKeys.toSet())
+        assertEquals(setOf("deadline-m:3:7:1440", "deadline-m:3:7:4320"), n[0].firedKeys.toSet())
     }
 
     @Test fun firedKeyIsSkipped() {
-        val st = state(true, "deadline:1:1:24")
+        val st = state(true, "deadline-m:1:1:1440")
         assertTrue(plan(snap(listOf(asg(1, hours(10)))), st).notices.isEmpty())
     }
 
     @Test fun after72hFiredThen24hStillFires() {
-        val st = state(true, "deadline:1:1:72")
+        val st = state(true, "deadline-m:1:1:4320")
         val n = plan(snap(listOf(asg(1, hours(10)))), st).notices
         assertEquals(1, n.size)
-        assertEquals("deadline:1:1:24", n[0].firedKeys.first())
+        assertEquals("deadline-m:1:1:1440", n[0].firedKeys.first())
     }
 
     @Test fun duplicateAssignmentsInSnapshotCountOnce() {
@@ -109,13 +109,13 @@ class NotificationPlannerTest {
     @Test fun deadlineAlertsOffAndEmptyWindows() {
         val list = listOf(asg(1, hours(5)))
         assertTrue(plan(snap(list), set = settings.copy(deadlineAlerts = false)).notices.isEmpty())
-        assertTrue(plan(snap(list), set = settings.copy(deadlineWindowsHours = emptyList())).notices.isEmpty())
+        assertTrue(plan(snap(list), set = settings.copy(deadlineWindowsMinutes = emptyList())).notices.isEmpty())
     }
 
     @Test fun customWindowsUnsortedWork() {
-        val set = settings.copy(deadlineWindowsHours = listOf(6, 48, 12))
+        val set = settings.copy(deadlineWindowsMinutes = listOf(360, 2880, 720))
         val n = plan(snap(listOf(asg(1, hours(10)))), set = set).notices
-        assertEquals(setOf("deadline:1:1:12", "deadline:1:1:48"), n[0].firedKeys.toSet())
+        assertEquals(setOf("deadline-m:1:1:720", "deadline-m:1:1:2880"), n[0].firedKeys.toSet())
     }
 
     // ---- 마감: 묶음/단일/정렬 -----------------------------------------------------
@@ -142,7 +142,7 @@ class NotificationPlannerTest {
         assertEquals(1, n.size)
         val g = n[0]
         assertEquals("마감 임박 3건 · 24시간 이내", g.title)
-        assertEquals("deadline:w24", g.tag)
+        assertEquals("deadline:wm1440", g.tag)
         assertNull(g.url)
         val lines = g.bigText!!.lines()
         assertEquals(3, lines.size)
@@ -151,28 +151,28 @@ class NotificationPlannerTest {
         assertTrue(lines[1].contains("과제3"))
         assertTrue(lines[2].contains("과제1"))
         assertTrue(g.text.contains("과제2") && g.text.endsWith("외 2건"))
-        assertEquals(3, g.firedKeys.count { it.endsWith(":24") })
-        assertEquals(3, g.firedKeys.count { it.endsWith(":72") })
+        assertEquals(3, g.firedKeys.count { it.endsWith(":1440") })
+        assertEquals(3, g.firedKeys.count { it.endsWith(":4320") })
     }
 
     @Test fun window72LabelIs3Days() {
         val n = plan(snap(listOf(asg(1, hours(50)), asg(2, hours(60))))).notices.single()
         assertEquals("마감 임박 2건 · 3일 이내", n.title)
-        assertEquals("deadline:w72", n.tag)
+        assertEquals("deadline:wm4320", n.tag)
     }
 
     @Test fun differentWindowsGiveSeparateNoticesTightestFirst() {
         val n = plan(snap(listOf(asg(1, hours(60)), asg(2, hours(5)), asg(3, hours(70)), asg(4, hours(6))))).notices
         assertEquals(2, n.size)
-        assertEquals("deadline:w24", n[0].tag)
-        assertEquals("deadline:w72", n[1].tag)
+        assertEquals("deadline:wm1440", n[0].tag)
+        assertEquals("deadline:wm4320", n[1].tag)
         assertEquals("마감 임박 2건 · 24시간 이내", n[0].title)
     }
 
     @Test fun bigTextLimitedTo6LinesWithRemainder() {
         val list = (1L..9L).map { asg(it, hours(it)) }
         // 묶음을 보려는 시험이라 모두 같은 창(24시간)에 들어가게 창을 고정한다.
-        val g = plan(snap(list), set = settings.copy(deadlineWindowsHours = listOf(72, 24))).notices.single()
+        val g = plan(snap(list), set = settings.copy(deadlineWindowsMinutes = listOf(4320, 1440))).notices.single()
         val lines = g.bigText!!.lines()
         assertEquals(7, lines.size)
         assertEquals("외 3건", lines.last())
@@ -182,7 +182,7 @@ class NotificationPlannerTest {
 
     @Test fun exactlySixLinesHasNoRemainder() {
         val list = (1L..6L).map { asg(it, hours(it)) }
-        val lines = plan(snap(list), set = settings.copy(deadlineWindowsHours = listOf(72, 24))).notices.single().bigText!!.lines()
+        val lines = plan(snap(list), set = settings.copy(deadlineWindowsMinutes = listOf(4320, 1440))).notices.single().bigText!!.lines()
         assertEquals(6, lines.size)
         assertFalse(lines.any { it.startsWith("외") })
     }
@@ -387,14 +387,14 @@ class NotificationPlannerTest {
         NotificationPlanner.nextDeadlineCheckAt(s, st, now, set)
 
     @Test fun defaultWindowsAre3d24h3h1h() {
-        assertEquals(listOf(72, 24, 3, 1), NotifySettings().deadlineWindowsHours)
+        assertEquals(listOf(4320, 1440, 180, 60), NotifySettings().deadlineWindowsMinutes)
     }
 
     @Test fun nextCheckIsEarliestUnfiredWindow() {
         // 마감 5시간 뒤: 3시간 전(2시간 뒤)이 가장 이르다. 72·24시간 창은 이미 지났다.
         assertEquals(hours(2), next(snap(listOf(asg(1, hours(5))))))
         // 3시간 창을 띄웠으면 1시간 전(4시간 뒤)
-        assertEquals(hours(4), next(snap(listOf(asg(1, hours(5)))), state(true, "deadline:1:1:3")))
+        assertEquals(hours(4), next(snap(listOf(asg(1, hours(5)))), state(true, "deadline-m:1:1:180")))
     }
 
     @Test fun nextCheckAcrossAssignments() {
@@ -406,19 +406,57 @@ class NotificationPlannerTest {
     @Test fun nextCheckIgnoresSubmittedPastAndAllFired() {
         assertNull(next(snap(listOf(asg(1, hours(5), submitted = true)))))
         assertNull(next(snap(listOf(asg(1, hours(-1))))))
-        assertNull(next(snap(listOf(asg(1, hours(5)))), state(true, "deadline:1:1:3", "deadline:1:1:1")))
+        assertNull(next(snap(listOf(asg(1, hours(5)))), state(true, "deadline-m:1:1:180", "deadline-m:1:1:60")))
         assertNull(next(snap(listOf(asg(1, hours(5)))), set = settings.copy(deadlineAlerts = false)))
     }
 
     @Test fun oneHourWindowFiresAtBoundary() {
         val p = plan(snap(listOf(asg(1, hours(1)))))
         assertEquals(1, p.notices.size)
-        assertEquals("deadline:1:1:1", p.notices[0].firedKeys.first())
-        assertTrue(p.notices[0].firedKeys.containsAll(listOf("deadline:1:1:3", "deadline:1:1:24", "deadline:1:1:72")))
+        assertEquals("deadline-m:1:1:60", p.notices[0].firedKeys.first())
+        assertTrue(p.notices[0].firedKeys.containsAll(listOf("deadline-m:1:1:180", "deadline-m:1:1:1440", "deadline-m:1:1:4320")))
     }
 
-    @Test fun normalizeWindowsKeepsChoicesOnly() {
-        assertEquals(listOf(72, 3), NotifySettings.normalizeWindows(listOf(3, 72, 5, 3)))
+    @Test fun normalizeWindowsKeepsCustomValuesInRange() {
+        // 프리셋에 없는 값(30분, 90분)도 남는다. 범위(10분~14일) 밖과 중복은 버린다.
+        assertEquals(listOf(4320, 90, 30), NotifySettings.normalizeWindows(listOf(30, 4320, 5, 90, 30, 20_161)))
         assertEquals(NotifySettings.DEFAULT_DEADLINE_WINDOWS, NotifySettings.normalizeWindows(listOf(5)))
+        assertEquals(NotifySettings.MAX_WINDOWS, NotifySettings.normalizeWindows((10..40).toList()).size)
+    }
+
+    @Test fun windowLabels() {
+        assertEquals("30분", NotifySettings.windowLabel(30))
+        assertEquals("1시간", NotifySettings.windowLabel(60))
+        assertEquals("1시간 30분", NotifySettings.windowLabel(90))
+        assertEquals("24시간", NotifySettings.windowLabel(1440))
+        assertEquals("2일", NotifySettings.windowLabel(2880))
+        assertEquals("36시간", NotifySettings.windowLabel(2160))
+        assertEquals("7일", NotifySettings.windowLabel(10080))
+    }
+
+    @Test fun customThirtyMinuteWindowFiresAndSchedules() {
+        val set = settings.copy(deadlineWindowsMinutes = listOf(1440, 30))
+        // 마감 40분 전: 30분 창은 아직, 24시간 창에 해당
+        assertEquals(listOf("deadline-m:1:1:1440"), plan(snap(listOf(asg(1, now.plus(Duration.ofMinutes(40))))), set = set).notices.single().firedKeys)
+        // 24시간 창은 이미 알렸으면 다음 확인은 30분 전(10분 뒤)
+        val st = state(true, "deadline-m:1:1:1440")
+        assertEquals(now.plus(Duration.ofMinutes(10)), next(snap(listOf(asg(1, now.plus(Duration.ofMinutes(40))))), st, set))
+        // 마감 30분 전: 30분 창
+        val p = plan(snap(listOf(asg(1, now.plus(Duration.ofMinutes(30))))), st, set)
+        assertEquals("deadline-m:1:1:30", p.notices.single().firedKeys.first())
+        assertTrue(p.notices.single().title.isNotEmpty())
+    }
+
+    @Test fun legacyHourKeysCountAsFired() {
+        // 업데이트 전(시간 단위 키)에 24시간 알림을 띄웠으면 다시 띄우지 않는다.
+        val st = state(true, "deadline:1:1:24")
+        assertTrue(plan(snap(listOf(asg(1, hours(20)))), st).notices.isEmpty())
+        assertEquals(hours(17), next(snap(listOf(asg(1, hours(20)))), st))
+    }
+
+    @Test fun groupTitleUsesMinuteLabel() {
+        val set = settings.copy(deadlineWindowsMinutes = listOf(90))
+        val list = listOf(asg(1, now.plus(Duration.ofMinutes(80))), asg(2, now.plus(Duration.ofMinutes(85))))
+        assertTrue(plan(snap(list), set = set).notices.single().title.contains("1시간 30분 이내"))
     }
 }

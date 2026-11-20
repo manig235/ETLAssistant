@@ -22,12 +22,12 @@ object NotifyUiFormat {
     fun normalizeBriefTimes(times: List<Int>): List<Int> =
         times.map { it.coerceIn(0, 1439) }.distinct().sorted().take(2).ifEmpty { listOf(8 * 60) }
 
-    /** 마감 알림 시점 이름: 48시간 이상이고 24의 배수면 `N일`, 아니면 `N시간`. */
-    fun windowLabel(hours: Int): String = if (hours >= 48 && hours % 24 == 0) "${hours / 24}일" else "${hours}시간"
+    /** 마감 알림 시점 이름(분 단위 값). */
+    fun windowLabel(minutes: Int): String = NotifySettings.windowLabel(minutes)
 
     /** "3일, 24시간, 3시간, 1시간 전에 알려요" */
-    fun windowsSummary(hours: List<Int>): String =
-        NotifySettings.normalizeWindows(hours).joinToString(", ") { windowLabel(it) } + " 전에 알려요"
+    fun windowsSummary(minutes: List<Int>): String =
+        NotifySettings.normalizeWindows(minutes).joinToString(", ") { windowLabel(it) } + " 전에 알려요"
 
     fun describeLastCheck(lastCheckAt: Long, lastResult: String): String {
         if (lastCheckAt <= 0L) return "아직 확인한 적이 없습니다"

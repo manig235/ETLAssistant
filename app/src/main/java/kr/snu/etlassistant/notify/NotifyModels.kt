@@ -71,7 +71,8 @@ data class Notice(
 
 /**
  * 알림 중복 방지와 마지막 확인 상태. 앱 내부 저장소에 JSON으로 저장한다([NotifyStateStore]).
- * 키 형식: `deadline:{courseId}:{assignmentId}:{windowHours}`, `ann:{announcementId}`.
+ * 키 형식: `deadline-m:{courseId}:{assignmentId}:{windowMinutes}`, `ann:{announcementId}`.
+ * (예전 형식 `deadline:{courseId}:{assignmentId}:{windowHours}`도 읽을 때는 알린 것으로 인정한다.)
  */
 data class NotifyState(
     /** 키 → 띄운 시각(epoch millis). 30일이 지난 항목은 정리한다. */
@@ -120,8 +121,8 @@ data class NotifyState(
 data class NotifySettings(
     val deadlineAlerts: Boolean = true,
     val announcementAlerts: Boolean = true,
-    /** 마감 몇 시간 전에 알릴지(내림차순). 기본은 3일, 24시간, 3시간, 1시간 전. */
-    val deadlineWindowsHours: List<Int> = DEFAULT_DEADLINE_WINDOWS,
+    /** 마감 몇 분 전에 알릴지(내림차순). 기본은 3일, 24시간, 3시간, 1시간 전. 사용자가 직접 추가한 값도 들어간다. */
+    val deadlineWindowsMinutes: List<Int> = DEFAULT_DEADLINE_WINDOWS,
     val briefEnabled: Boolean = false,
     /** 브리핑을 보낼 시각(하루 중 분, 0..1439). 최대 2개. 기기의 현재 시간대 기준. */
     val briefMinutesOfDay: List<Int> = listOf(8 * 60),
@@ -140,13 +141,29 @@ data class NotifySettings(
     val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts
 
     companion object {
-        val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(72, 24, 3, 1)
-        /** 고를 수 있는 마감 알림 시점(시간). */
-        val DEADLINE_WINDOW_CHOICES: List<Int> = listOf(1, 3, 6, 12, 24, 48, 72, 168)
+        private const val HOUR = 60
+        private const val DAY = 24 * HOUR
+        val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(3 * DAY, DAY, 3 * HOUR, HOUR)
+        /** 설정에 늘 보이는 마감 알림 시점(분). 이 밖의 값은 "직접 추가"로 넣는다. */
+        val DEADLINE_WINDOW_PRESETS: List<Int> = listOf(HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY)
+        /** 직접 추가할 수 있는 범위. 제시간 알람의 지연(최대 약 6분)보다 짧은 값은 의미가 없다. */
+        const val MIN_WINDOW_MINUTES = 10
+        const val MAX_WINDOW_MINUTES = 14 * DAY
+        /** 시점 개수 상한(알람과 중복 방지 키가 끝없이 늘지 않게). */
+        const val MAX_WINDOWS = 12
 
-        /** 저장·표시용으로 정리한다: 고를 수 있는 값만, 중복 제거, 내림차순. 비면 기본값. */
-        fun normalizeWindows(hours: List<Int>): List<Int> =
-            hours.filter { it in DEADLINE_WINDOW_CHOICES }.distinct().sortedDescending().ifEmpty { DEFAULT_DEADLINE_WINDOWS }
+        /** 저장·표시용으로 정리한다: 범위 안의 값만, 중복 제거, 내림차순, 최대 [MAX_WINDOWS]개. 비면 기본값. */
+        fun normalizeWindows(minutes: List<Int>): List<Int> =
+            minutes.filter { it in MIN_WINDOW_MINUTES..MAX_WINDOW_MINUTES }.distinct().sortedDescending()
+                .take(MAX_WINDOWS).ifEmpty { DEFAULT_DEADLINE_WINDOWS }
+
+        /** 시점 이름: 60분 미만 `N분`, 48시간 이상이고 하루 단위면 `N일`, 시간 단위면 `N시간`, 그 외 `N시간 M분`. */
+        fun windowLabel(minutes: Int): String = when {
+            minutes < HOUR -> "${minutes}분"
+            minutes % HOUR != 0 -> "${minutes / HOUR}시간 ${minutes % HOUR}분"
+            minutes >= 2 * DAY && minutes % DAY == 0 -> "${minutes / DAY}일"
+            else -> "${minutes / HOUR}시간"
+        }
     }
 }
 

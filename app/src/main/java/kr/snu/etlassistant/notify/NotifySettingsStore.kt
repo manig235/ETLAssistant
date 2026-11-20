@@ -12,9 +12,7 @@ class NotifySettingsStore(context: Context) {
         return NotifySettings(
             deadlineAlerts = prefs.getBoolean("deadlineAlerts", d.deadlineAlerts),
             announcementAlerts = prefs.getBoolean("announcementAlerts", d.announcementAlerts),
-            // 버전 1에는 시점을 고르는 화면이 없었으므로 저장값은 옛 기본값(72, 24)이다. 새 기본값으로 올린다.
-            deadlineWindowsHours = if (prefs.getInt("deadlineWindowsVersion", 1) < WINDOWS_VERSION) d.deadlineWindowsHours
-                else NotifySettings.normalizeWindows(readInts("deadlineWindowsHours", d.deadlineWindowsHours)),
+            deadlineWindowsMinutes = loadWindows(d.deadlineWindowsMinutes),
             briefEnabled = prefs.getBoolean("briefEnabled", d.briefEnabled),
             briefMinutesOfDay = readInts("briefMinutesOfDay", d.briefMinutesOfDay).map { it.coerceIn(0, 1439) }.distinct().take(2).ifEmpty { d.briefMinutesOfDay },
             checkIntervalHours = prefs.getInt("checkIntervalHours", d.checkIntervalHours).let { if (it in setOf(1, 3, 6, 12)) it else d.checkIntervalHours },
@@ -29,7 +27,8 @@ class NotifySettingsStore(context: Context) {
         prefs.edit()
             .putBoolean("deadlineAlerts", s.deadlineAlerts)
             .putBoolean("announcementAlerts", s.announcementAlerts)
-            .putString("deadlineWindowsHours", JSONArray(NotifySettings.normalizeWindows(s.deadlineWindowsHours)).toString())
+            .putString("deadlineWindowsMinutes", JSONArray(NotifySettings.normalizeWindows(s.deadlineWindowsMinutes)).toString())
+            .remove("deadlineWindowsHours")
             .putInt("deadlineWindowsVersion", WINDOWS_VERSION)
             .putBoolean("briefEnabled", s.briefEnabled)
             .putString("briefMinutesOfDay", JSONArray(s.briefMinutesOfDay).toString())
@@ -41,8 +40,19 @@ class NotifySettingsStore(context: Context) {
             .apply()
     }
 
+    /**
+     * 마감 알림 시점(분). 저장 형식 버전:
+     * 1 = 시점을 고르는 화면이 없던 시절(저장값은 옛 기본값 72, 24시간) → 새 기본값,
+     * 2 = 시간 단위(`deadlineWindowsHours`) → ×60, 3 = 분 단위(`deadlineWindowsMinutes`).
+     */
+    private fun loadWindows(default: List<Int>): List<Int> = when (prefs.getInt("deadlineWindowsVersion", 1)) {
+        1 -> default
+        2 -> NotifySettings.normalizeWindows(readInts("deadlineWindowsHours", default.map { it / 60 }).map { it * 60 })
+        else -> NotifySettings.normalizeWindows(readInts("deadlineWindowsMinutes", default))
+    }
+
     private companion object {
-        const val WINDOWS_VERSION = 2
+        const val WINDOWS_VERSION = 3
     }
 
     private fun readInts(key: String, def: List<Int>): List<Int> {

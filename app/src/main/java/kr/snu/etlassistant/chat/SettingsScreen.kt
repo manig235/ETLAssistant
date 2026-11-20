@@ -2,6 +2,7 @@ package kr.snu.etlassistant.chat
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,9 +28,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -44,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -292,6 +296,74 @@ private fun MainButton(text: String, enabled: Boolean = true, onClick: () -> Uni
     )
 }
 
+/** 눌러서 바꿀 수 있는 값(시각 등). 테두리와 연필 아이콘으로 바꿀 수 있다는 것을 보여 준다. */
+@Composable
+private fun EditableValue(text: String, clickLabel: String, onClick: () -> Unit) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, c.lineNeutralPrimary, RoundedCornerShape(12.dp))
+            .clickable(onClickLabel = clickLabel, role = Role.Button, onClick = onClick)
+            .padding(start = 14.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = t.body2Medium, color = c.foregroundNeutralPrimary)
+        Spacer(Modifier.width(8.dp))
+        Icon(Icons.Outlined.Edit, contentDescription = null, tint = c.foregroundNeutralSecondary, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** 마감 알림 시점 직접 추가: 숫자 + 단위(분/시간/일). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomWindowDialog(current: List<Int>, onDismiss: () -> Unit, onAdd: (Int) -> Unit) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    var amount by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf(SettingsLogic.WindowUnit.HOUR) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.backgroundNeutralPrimary,
+        title = { Text("알림 시점 직접 추가", style = t.title3Bold, color = c.foregroundNeutralPrimary) },
+        text = {
+            Column {
+                Text("마감 몇 분·시간·일 전에 알릴까요?", style = t.body2Regular, color = c.foregroundNeutralSecondary)
+                Spacer(Modifier.height(12.dp))
+                WantedTextField(
+                    text = amount,
+                    placeholder = "예: 30",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    background = c.backgroundNeutralPrimary,
+                    onValueChange = { v -> amount = v.filter { it.isDigit() }.take(4); error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (u in SettingsLogic.WindowUnit.values()) {
+                        WantedChip(text = u.label + " 전", isActive = unit == u, onClick = { unit = u; error = null })
+                    }
+                }
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, style = t.caption1Regular, color = c.foregroundNegativePrimary)
+                }
+            }
+        },
+        confirmButton = {
+            WantedTextButton(text = "추가", onClick = {
+                when (val r = SettingsLogic.parseCustomWindow(amount, unit, current)) {
+                    is SettingsLogic.CustomWindow.Ok -> onAdd(r.minutes)
+                    is SettingsLogic.CustomWindow.Error -> error = r.message
+                }
+            })
+        },
+        dismissButton = { WantedTextButton(text = "취소", onClick = onDismiss) },
+    )
+}
+
 // ---- 1. 계정 -----------------------------------------------------------------
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -450,21 +522,35 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                 StatusBanner("eTL 토큰을 먼저 저장해야 알림이 동작해요.", StatusTone.CAUTION)
             }
             Spacer(Modifier.height(8.dp))
-            SwitchRow("마감 임박 알림", NotifyUiFormat.windowsSummary(n.deadlineWindowsHours), n.deadlineAlerts) { v -> a.updateNotify { it.copy(deadlineAlerts = v) } }
+            SwitchRow("마감 임박 알림", NotifyUiFormat.windowsSummary(n.deadlineWindowsMinutes), n.deadlineAlerts) { v -> a.updateNotify { it.copy(deadlineAlerts = v) } }
             if (n.deadlineAlerts) {
-                val windows = NotifySettings.normalizeWindows(n.deadlineWindowsHours)
+                val windows = NotifySettings.normalizeWindows(n.deadlineWindowsMinutes)
+                var adding by remember { mutableStateOf(false) }
+                Caption("눌러서 켜고 끌 수 있어요. 원하는 시점은 직접 추가하세요.")
+                Spacer(Modifier.height(8.dp))
                 FlowRow(
                     Modifier.padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    for (h in NotifySettings.DEADLINE_WINDOW_CHOICES) {
+                    for (m in SettingsLogic.windowChips(windows)) {
                         WantedChip(
-                            text = NotifyUiFormat.windowLabel(h) + " 전",
-                            isActive = h in windows,
-                            onClick = { a.updateNotify { it.copy(deadlineWindowsHours = SettingsLogic.toggleWindow(it.deadlineWindowsHours, h)) } },
+                            text = NotifyUiFormat.windowLabel(m) + " 전",
+                            isActive = m in windows,
+                            onClick = { a.updateNotify { it.copy(deadlineWindowsMinutes = SettingsLogic.toggleWindow(it.deadlineWindowsMinutes, m)) } },
                         )
                     }
+                    WantedChip(text = "+ 직접 추가", onClick = { adding = true })
+                }
+                if (adding) {
+                    CustomWindowDialog(
+                        current = windows,
+                        onDismiss = { adding = false },
+                        onAdd = { m ->
+                            adding = false
+                            a.updateNotify { it.copy(deadlineWindowsMinutes = SettingsLogic.addWindow(it.deadlineWindowsMinutes, m)) }
+                        },
+                    )
                 }
             }
             SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려요", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
@@ -472,23 +558,18 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
             if (n.briefEnabled) {
                 Spacer(Modifier.height(4.dp))
                 Text("브리핑 시각", style = DesignSystemTheme.typography.body2Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+                Caption("시각을 눌러 바꿀 수 있어요")
                 Spacer(Modifier.height(8.dp))
                 times.forEachIndexed { index, minutes ->
                     Row(
                         Modifier.padding(bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        WantedButton(
-                            text = NotifyUiFormat.formatTime(minutes, is24h),
-                            type = ButtonType.ASSISTIVE,
-                            size = ButtonSize.SMALL,
-                            variant = ButtonVariant.OUTLINED,
-                            onClick = {
-                                a.pickTime(minutes) { picked ->
-                                    a.updateNotify { it.copy(briefMinutesOfDay = SettingsLogic.replaceBriefTime(it.briefMinutesOfDay, index, picked)) }
-                                }
-                            },
-                        )
+                        EditableValue(NotifyUiFormat.formatTime(minutes, is24h), "브리핑 시각 바꾸기") {
+                            a.pickTime(minutes) { picked ->
+                                a.updateNotify { it.copy(briefMinutesOfDay = SettingsLogic.replaceBriefTime(it.briefMinutesOfDay, index, picked)) }
+                            }
+                        }
                         if (index == 1) {
                             Spacer(Modifier.width(4.dp))
                             WantedTextButton(
@@ -528,10 +609,10 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
             if (n.quietEnabled) {
                 Spacer(Modifier.height(4.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SoftButton("시작 " + NotifyUiFormat.formatTime(n.quietStartMinutes, is24h)) {
+                    EditableValue("시작 " + NotifyUiFormat.formatTime(n.quietStartMinutes, is24h), "방해 금지 시작 시각 바꾸기") {
                         a.pickTime(n.quietStartMinutes) { m -> a.updateNotify { it.copy(quietStartMinutes = m) } }
                     }
-                    SoftButton("종료 " + NotifyUiFormat.formatTime(n.quietEndMinutes, is24h)) {
+                    EditableValue("종료 " + NotifyUiFormat.formatTime(n.quietEndMinutes, is24h), "방해 금지 종료 시각 바꾸기") {
                         a.pickTime(n.quietEndMinutes) { m -> a.updateNotify { it.copy(quietEndMinutes = m) } }
                     }
                 }
