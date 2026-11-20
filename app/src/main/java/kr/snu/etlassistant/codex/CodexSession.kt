@@ -44,6 +44,11 @@ sealed class SessionEvent {
     data class Models(val models: List<ModelInfo>, val loading: Boolean = false) : SessionEvent()
     data class LoginPrompt(val kind: LoginKind, val url: String, val code: String?) : SessionEvent()
     data class LoginDone(val success: Boolean, val error: String?) : SessionEvent()
+    /**
+     * 진행 중인 로그인이 없다. [CodexSession.attach]가 화면에 현재 상태를 다시 알려 줄 때 보낸다.
+     * 화면이 보이지 않는 동안 로그인이 끝나면 [LoginDone]을 놓치므로, 이것으로 남아 있는 진행 표시를 지운다.
+     */
+    object LoginIdle : SessionEvent()
 }
 
 /** 앱 설정(앱 내부 SharedPreferences). 비밀값은 여기에 두지 않는다. */
@@ -183,7 +188,22 @@ object CodexSession {
     @Volatile private var loginId: String? = null
     private var turnHold = false
     private var loginHold = false
-    private val idleStop = Runnable { if (listeners.isEmpty() && !busy && loginId == null) stop() }
+    private val idleStop = Runnable { if (isIdle()) stopIfIdle() }
+
+    private fun isIdle() = listeners.isEmpty() && !busy && loginId == null
+
+    /**
+     * 화면이 모두 사라진 뒤의 자동 정지. 정지가 대기열에서 기다리는 사이 화면이 돌아오면 그 화면의
+     * [ensureStarted]는 아직 READY인 상태를 보고 그냥 돌아가므로, 정지 직전에 다시 확인하고 정지 뒤에도 다시 띄운다.
+     */
+    private fun stopIfIdle() {
+        control.execute {
+            if (!isIdle()) return@execute
+            teardown()
+            setState(SessionState.STOPPED)
+            if (listeners.isNotEmpty()) main.post { ensureStarted() }
+        }
+    }
 
     fun init(context: Context) {
         app = context.applicationContext
@@ -193,15 +213,20 @@ object CodexSession {
 
     // ---- 화면 연결 -----------------------------------------------------------
 
+    /** 마지막으로 세션에 붙은 화면의 클래스 이름. 로그인 완료 알림이 이 화면으로 돌아간다. */
+    @Volatile private var lastScreen: String? = null
+
     fun attach(l: Listener) {
         listeners += l
+        if (l is android.app.Activity) lastScreen = l.javaClass.name
         main.removeCallbacks(idleStop)
         l.onEvent(SessionEvent.State(state, stateDetail))
         account?.let { l.onEvent(SessionEvent.Account(it)) }
         l.onEvent(SessionEvent.Busy(busy))
         l.onEvent(SessionEvent.Activity(activity))
         l.onEvent(SessionEvent.Models(models, modelsLoading))
-        lastLogin?.let { l.onEvent(it) }
+        // 진행 중인 로그인이 없어도 알려야 한다. 화면이 꺼져 있는 동안 로그인이 끝나면 LoginDone을 놓치기 때문이다.
+        l.onEvent(lastLogin ?: SessionEvent.LoginIdle)
     }
 
     fun detach(l: Listener) {
@@ -375,10 +400,16 @@ object CodexSession {
     }
 
     fun cancelLogin() {
-        val id = loginId ?: return
-        val c = client ?: return
+        val id = loginId
+        val c = client
         loginId = null
         lastLogin = null
+        if (id == null || c == null) {
+            // 취소할 로그인이 이미 없다(끝났거나 세션이 멈춤). 화면에 남은 진행 표시만 지워서 빠져나올 수 있게 한다.
+            main.post { releaseLoginHold() }
+            emit(SessionEvent.LoginIdle)
+            return
+        }
         calls.execute {
             try {
                 c.request("account/login/cancel", JSONObject().put("loginId", id), 15)
@@ -603,8 +634,11 @@ object CodexSession {
     private fun notifyLoginDone() {
         val nm = app.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("login", "로그인", NotificationManager.IMPORTANCE_HIGH))
-        val intent = Intent().setClassName(app, "kr.snu.etlassistant.chat.ChatActivity")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        // 로그인하러 나가기 직전에 보던 화면(첫 실행 안내, 설정 등)으로 돌아간다. CLEAR_TOP|SINGLE_TOP이라
+        // 그 화면이 살아 있으면 새로 만들지 않고 그대로 앞으로 온다. ChatActivity(singleTask)를 열면 그 위의
+        // 안내 화면이 지워지거나 안내를 건너뛰므로 기본값으로만 쓴다.
+        val intent = Intent().setClassName(app, lastScreen ?: "kr.snu.etlassistant.chat.ChatActivity")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pi = PendingIntent.getActivity(app, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = android.app.Notification.Builder(app, "login")
             .setSmallIcon(android.R.drawable.stat_notify_sync)

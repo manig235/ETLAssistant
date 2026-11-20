@@ -95,6 +95,8 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                 loginPrompt = null
                 loginMessage = if (e.success) null else (e.error ?: "로그인하지 못했어요")
             }
+            // 화면이 꺼져 있는 동안 로그인이 끝났거나 취소할 로그인이 없을 때. 결과 문구는 건드리지 않는다.
+            SessionEvent.LoginIdle -> loginPrompt = null
             else -> {}
         }
     }

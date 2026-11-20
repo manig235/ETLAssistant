@@ -99,8 +99,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
 
     override fun onStart() {
         super.onStart()
-        // 이전에 보여 주던 로그인 패널은 지우고, attach가 진행 중인 로그인을 다시 알려 주면 그때 복원한다.
-        state.loginPrompt = null
+        // attach가 진행 중인 로그인(없으면 LoginIdle)을 알려 주므로 로그인 패널은 그것으로 맞춰진다.
         CodexSession.attach(this)
         CodexSession.ensureStarted()
         syncSession()
@@ -133,6 +132,10 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
                 state.loginPrompt = null
                 lastPromptUrl = null
                 toast(if (e.success) "로그인했어요" else "로그인하지 못했어요: ${e.error ?: ""}", long = !e.success)
+            }
+            SessionEvent.LoginIdle -> {
+                state.loginPrompt = null
+                lastPromptUrl = null
             }
             is SessionEvent.Models -> {
                 state.models = e.models
