@@ -255,12 +255,12 @@ private fun StatusCard(text: String, positive: Boolean = true) {
 @Composable
 private fun WelcomeStep(vm: OnboardingViewModel) {
     StepFrame(
-        title = "미니 eTL 비서에 오신 것을\n환영해요",
+        title = "안녕하세요,\n영민이예요",
         subtitle = "마감과 공지는 챙기고, 궁금한 건 물어보고, 강의 파일은 바로 받아 보세요.",
         header = {
             Image(
                 painter = painterResource(R.drawable.etl_logo),
-                contentDescription = "미니 eTL 비서 로고",
+                contentDescription = "영민이 로고",
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .size(120.dp)
@@ -289,14 +289,6 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
                 color = DesignSystemTheme.colors.foregroundNeutralSecondary,
             )
         }
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "서울대학교 공식 앱이 아니에요. 학생이 직접 만든 앱이에요.",
-            style = DesignSystemTheme.typography.caption1Regular,
-            color = DesignSystemTheme.colors.foregroundNeutralTertiary,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-        )
     }
 }
 

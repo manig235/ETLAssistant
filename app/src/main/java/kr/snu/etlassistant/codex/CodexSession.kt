@@ -85,6 +85,11 @@ object AppSettings {
         get() = prefs.getString("threadId", null)
         set(v) = prefs.edit().apply { if (v == null) remove("threadId") else putString("threadId", v) }.apply()
 
+    /** 반말로 대화(기본 꺼짐 = 해요체). thread/start·thread/resume의 developerInstructions로 넘긴다. */
+    var casualTone: Boolean
+        get() = prefs.getBoolean("casualTone", false)
+        set(v) = prefs.edit().putBoolean("casualTone", v).apply()
+
     /** 마지막으로 열어 둔 대화. 없거나 지워졌으면 빈 새 대화로 시작한다. */
     var currentChatId: String?
         get() = prefs.getString("currentChatId", null)
@@ -346,7 +351,7 @@ object CodexSession {
         holder[0] = c
         c.start()
         c.request("initialize", JSONObject()
-            .put("clientInfo", JSONObject().put("name", "etl-android").put("title", "미니 eTL 비서").put("version", "0.1.0"))
+            .put("clientInfo", JSONObject().put("name", "etl-android").put("title", "영민이").put("version", "0.1.0"))
             .put("capabilities", JSONObject().put("experimentalApi", false)))
         c.notify("initialized")
         client = c
@@ -591,6 +596,19 @@ object CodexSession {
         return true
     }
 
+    /**
+     * 말투 지침. 기본 규칙(해요체, 짧고 담백, 정확성 우선)은 AGENTS.md에 있고, 여기서는 설정의 "반말로 대화"에 따라
+     * 어느 쪽을 쓸지만 정한다. 턴마다 thread/resume에 실어 보내 기존 대화에도 다음 턴부터 반영되게 한다.
+     */
+    private fun toneInstructions(): String = if (AppSettings.casualTone) {
+        "말투: 사용자가 설정에서 \"반말로 대화\"를 켰다. 지금부터 친구처럼 반말(\"~야\", \"~해\", \"~할까?\")로 답한다. " +
+            "앞선 답이 해요체였어도 이번 답부터 반말로 쓴다. 짧고 담백하게 쓰고, 과한 이모지·감탄사·인사말은 넣지 않으며, 정확성을 먼저 지킨다. " +
+            "예: \"이번 주 마감은 2개야. 회로이론 HW5가 내일 23:59까지라 제일 급해.\""
+    } else {
+        "말투: 친근한 해요체(\"~예요\", \"~해요\")로 답한다. 앞선 답이 반말이었어도 이번 답부터 해요체로 쓴다. " +
+            "\"~입니다/~습니다\"체는 쓰지 않는다. 짧고 담백하게 쓰고, 과한 이모지·감탄사·인사말은 넣지 않으며, 정확성을 먼저 지킨다."
+    }
+
     @Synchronized
     private fun ensureThread(c: AppServerClient, forChat: String): String {
         val cwd = File(app.filesDir, "workspace").path
@@ -601,6 +619,7 @@ object CodexSession {
             try {
                 val resume = JSONObject().put("threadId", saved).put("cwd", cwd)
                     .put("approvalPolicy", "never").put("sandbox", "read-only")
+                    .put("developerInstructions", toneInstructions())
                 choice.model?.let { resume.put("model", it) }
                 c.request("thread/resume", resume)
                 return saved
@@ -612,6 +631,7 @@ object CodexSession {
         }
         val start = JSONObject().put("cwd", cwd)
             .put("approvalPolicy", "never").put("sandbox", "read-only")
+            .put("developerInstructions", toneInstructions())
         choice.model?.let { start.put("model", it) }
         val r = c.request("thread/start", start)
         val id = r.optJSONObject("thread")?.optString("id")?.takeIf { it.isNotEmpty() }
@@ -740,7 +760,7 @@ object CodexSession {
         val n = android.app.Notification.Builder(app, "login")
             .setSmallIcon(kr.snu.etlassistant.phase0.R.drawable.ic_stat_etl)
             .setContentTitle("로그인이 끝났어요")
-            .setContentText("탭하면 미니 eTL 비서로 돌아가요")
+            .setContentText("탭하면 영민이로 돌아가요")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()

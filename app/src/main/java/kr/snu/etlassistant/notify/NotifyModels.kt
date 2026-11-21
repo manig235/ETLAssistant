@@ -140,7 +140,7 @@ data class NotifySettings(
     val quietEnabled: Boolean = false,
     val quietStartMinutes: Int = 23 * 60,
     val quietEndMinutes: Int = 7 * 60,
-    /** 잠금화면에서는 내용을 숨기고 "미니 eTL 알림"만 보인다. */
+    /** 잠금화면에서는 내용을 숨기고 "영민이 알림"만 보인다. */
     val hideContentOnLockScreen: Boolean = true,
     /** 새 과제, 마감 변경, 성적 등록 알림. */
     val changeAlerts: Boolean = true,

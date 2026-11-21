@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Keep the complete approved tile inside Android 12's circular icon mask. -->
+<!-- 영민이 로고 타일(둥근 사각형, etl_logo.png)을 Android 12 스플래시의 원형 마스크 안에 통째로 넣는다. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:insetLeft="25%"
     android:insetTop="25%"

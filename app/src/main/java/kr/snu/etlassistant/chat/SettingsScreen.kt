@@ -99,6 +99,7 @@ class SettingsState {
     /** 마스킹한 API 키. 저장돼 있는데 null이면 복호화에 실패한 것이다. */
     var apiKeyMasked by mutableStateOf<String?>(null)
     var useApiKey by mutableStateOf(false)
+    var casualTone by mutableStateOf(false)
     var hasEtlToken by mutableStateOf(false)
 
     var notify by mutableStateOf(NotifySettings())
@@ -129,10 +130,10 @@ class SettingsActions(
     val briefNow: () -> Unit,
     val setModelChoice: (ModelChoice) -> Unit,
     val replayOnboarding: () -> Unit,
-    val openDevTools: () -> Unit,
     val openHistory: () -> Unit = {},
     val openTimetable: () -> Unit = {},
     val openMyDeadlines: () -> Unit = {},
+    val setCasualTone: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -172,6 +173,8 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
                 EtlTokenSection(s, a)
                 Spacer(Modifier.height(32.dp))
                 NotifySection(s, a)
+                Spacer(Modifier.height(32.dp))
+                ToneSection(s, a)
                 Spacer(Modifier.height(32.dp))
                 ModelSection(s, a)
                 Spacer(Modifier.height(32.dp))
@@ -706,6 +709,17 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
     }
 }
 
+// ---- 대화 말투 -------------------------------------------------------------------
+
+@Composable
+private fun ToneSection(s: SettingsState, a: SettingsActions) {
+    Section("대화") {
+        SettingsCard {
+            SwitchRow("반말로 대화", "영민이가 친구처럼 반말로 답해요", s.casualTone, onChange = a.setCasualTone)
+        }
+    }
+}
+
 // ---- 4. AI 모델 ---------------------------------------------------------------
 
 @Composable
@@ -774,7 +788,6 @@ private fun MiscSection(a: SettingsActions) {
             LinkRow("시간표 · 보강/휴강", onClick = a.openTimetable)
             LinkRow("내 일정", onClick = a.openMyDeadlines)
             LinkRow("처음 안내 다시 보기", onClick = a.replayOnboarding)
-            LinkRow("개발자 도구", onClick = a.openDevTools)
         }
     }
 }
@@ -787,11 +800,9 @@ private fun AboutSection() {
     }
     Section("앱 정보") {
         SettingsCard {
-            Text("미니 eTL 비서", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+            Text("영민이", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
             Spacer(Modifier.height(4.dp))
             Caption("만든 사람: 박영민 · 버전 $version")
-            Spacer(Modifier.height(10.dp))
-            Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
         }
     }
 }

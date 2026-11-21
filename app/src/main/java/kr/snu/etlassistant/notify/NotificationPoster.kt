@@ -89,7 +89,7 @@ object NotificationPoster {
                 // 잠금화면에는 내용 없이 일반 문구만.
                 val pub = NotificationCompat.Builder(context, notice.channel.id)
                     .setSmallIcon(R.drawable.ic_stat_etl)
-                    .setContentTitle("미니 eTL 알림")
+                    .setContentTitle("영민이 알림")
                     .setContentText("새 알림이 있어요")
                     .build()
                 b.setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(pub)

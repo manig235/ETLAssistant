@@ -1,6 +1,6 @@
 # etl-android
 
-**미니 eTL 비서**(런처 이름 "미니 eTL"): 서울대 eTL(Canvas) 비서 안드로이드 앱. 서울대 공식 앱이 아니다. **앱 안에 공식 Codex CLI를 넣어 실행**하고, 앱이 제공하는
+**영민이**(런처·앱 안 이름 모두 "영민이", 2026-11-21까지는 "미니 eTL 비서"): 서울대 eTL(Canvas) 비서 안드로이드 앱. 서울대 공식 앱이 아니다. **앱 안에 공식 Codex CLI를 넣어 실행**하고, 앱이 제공하는
 eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서와 대화하고 eTL 파일을 폰에 바로 받게 한다.
 다른 학생들에게 배포하는 것이 최종 목표다. 사용자와는 한국어로 대화한다.
 
@@ -128,6 +128,9 @@ eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussi
 Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계정이 쓸 수 있는 것만 보여 주고(기본 "자동"),
 `thread/start|resume`의 `model`, `turn/start`의 `model`·`effort`로 전달한다. 목록에 없는 선택은 요청에서만 빼고 저장값은 건드리지 않는다.
 계정(플랜 포함)이 바뀌면 목록을 다시 받는다. `thread/resume`에 model을 넣는 것과 effort 적용 여부는 기기에서 아직 확인하지 못했다.
+**말투(2026-11-21, 사용자 지시)**: 기본은 친근한 해요체로 고정한다("~입니다/~습니다" 금지, 짧고 담백, 이모지·감탄사·인사말 없음, 정확성 우선). 규칙은 AGENTS.md "말투" 절.
+설정 "대화 → 반말로 대화"(기본 꺼짐, `AppSettings.casualTone`)를 켜면 반말. 선택은 `thread/start`·`thread/resume`의 `developerInstructions`로 턴마다 보낸다
+(app-server 스키마에서 대화별 지침을 받는 필드는 이 둘뿐이고 `turn/start`에는 없다).
 
 ## eTL API 레퍼런스
 

@@ -97,7 +97,7 @@ fun ChatTopBar(onMenu: () -> Unit, onNewChat: () -> Unit, onSettings: () -> Unit
         IconButton(onClick = onMenu) {
             Icon(Icons.Outlined.Menu, contentDescription = "대화 목록", tint = c.foregroundNeutralPrimary)
         }
-        Text("미니 eTL 비서", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
+        Text("영민이", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
         IconButton(onClick = onNewChat) {
             Icon(Icons.Outlined.AddComment, contentDescription = "새 대화", tint = c.foregroundNeutralPrimary)
         }

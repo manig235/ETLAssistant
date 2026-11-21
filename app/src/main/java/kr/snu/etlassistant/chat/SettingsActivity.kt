@@ -28,7 +28,6 @@ import kr.snu.etlassistant.notify.NotifySettingsStore
 import kr.snu.etlassistant.notify.NotifyStateStore
 import kr.snu.etlassistant.onboarding.OnboardingActivity
 import kr.snu.etlassistant.phase0.CodexRunner
-import kr.snu.etlassistant.phase0.MainActivity
 
 /**
  * 설정 화면: ChatGPT 계정(브라우저 / 기기 코드), eTL 토큰, 알림, AI 모델, API 키(고급). 화면은 Montage(Wanted 디자인 시스템)로 그린다.
@@ -92,10 +91,13 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
                 state.modelChoice = CodexSession.modelChoice
             },
             replayOnboarding = { startActivity(Intent(this, OnboardingActivity::class.java)) },
-            openDevTools = { startActivity(Intent(this, MainActivity::class.java)) },
             openHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
             openTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
             openMyDeadlines = { startActivity(Intent(this, MyDeadlinesActivity::class.java)) },
+            setCasualTone = { v ->
+                AppSettings.casualTone = v
+                state.casualTone = v
+            },
         )
         setContent { SettingsRoot(state, actions) }
     }
@@ -170,6 +172,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
         state.hasApiKey = has
         state.apiKeyMasked = if (has) apiKeys.load()?.let { SettingsLogic.maskKey(it) } else null
         state.useApiKey = AppSettings.authMode == AppSettings.AUTH_API_KEY
+        state.casualTone = AppSettings.casualTone
         state.hasEtlToken = EtlService.tokens(this).hasToken()
     }
 

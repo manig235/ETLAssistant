@@ -87,13 +87,5 @@
             android:name="kr.snu.etlassistant.chat.MyDeadlinesActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
-
-        <!-- 개발자 도구(Phase 0 화면). 런처에는 나오지 않는다. -->
-        <activity
-            android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:exported="true"
-            android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>
