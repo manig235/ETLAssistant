@@ -78,6 +78,8 @@ import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.notify.NotifySettings
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.ui.semantics.contentDescription
@@ -810,7 +812,20 @@ private fun AboutSection() {
             Spacer(Modifier.height(10.dp))
             Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
             Spacer(Modifier.height(4.dp))
-            LinkRow("건의사항 · 오류 제보", onClick = { feedbackOpen = true })
+            // 화살표 줄 대신 하이퍼링크처럼: 브랜드 색 + 밑줄. 터치 영역은 48dp 높이로 둔다.
+            Box(
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .clickable(role = Role.Button, onClickLabel = "제보 안내 열기") { feedbackOpen = true },
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    "건의사항 · 오류 제보",
+                    style = DesignSystemTheme.typography.body2Medium,
+                    color = DesignSystemTheme.colors.foregroundBrandPrimary,
+                    textDecoration = TextDecoration.Underline,
+                )
+            }
         }
     }
 
@@ -823,7 +838,7 @@ private fun AboutSection() {
             title = { Text("건의사항 · 오류 제보", style = t.headline2Bold, color = c.foregroundNeutralPrimary) },
             text = {
                 Text(
-                    "앱에 오류가 있나요? 오픈채팅에 접속해서 혼내주세요!\n바라는 기능이 있으면 건의도 편하게 남겨 주세요.",
+                    "앱에 오류가 있나요? 오픈채팅에 접속해서 혼내주세요!\n영민이한테 원하는 기능도 여기서 알려주세요!",
                     style = t.body2Regular,
                     color = c.foregroundNeutralSecondary,
                 )
