@@ -21,12 +21,18 @@ object EtlEvents {
 
     interface Listener {
         fun onFilesSaved(files: List<SavedFile>, pagePreview: Boolean)
+        /** 비서가 폰 안의 데이터(내 마감, 보강·휴강)를 바꿨다. 채팅에 한 줄로 보여 사용자가 바로 알게 한다. */
+        fun onNotice(text: String) {}
     }
 
     @Volatile var listener: Listener? = null
 
     fun fileSaved(f: SavedFile) {
         runCatching { listener?.onFilesSaved(listOf(f), pagePreview = false) }
+    }
+
+    fun notice(text: String) {
+        runCatching { listener?.onNotice(text) }
     }
 
     fun pagesRendered(files: List<SavedFile>) {

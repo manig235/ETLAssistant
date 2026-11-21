@@ -245,6 +245,10 @@ object CodexSession {
                 }
                 main.post { model.addFiles(atts) }
             }
+
+            override fun onNotice(text: String) {
+                main.post { model.addNotice(text) }
+            }
         }
     }
 
