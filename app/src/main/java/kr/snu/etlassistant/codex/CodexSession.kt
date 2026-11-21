@@ -738,7 +738,7 @@ object CodexSession {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pi = PendingIntent.getActivity(app, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = android.app.Notification.Builder(app, "login")
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(kr.snu.etlassistant.phase0.R.drawable.ic_stat_etl)
             .setContentTitle("로그인이 완료됐습니다")
             .setContentText("탭하면 미니 eTL 비서로 돌아갑니다")
             .setContentIntent(pi)
