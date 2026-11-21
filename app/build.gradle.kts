@@ -40,6 +40,9 @@ android {
                 storePassword = releaseSigning.getProperty("storePassword")
                 keyAlias = releaseSigning.getProperty("keyAlias")
                 keyPassword = releaseSigning.getProperty("keyPassword")
+                // minSdk 26이라 v1은 필요 없다. v2와 v3를 모두 넣는다(v3는 나중에 키 순환을 쓸 수 있게).
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
