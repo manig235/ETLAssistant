@@ -195,7 +195,7 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 - 쓰기(폰 안만): `my_deadline_add(title, due, memo)`, `my_deadline_update(id, …)`, `my_deadline_delete(id)`, `timetable_change_add(kind, date, course, start, end, room, note)`, `timetable_change_delete(id)`
 - `etl_boards(course_id)`, `etl_board_posts(course_id, board_id, page=1, keyword)`, `etl_board_post(course_id, board_id, post_id)`: LearningX 게시판
 - `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
-- `etl_syllabus(course_id, attachment?, save_to_phone=false)`: 강의계획서. eTL `syllabus_body`(글, 걸린 eTL 파일 ID) + 수강편람 강의계획서(`cc103ajax`: 평가 비율, 주차별 계획, 목표, 교재, 출석 규정, 첨부 목록). `attachment`(index)로 첨부 계획서를 작업 폴더에 받는다
+- `etl_syllabus(course_id, attachment?)`: 강의계획서. eTL `syllabus_body`(글, 걸린 eTL 파일 ID) + 수강편람 강의계획서(`cc103ajax`: 평가 비율, 주차별 계획, 목표, 교재, 출석 규정, 첨부 목록). `attachment`(index)로 첨부 계획서를 비서용 작업 폴더에만 받아 읽는다(2026-11-21 사용자 결정: 원본 파일은 사용자에게 주지 않는다. 폰 저장·채팅 파일 카드 없음. 첨부는 `etl-files/syllabus/`에 두고, PDF를 `etl_render_pages`로 읽어도 채팅에 쪽 미리보기를 띄우지 않는다(`EtlFiles.isPrivateRead`). 계획서는 비서가 정보를 얻으려고 보는 것이지 사용자에게 필요한 게 아니라는 사용자 결정)
 - `etl_download`에 게시판 첨부용 `course_id`, `board_id`, `post_id`(선택)
 - `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
 

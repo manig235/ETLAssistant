@@ -11,6 +11,11 @@ import java.io.IOException
 object EtlFiles {
     const val DIR = "etl-files"
     const val RENDER_DIR = "render"
+    /**
+     * 강의계획서 첨부를 두는 하위 폴더. 비서가 정보를 얻으려고만 읽는 파일이라, 이 안의 파일은
+     * 채팅에 쪽 미리보기나 파일 카드를 띄우지 않는다([isPrivateRead]).
+     */
+    const val SYLLABUS_DIR = "syllabus"
     const val MAX_RENDER_PAGES = 6
     const val DEFAULT_TEXT_CHARS = 20_000
     const val MAX_TEXT_CHARS = 60_000
@@ -110,6 +115,18 @@ object EtlFiles {
         if (!f.path.startsWith(root.path + File.separator)) throw EtlException("etl-files/ 안의 파일만 열 수 있습니다")
         if (!f.isFile) throw EtlException("파일이 없습니다: $cleaned")
         return f
+    }
+
+    /**
+     * 비서만 읽고 사용자에게는 보여 주지 않는 파일인가(강의계획서 첨부). `etl-files/syllabus/` 아래이거나,
+     * 이전 빌드가 `etl-files/` 바로 아래에 둔 `syllabus-…` 파일. 이 폴더에는 앱 코드만 쓰고 비서(read-only 샌드박스)는
+     * 파일을 옮기거나 복사할 수 없으므로, 경로를 바꿔 미리보기를 띄우는 우회는 없다.
+     */
+    fun isPrivateRead(workspace: File, f: File): Boolean {
+        val root = File(workspace, DIR).canonicalFile
+        val c = f.canonicalFile
+        return c.path.startsWith(File(root, SYLLABUS_DIR).path + File.separator) ||
+            (c.parentFile == root && c.name.startsWith("syllabus-"))
     }
 
     /** 작업 폴더 기준 상대 경로 표기. */

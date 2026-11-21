@@ -101,10 +101,9 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_board_post", "게시글 하나의 본문, 첨부파일 목록(이름·크기·file_id), 댓글. 필요한 글만 연다.",
             schema(Triple("course_id", "integer", "과목 ID"), Triple("board_id", "integer", "게시판 ID"), Triple("post_id", "integer", "글 ID(etl_board_posts)"),
                 required = listOf("course_id", "board_id", "post_id"))))
-        .put(tool("etl_syllabus", "과목의 강의계획서. 시험 일정(중간·기말고사), 평가 비율, 주차별 계획, 수업 목표, 교재, 출석 규정, 담당교수 질문에 먼저 쓴다. eTL 강의계획서 본문(글과 거기 걸린 eTL 파일 ID)과, 본문이 연결한 서울대 수강편람의 강의계획서(평가 비율·주차별 계획 등, 로그인 없이 공개 조회)를 합쳐 돌려준다. 교수가 계획서를 첨부파일로만 올린 경우가 많으니 attachments가 있고 답이 없으면 attachment에 그 index를 넣어 다시 불러 받은 뒤 etl_read_file(docx·pptx·hwp·hwpx·텍스트)이나 etl_render_pages(PDF)로 읽는다. linked_files는 etl_download로 받는다.",
+        .put(tool("etl_syllabus", "과목의 강의계획서. 시험 일정(중간·기말고사), 평가 비율, 주차별 계획, 수업 목표, 교재, 출석 규정, 담당교수 질문에 먼저 쓴다. eTL 강의계획서 본문(글과 거기 걸린 eTL 파일 ID)과, 본문이 연결한 서울대 수강편람의 강의계획서(평가 비율·주차별 계획 등, 로그인 없이 공개 조회)를 합쳐 돌려준다. 교수가 계획서를 첨부파일로만 올린 경우가 많으니 attachments가 있고 답이 없으면 attachment에 그 index를 넣어 다시 불러 비서만 읽는 작업 폴더에 받은 뒤 etl_read_file(docx·pptx·hwp·hwpx·텍스트)이나 etl_render_pages(PDF)로 읽는다. 첨부는 폰에 저장하지 않고 사용자에게 원본 파일이나 쪽 미리보기를 보여 주지 않는다. linked_files는 etl_download로 받는다.",
             schema(Triple("course_id", "integer", "과목 ID(etl_courses)"),
-                Triple("attachment", "integer", "수강편람 첨부(attachments의 index)를 작업 폴더에 받는다(선택)"),
-                Triple("save_to_phone", "boolean", "attachment를 폰의 Download/etl/에도 저장할지. 기본 false"),
+                Triple("attachment", "integer", "수강편람 첨부(attachments의 index)를 비서용 작업 폴더에 받아 읽을 수 있게 한다(선택, 폰에는 저장하지 않음)"),
                 required = listOf("course_id"))))
         .put(tool("etl_timetable", "수업 시간표. 정규 수업 요일·시간·강의실은 각 과목 강의계획서에 연결된 서울대 수강편람에서 가져오고(하루 캐시), 사용자가 앱의 '시간표' 화면에 넣은 보강·휴강을 반영하고(휴강은 cancelled), 그날 eTL 캘린더 일정을 더한다. 기본은 오늘(KST)의 수업. week=true면 요일별 주간 시간표. 사용자에게 시간표를 따로 묻지 않는다.",
             schema(Triple("date", "string", "YYYY-MM-DD(KST). 기본 오늘"), Triple("week", "boolean", "주간 시간표 전체. 기본 false"),
@@ -173,7 +172,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_board_posts" -> board().posts(id(args, "course_id"), id(args, "board_id"), args.optInt("page", 1), args.optString("keyword", ""))
                 "etl_board_post" -> board().post(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"))
                 "etl_timetable" -> timetable(client(), args)
-                "etl_syllabus" -> syllabus(client(), id(args, "course_id"), (if (args.has("attachment") && !args.isNull("attachment")) args.optInt("attachment", -1) else null), args.optBoolean("save_to_phone", false))
+                "etl_syllabus" -> syllabus(client(), id(args, "course_id"), (if (args.has("attachment") && !args.isNull("attachment")) args.optInt("attachment", -1) else null))
                 else -> getRaw(client(), args.optString("path", ""), args.optBoolean("all", false))
             }
             ToolResult(out.toString(), detail = logDetail(name, args, null))
@@ -598,7 +597,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
      * 강의계획서 = eTL 강의계획서 본문 + 본문이 가리키는 수강편람 강의계획서(cc103ajax, 공개, eTL 토큰 없이).
      * 서울대 eTL의 강의계획서 본문은 보통 수강편람 페이지를 띄우는 iframe 하나뿐이라, etl_get으로는 내용을 볼 수 없었다.
      */
-    private fun syllabus(c: EtlClient, cid: Long, attachment: Int?, saveToPhone: Boolean): JSONObject {
+    private fun syllabus(c: EtlClient, cid: Long, attachment: Int?): JSONObject {
         val course = c.getObject("/api/v1/courses/$cid?include[]=syllabus_body")
         val body = course.str("syllabus_body")
         val out = JSONObject().put("course_id", cid).put("course", course.str("name"))
@@ -623,19 +622,23 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             val atts = TimetableLogic.syllabusAttachments(detail)
             val a = atts.getOrNull(attachment)
                 ?: throw EtlException(if (detail == null) "수강편람 강의계획서를 읽지 못해 첨부를 받을 수 없습니다" else "attachment는 0~${atts.size - 1} 중 하나여야 합니다(첨부 ${atts.size}개)")
-            out.put("downloaded", saveSyllabusAttachment(a, ref!!, saveToPhone))
+            out.put("downloaded", fetchSyllabusAttachment(a, ref!!))
         }
         return out
     }
 
-    /** 수강편람 강의계획서 첨부를 작업 폴더에 받는다(shine.snu.ac.kr GET, eTL 토큰 없음). */
-    private fun saveSyllabusAttachment(a: TimetableLogic.SyllabusAttachment, ref: Map<String, String>, saveToPhone: Boolean): JSONObject {
+    /**
+     * 수강편람 강의계획서 첨부를 비서가 읽을 작업 폴더에만 받는다(shine.snu.ac.kr GET, eTL 토큰 없음).
+     * 원본 파일은 사용자에게 건네지 않는다: 폰(Download/etl)에 저장하지 않고 채팅에 파일 카드도 띄우지 않는다.
+     * `etl-files/syllabus/`에 두므로 PDF를 etl_render_pages로 읽어도 쪽 미리보기가 채팅에 뜨지 않는다([EtlFiles.isPrivateRead]).
+     * 같은 첨부는 같은 이름으로 덮어쓰고, 오래된 파일은 [EtlFiles.prune]이 지운다.
+     */
+    private fun fetchSyllabusAttachment(a: TimetableLogic.SyllabusAttachment, ref: Map<String, String>): JSONObject {
         val url = TimetableLogic.attachmentUrl(a) ?: throw EtlException("첨부 번호가 올바르지 않습니다")
         val name = EtlLogic.safeName(a.name, "syllabus-${ref["sbjtCd"]}")
-        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
-        val dir = File(workspace, EtlFiles.DIR).apply { mkdirs() }
-        EtlFiles.prune(dir, System.currentTimeMillis())
-        // 이름이 "숫자-"로 시작하지 않게 해 eTL 파일(savedFileIds)과 섞이지 않게 한다.
+        val root = File(workspace, EtlFiles.DIR).apply { mkdirs() }
+        EtlFiles.prune(root, System.currentTimeMillis())
+        val dir = File(root, EtlFiles.SYLLABUS_DIR).apply { mkdirs() }
         val stored = File(dir, EtlFiles.fitName("syllabus-${ref["openSchyy"]}-${ref["sbjtCd"]}-${ref["ltNo"]}-${a.lang}-$name"))
         val tmp = File(dir, stored.name + ".part")
         val bytes = try {
@@ -645,26 +648,11 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             throw EtlException(e.message ?: "첨부파일을 받지 못했습니다")
         }
         if (!tmp.renameTo(stored)) { tmp.copyTo(stored, overwrite = true); tmp.delete() }
-        var savedTo: String? = null
-        var phoneUri: String? = null
-        if (saveToPhone) {
-            val sink = DownloadSink.open(context, name, mime)
-            try {
-                sink.stream.use { o -> stored.inputStream().use { it.copyTo(o) } }
-                sink.finish()
-                savedTo = sink.shownPath
-                phoneUri = sink.uri
-            } catch (_: Exception) {
-                sink.abort()
-            }
-        }
-        EtlEvents.fileSaved(EtlEvents.SavedFile(a.name, mime, bytes, stored, phoneUri, savedTo))
         return JSONObject().put("name", a.name).put("workspace_path", EtlFiles.relPath(workspace, stored)).put("bytes", bytes)
-            .put("saved_to", savedTo ?: JSONObject.NULL)
             .put("hint", when {
-                EtlFiles.isPdf(stored.name) -> "etl_render_pages로 쪽 이미지를 만들어 읽으세요"
-                EtlFiles.isOoxml(stored.name) || HwpText.isHwp(stored.name) || EtlFiles.isTextLike(stored.name) -> "etl_read_file로 읽으세요"
-                else -> "이 형식(${stored.name.substringAfterLast('.', "?")})은 내용을 읽을 수 없습니다. 폰에 저장해 직접 여세요"
+                EtlFiles.isPdf(stored.name) -> "etl_render_pages로 쪽 이미지를 만들어 읽으세요(채팅에 미리보기는 뜨지 않습니다). 이 파일은 비서가 읽기 위한 것이며 사용자에게는 읽은 내용으로만 답합니다"
+                EtlFiles.isOoxml(stored.name) || HwpText.isHwp(stored.name) || EtlFiles.isTextLike(stored.name) -> "etl_read_file로 읽으세요. 이 파일은 비서가 읽기 위한 것이며 사용자에게는 읽은 내용으로만 답합니다"
+                else -> "이 형식(${stored.name.substringAfterLast('.', "?")})은 내용을 읽을 수 없습니다. 원본은 수강편람의 강의계획서 화면에서 직접 받을 수 있다고 안내하세요"
             })
     }
 
@@ -831,9 +819,12 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val outDir = File(workspace, "${EtlFiles.DIR}/${EtlFiles.RENDER_DIR}")
         val base = f.name.substringBefore('-').takeIf { it.isNotEmpty() && it.all(Char::isDigit) } ?: Integer.toHexString(f.name.hashCode())
         val rendered = PdfPages.render(f, pages, outDir, base)
-        EtlEvents.pagesRendered(rendered.map { r ->
-            EtlEvents.SavedFile("${f.name.substringAfter('-')} ${r.page}쪽", "image/png", r.file.length(), r.file, null, null)
-        })
+        // 강의계획서 첨부는 비서가 정보를 얻으려고만 보는 파일이라 채팅에 쪽 미리보기를 띄우지 않는다.
+        if (!EtlFiles.isPrivateRead(workspace, f)) {
+            EtlEvents.pagesRendered(rendered.map { r ->
+                EtlEvents.SavedFile("${f.name.substringAfter('-')} ${r.page}쪽", "image/png", r.file.length(), r.file, null, null)
+            })
+        }
         val arr = JSONArray()
         for (r in rendered) {
             arr.put(JSONObject().put("page", r.page).put("path", EtlFiles.relPath(workspace, r.file)).put("width", r.width).put("height", r.height))

@@ -51,6 +51,21 @@ class EtlFilesTest {
         assertTrue(n.toByteArray(Charsets.UTF_8).size <= 200)
     }
 
+    @Test fun syllabusAttachmentsArePrivateReads() {
+        val syl = File(ws, "etl-files/syllabus").apply { mkdirs() }
+        val pdf = File(syl, "syllabus-2026-430.309A-001-en-plan.pdf").apply { writeText("x") }
+        assertTrue(EtlFiles.isPrivateRead(ws, pdf))
+        assertTrue(EtlFiles.isPrivateRead(ws, EtlFiles.resolveInside(ws, "etl-files/syllabus/../syllabus/${pdf.name}")))
+        // 이전 빌드가 etl-files/ 바로 아래에 둔 계획서 첨부
+        assertTrue(EtlFiles.isPrivateRead(ws, File(ws, "etl-files/syllabus-old.pdf").apply { writeText("x") }))
+        // 일반 eTL 파일, 사용자 첨부, 이름만 비슷한 하위 폴더는 미리보기 대상
+        assertFalse(EtlFiles.isPrivateRead(ws, File(ws, "etl-files/123-syllabus.pdf").apply { writeText("x") }))
+        val up = File(ws, "etl-files/uploads").apply { mkdirs() }
+        assertFalse(EtlFiles.isPrivateRead(ws, File(up, "syllabus-mine.pdf").apply { writeText("x") }))
+        val lookalike = File(ws, "etl-files/syllabusX").apply { mkdirs() }
+        assertFalse(EtlFiles.isPrivateRead(ws, File(lookalike, "a.pdf").apply { writeText("x") }))
+    }
+
     @Test fun resolveInsideAcceptsFilesUnderEtlFiles() {
         val f = File(ws, "etl-files/1-a.txt").apply { writeText("hi") }
         assertEquals(f.canonicalFile, EtlFiles.resolveInside(ws, "etl-files/1-a.txt"))
