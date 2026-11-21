@@ -289,6 +289,14 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
                 color = DesignSystemTheme.colors.foregroundNeutralSecondary,
             )
         }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "서울대학교 공식 앱이 아니에요. 학생이 직접 만든 앱이에요.",
+            style = DesignSystemTheme.typography.caption1Regular,
+            color = DesignSystemTheme.colors.foregroundNeutralTertiary,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
