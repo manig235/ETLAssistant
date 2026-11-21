@@ -93,6 +93,9 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
             },
             replayOnboarding = { startActivity(Intent(this, OnboardingActivity::class.java)) },
             openDevTools = { startActivity(Intent(this, MainActivity::class.java)) },
+            openHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
+            openTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
+            openMyDeadlines = { startActivity(Intent(this, MyDeadlinesActivity::class.java)) },
         )
         setContent { SettingsRoot(state, actions) }
     }

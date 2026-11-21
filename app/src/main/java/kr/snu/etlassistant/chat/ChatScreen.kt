@@ -105,6 +105,10 @@ class ChatActions(
     /** 답변 중에 대화 이름 바꾸기·삭제를 누름. */
     val onDrawerBusy: () -> Unit,
     val onDeleteChat: (String) -> Unit,
+    /** 서랍의 "내 마감". */
+    val onMyDeadlines: () -> Unit,
+    val onTimetable: () -> Unit,
+    val onHistory: () -> Unit,
 )
 
 @Composable
@@ -148,6 +152,9 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                     onDelete = a.onDeleteChat,
                     busy = vm.busy,
                     onBusy = a.onDrawerBusy,
+                    onMyDeadlines = { a.onMyDeadlines(); closeDrawer() },
+                    onTimetable = { a.onTimetable(); closeDrawer() },
+                    onHistory = { a.onHistory(); closeDrawer() },
                 )
             }
         },

@@ -130,6 +130,9 @@ class SettingsActions(
     val setModelChoice: (ModelChoice) -> Unit,
     val replayOnboarding: () -> Unit,
     val openDevTools: () -> Unit,
+    val openHistory: () -> Unit = {},
+    val openTimetable: () -> Unit = {},
+    val openMyDeadlines: () -> Unit = {},
 )
 
 @Composable
@@ -619,7 +622,17 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                     )
                 }
             }
-            SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려요", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
+            SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려요(보강·휴강 공지는 따로 표시)", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
+            SwitchRow("새 과제·마감 변경·성적 알림", "과제가 새로 올라오거나, 마감이 바뀌거나, 점수가 등록되면 알려요", n.changeAlerts) { v -> a.updateNotify { it.copy(changeAlerts = v) } }
+            SwitchRow("수업 알림", "시간표(수강편람 + 보강·휴강)의 수업 시작 ${n.classLeadMinutes}분 전에 알려요", n.classAlerts) { v -> a.updateNotify { it.copy(classAlerts = v) } }
+            if (n.classAlerts) {
+                Spacer(Modifier.height(4.dp))
+                FlowRow(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (m in listOf(5, 10, 15, 30)) {
+                        WantedChip(text = "${m}분 전", isActive = n.classLeadMinutes == m, onClick = { a.updateNotify { it.copy(classLeadMinutes = m) } })
+                    }
+                }
+            }
             SwitchRow("정기 브리핑", "마감·누락·새 공지를 정해진 시각에 요약해서 보내요", n.briefEnabled) { v -> a.updateNotify { it.copy(briefEnabled = v) } }
             if (n.briefEnabled) {
                 Spacer(Modifier.height(4.dp))
@@ -757,6 +770,9 @@ private fun ApiKeySection(s: SettingsState, a: SettingsActions) {
 private fun MiscSection(a: SettingsActions) {
     Section("기타") {
         SettingsCard {
+            LinkRow("알림 기록", onClick = a.openHistory)
+            LinkRow("시간표 · 보강/휴강", onClick = a.openTimetable)
+            LinkRow("내 일정", onClick = a.openMyDeadlines)
             LinkRow("처음 안내 다시 보기", onClick = a.replayOnboarding)
             LinkRow("개발자 도구", onClick = a.openDevTools)
         }

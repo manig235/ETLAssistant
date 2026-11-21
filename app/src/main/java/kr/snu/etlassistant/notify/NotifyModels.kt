@@ -132,8 +132,8 @@ data class NotifySettings(
     val briefEnabled: Boolean = false,
     /** 브리핑을 보낼 시각(하루 중 분, 0..1439). 최대 2개. 기기의 현재 시간대 기준. */
     val briefMinutesOfDay: List<Int> = listOf(8 * 60),
-    /** 방해 금지 시간에는 마감·공지 알림을 미룬다(브리핑은 정해진 시각에 보낸다). */
-    val quietEnabled: Boolean = true,
+    /** 방해 금지 시간에는 마감·공지 알림을 미룬다(브리핑은 정해진 시각에 보낸다). 기본은 꺼짐이고 첫 실행 안내에서 묻는다. */
+    val quietEnabled: Boolean = false,
     val quietStartMinutes: Int = 23 * 60,
     val quietEndMinutes: Int = 7 * 60,
     /** 잠금화면에서는 내용을 숨기고 "미니 eTL 알림"만 보인다. */

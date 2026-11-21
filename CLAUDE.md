@@ -78,6 +78,19 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 **Phase 3: 알림 — 구현됨, 기기 장기 검증 남음.** WorkManager로 한 시간마다 확인해 마감 임박(기본 3일·24시간·3시간·1시간 전, 설정에서 선택)과 새 공지를
 로컬 알림으로 띄운다. AI는 쓰지 않는다. 정기 브리핑(최대 2개 시각), 방해 금지, 잠금화면 숨김, 중복 방지(`NotifyState`),
 공지 기준선을 갖췄다. 상세는 `docs/phase3-log.md`. 백그라운드 장기 동작(삼성 절전 등)은 아직 실측하지 못했다.
+**내 일정**(2026-11-21, 처음엔 "내 마감"): 서랍 → "내 일정"(`MyDeadlinesActivity`). eTL 과제 마감 + 내 마감 + 오늘·내일 수업(휴강 포함)을
+날짜별(마감 지남/오늘/내일/이번 주/다음 주/그 뒤)로 한 목록에 모은다(`notify/Agenda.kt`). eTL 과제는 알림 확인·브리핑 때 `SnapshotCache`에 저장한 결과를
+바로 보여 주고, 없거나 3시간보다 오래됐으면 화면에서 뒤로 새로 받는다. 필터 칩(전체/과제/내 마감/수업), 제출·완료 숨기기(기본).
+내 마감은 eTL 밖의 마감을 사용자가 직접 등록한다(폰 안 SharedPreferences).
+내 마감마다 **알림 시각을 직접** 정할 수 있다(`MyDeadline.reminders`, 최대 5개; 화면은 "N분 전"·"시각 고르기").
+기본 마감 알림 시점과 별개이고 방해 금지와 무관하다. `NotifyRunner.runCheck`가 eTL 조회 전에 네트워크 없이 먼저 보내고(키 `mine-remind:{id}:{분}`),
+제시간 알람(`DeadlineAlarm`)은 네트워크를 기다리지 않고 manual로 돈다. 저장할 때 `DeadlineAlarm.scheduleEarlier`로 바로 건다.
+채팅 말풍선은 `SelectionContainer`로 길게 눌러 부분 선택·복사(접근성에는 "전체 복사" 동작).
+방해 금지는 2026-11-21부터 **기본 꺼짐**이고 첫 실행 안내의 알림 단계에서 켤지·시간을 묻는다(이미 저장된 설정은 그대로).
+알림·브리핑에서는 `MyDeadlines.toItems`로 `courseId = -1`, 강의명 "내 마감"인 `AssignmentItem`이 되어 eTL 과제와 같은 규칙을 따른다.
+완료 = 제출됨, 지난 미완료 = 누락. 마감 시각을 고치면 새 ID로 저장해 이전 알림 기록이 새 알림을 막지 않게 한다. eTL 토큰이 없어도 내 마감만으로 알림이 돈다(이때 공지 기준선은 잡지 않는다).
+AI는 `my_deadlines`로 내 마감을 읽는다(추가·수정은 화면에서만).
+
 **게시판·시간표**(2026-11-21): ttokttok-pet(`hyukjunlim/ttokttok-pet`, 예전 claude-pet)의 `etl-board` 브랜치 `src/etl/board.js`와 `src/etl/timetable.js`를 옮겼다.
 eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussion_topics`는 비어 있다(2026-2학기 8과목 모두 0건 확인).
 시간표는 강의계획서 본문(수강편람 iframe 링크) → 수강편람 상세 조회로 가져오고 하루 캐시한다(`TimetableStore`). 아침 브리핑에 "오늘 수업" 섹션이 붙는다.
@@ -164,6 +177,7 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 - `etl_search_files(course_id, term)`
 - `etl_download(file_id_or_url)`: 폰 `Download/etl/`에 저장하고 경로, 크기, 일치 여부를 반환
 - `etl_verify_submission(course_id, assignment_id)`
+- `my_deadlines(range=all|this_week|next_week|days, days=7, include_done=false)`: 폰 안의 "내 마감"(eTL 요청 없음, 토큰 불필요)
 - `etl_boards(course_id)`, `etl_board_posts(course_id, board_id, page=1, keyword)`, `etl_board_post(course_id, board_id, post_id)`: LearningX 게시판
 - `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
 - `etl_download`에 게시판 첨부용 `course_id`, `board_id`, `post_id`(선택)

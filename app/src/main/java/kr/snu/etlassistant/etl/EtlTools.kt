@@ -10,6 +10,8 @@ import kr.snu.etlassistant.etl.EtlLogic.obj
 import kr.snu.etlassistant.etl.EtlLogic.str
 import kr.snu.etlassistant.etl.EtlLogic.strList
 import kr.snu.etlassistant.mcp.ToolHost
+import kr.snu.etlassistant.notify.MyDeadlineStore
+import kr.snu.etlassistant.notify.MyDeadlines
 import kr.snu.etlassistant.mcp.ToolResult
 import kr.snu.etlassistant.mcp.UnknownToolException
 import org.json.JSONArray
@@ -99,13 +101,20 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_timetable", "수업 시간표. 정규 수업 요일·시간·강의실은 각 과목 강의계획서에 연결된 서울대 수강편람에서 가져오고(하루 캐시), 사용자가 앱의 '시간표' 화면에 넣은 보강·휴강을 반영하고(휴강은 cancelled), 그날 eTL 캘린더 일정을 더한다. 기본은 오늘(KST)의 수업. week=true면 요일별 주간 시간표. 사용자에게 시간표를 따로 묻지 않는다.",
             schema(Triple("date", "string", "YYYY-MM-DD(KST). 기본 오늘"), Triple("week", "boolean", "주간 시간표 전체. 기본 false"),
                 Triple("refresh", "boolean", "캐시를 무시하고 수강편람을 다시 조회. 기본 false"))))
+        .put(tool("my_deadlines", "사용자가 앱의 '내 마감'에 직접 등록한 마감(eTL 밖의 일정: 서류 제출, 회의 등)을 마감순으로 돌려준다. 마감·할 일 질문에는 etl_assignments와 함께 쓴다. 지난 미완료 항목은 기간과 관계없이 포함된다. eTL 토큰이 없어도 동작한다.",
+            JSONObject().put("type", "object").put("properties", JSONObject()
+                .put("range", JSONObject().put("type", "string").put("enum", JSONArray(listOf("all", "this_week", "next_week", "days")))
+                    .put("description", "all(기본): 전체, this_week: 이번 주 월~일(KST), next_week: 다음 주, days: 지금부터 days일"))
+                .put("days", JSONObject().put("type", "integer").put("description", "range=days일 때 기간(일). 기본 7, 최대 60"))
+                .put("include_done", JSONObject().put("type", "boolean").put("description", "완료로 표시한 항목도 포함할지. 기본 false")))
+                .put("required", JSONArray())))
         .put(tool("etl_get", "eTL(Canvas) API에 범용 GET을 보낸다. 전용 도구에 없는 정보(모듈, 페이지, Canvas 토론, 퀴즈, 캘린더 일정, 할 일, 쪽지함, 그룹, 수강생, 루브릭, 피드백 등)에 쓴다. 경로 목록은 지침(AGENTS.md)의 'eTL API 경로'를 본다. /api/v1/ 로 시작하는 경로만 허용하고 토큰·로그인·도구 실행 경로는 거부한다. 응답의 서명 링크(verifier 등)와 피드 주소는 ***로 가려진다. 시각은 UTC다.",
             schema(Triple("path", "string", "예: /api/v1/users/self/todo"),
                 Triple("all", "boolean", "목록의 다음 쪽까지 모두 받기(최대 20쪽). 기본 false"),
                 required = listOf("path"))))
 
     override fun call(name: String, args: JSONObject): ToolResult {
-        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable")
+        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable")
         if (name !in known) throw UnknownToolException(name)
         return try {
             val out: Any = when (name) {
@@ -127,6 +136,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_read_file" -> readFile(args.optString("path", ""), args.optInt("max_chars", EtlFiles.DEFAULT_TEXT_CHARS))
                 "etl_render_pages" -> renderPages(args.optString("path", ""), args.optString("pages", "").ifEmpty { null })
                 "etl_verify_submission" -> verify(client(), id(args, "course_id"), id(args, "assignment_id"))
+                "my_deadlines" -> myDeadlines(args)
                 "etl_boards" -> board().boards(id(args, "course_id"))
                 "etl_board_posts" -> board().posts(id(args, "course_id"), id(args, "board_id"), args.optInt("page", 1), args.optString("keyword", ""))
                 "etl_board_post" -> board().post(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"))
@@ -151,12 +161,22 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             "etl_digest" -> "days=${args.optInt("days", 7)}"
             "etl_announcements" -> "days=${args.optInt("days", 7)}" + if (args.has("course_id")) " course=${args.optLong("course_id")}" else ""
             "etl_grades", "etl_files" -> if (args.has("course_id")) "course=${args.optLong("course_id")}" else ""
+            "my_deadlines" -> args.optString("range", "all")
             "etl_board_posts" -> "board=${args.optLong("board_id")} page=${args.optInt("page", 1)}"
             "etl_board_post" -> "board=${args.optLong("board_id")} post=${args.optLong("post_id")}"
             "etl_timetable" -> if (args.optBoolean("week", false)) "week" else args.optString("date", "today")
             else -> ""
         }
         return listOfNotNull(what.takeIf { it.isNotEmpty() }, kind?.let { "[$it]" }).joinToString(" ")
+    }
+
+    /** 폰 안의 '내 마감'. eTL에 요청하지 않는다. */
+    private fun myDeadlines(args: JSONObject): JSONObject {
+        val now = Instant.now()
+        val rangeId = args.optString("range", "all").trim().lowercase()
+        val window = if (rangeId == "all" || rangeId.isEmpty()) null
+        else AssignmentQuery.window(AssignmentQuery.Range.parse(rangeId), now, args.optInt("days", 7))
+        return MyDeadlines.toolResult(MyDeadlineStore(context).load(), now, window, args.optBoolean("include_done", false))
     }
 
     private fun client(): EtlClient {

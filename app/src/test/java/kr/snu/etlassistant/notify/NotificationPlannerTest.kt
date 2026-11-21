@@ -13,7 +13,8 @@ class NotificationPlannerTest {
     private val seoul = ZoneId.of("Asia/Seoul")
     /** 2026-11-19(목) 12:00 KST */
     private val now: Instant = Instant.parse("2026-11-19T03:00:00Z")
-    private val settings = NotifySettings()
+    /** 이 테스트들은 방해 금지 23:00~07:00이 켜진 상태를 기준으로 쓰였다(기본값은 2026-11-21부터 꺼짐). */
+    private val settings = NotifySettings(quietEnabled = true)
 
     private fun asg(
         id: Long,

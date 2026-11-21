@@ -45,6 +45,15 @@ object DeadlineAlarm {
 
     fun cancel(context: Context) = schedule(context, null)
 
+    /** 지금 잡힌 목표보다 [at]이 이르거나 목표가 없거나 지났으면 [at]으로 바꾼다(다른 알림 목표를 늦추지 않는다). */
+    fun scheduleEarlier(context: Context, at: Instant?) {
+        if (at == null) return
+        val app = context.applicationContext
+        val cur = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_TARGET, 0L)
+        val now = System.currentTimeMillis()
+        if (cur <= now || at.toEpochMilli() + SLACK_MS < cur) schedule(app, at)
+    }
+
     /** 저장된 목표를 향해 다음 알람(중간 또는 마지막)을 건다. */
     private fun arm(app: Context, nowMs: Long) {
         val target = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_TARGET, 0L)
@@ -69,8 +78,10 @@ object DeadlineAlarm {
             arm(app, System.currentTimeMillis())
             return
         }
+        // 네트워크를 기다리지 않는다: 내 마감 알림은 오프라인에서도 바로 보내야 한다(eTL 조회만 실패하고 다시 시도된다).
+        // 알람은 일부러 잡은 확인이므로 주기 확인이 꺼져 있어도 돌린다(manual).
         val req = OneTimeWorkRequestBuilder<NotifyCheckWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInputData(androidx.work.Data.Builder().putBoolean(NotifyCheckWorker.KEY_MANUAL, true).build())
             .build()
         WorkManager.getInstance(app).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, req)
     }

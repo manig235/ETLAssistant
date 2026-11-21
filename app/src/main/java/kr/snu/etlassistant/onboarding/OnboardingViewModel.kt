@@ -53,6 +53,10 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     var announcementAlerts by mutableStateOf(true)
     var briefEnabled by mutableStateOf(true)
     var briefMinutes by mutableStateOf(OnboardingLogic.briefTimeChoices[1])
+    /** 방해 금지: 기본 꺼짐. 켜면 23:00~07:00(바꿀 수 있음). */
+    var quietEnabled by mutableStateOf(false)
+    var quietStart by mutableStateOf(23 * 60)
+    var quietEnd by mutableStateOf(7 * 60)
     /** 마감 알림 시점(안내에서는 보여 주기만 하고, 바꾸는 것은 설정 화면에서). */
     val deadlineWindows: List<Int> = NotifySettingsStore(app).load().deadlineWindowsMinutes
 
@@ -69,6 +73,9 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
             announcementAlerts = s.announcementAlerts
             briefEnabled = s.briefEnabled
             briefMinutes = s.briefMinutesOfDay.firstOrNull() ?: briefMinutes
+            quietEnabled = s.quietEnabled
+            quietStart = s.quietStartMinutes
+            quietEnd = s.quietEndMinutes
         }
     }
 
@@ -148,7 +155,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 알림 선택을 저장하고 예약한다. 다른 알림 설정(방해 금지 등)은 기존 값을 유지한다. */
+    /** 알림 선택(방해 금지 포함)을 저장하고 예약한다. 다른 알림 설정은 기존 값을 유지한다. */
     fun applyNotificationChoices() {
         val app = getApplication<Application>()
         val store = NotifySettingsStore(app)
@@ -158,6 +165,9 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                 announcementAlerts = announcementAlerts,
                 briefEnabled = briefEnabled,
                 briefMinutesOfDay = listOf(briefMinutes),
+                quietEnabled = quietEnabled,
+                quietStartMinutes = quietStart,
+                quietEndMinutes = quietEnd,
             )
         )
         NotifyScheduler.apply(app)

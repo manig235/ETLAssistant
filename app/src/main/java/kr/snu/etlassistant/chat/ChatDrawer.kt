@@ -20,6 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EventNote
+import androidx.compose.material.icons.outlined.CalendarViewWeek
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +61,9 @@ fun ChatDrawer(
     onDelete: (String) -> Unit,
     busy: Boolean = false,
     onBusy: () -> Unit = {},
+    onMyDeadlines: () -> Unit = {},
+    onTimetable: () -> Unit = {},
+    onHistory: () -> Unit = {},
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
@@ -80,6 +86,37 @@ fun ChatDrawer(
             Icon(Icons.Outlined.AddComment, contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Text("새 대화", style = t.body1Medium, color = c.foregroundBrandPrimary)
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(role = SemRole.Button, onClick = onMyDeadlines)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.EventNote, contentDescription = null, tint = c.foregroundNeutralPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text("내 일정", style = t.body1Medium, color = c.foregroundNeutralPrimary)
+        }
+        for ((icon, label, action) in listOf(
+            Triple(Icons.Outlined.CalendarViewWeek, "시간표", onTimetable),
+            Triple(Icons.Outlined.NotificationsNone, "알림 기록", onHistory),
+        )) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(role = SemRole.Button, onClick = action)
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, tint = c.foregroundNeutralPrimary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(label, style = t.body1Medium, color = c.foregroundNeutralPrimary)
+            }
         }
         Spacer(Modifier.height(8.dp))
         if (chats.isEmpty()) {

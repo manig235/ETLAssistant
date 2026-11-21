@@ -89,6 +89,9 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
                 refreshChats()
             },
             onSettings = { openSettings() },
+            onMyDeadlines = { openMyDeadlines() },
+            onTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
+            onHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
             onBanner = { action ->
                 when (action) {
                     BannerAction.SETTINGS -> openSettings()
@@ -300,6 +303,8 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
+
+    private fun openMyDeadlines() = startActivity(Intent(this, MyDeadlinesActivity::class.java))
 
     private fun copy(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("message", text))

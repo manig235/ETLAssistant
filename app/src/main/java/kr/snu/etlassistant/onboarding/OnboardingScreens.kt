@@ -577,6 +577,16 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 )
             }
         }
+        SwitchRow("방해 금지 시간", "이 시간에는 마감·공지 알림을 미뤘다가 끝나면 보내요(브리핑과 직접 정한 알림은 그대로)", vm.quietEnabled) { vm.quietEnabled = it }
+        if (vm.quietEnabled) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WantedChip(text = NotifyUiFormat.formatTime(vm.quietStart, is24h = false) + " 부터", isActive = true,
+                    onClick = { a.pickTime(vm.quietStart) { vm.quietStart = it } })
+                WantedChip(text = NotifyUiFormat.formatTime(vm.quietEnd, is24h = false) + " 까지", isActive = true,
+                    onClick = { a.pickTime(vm.quietEnd) { vm.quietEnd = it } })
+            }
+        }
     }
 }
 

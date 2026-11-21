@@ -67,6 +67,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role as SemRole
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -256,6 +257,8 @@ fun MessageRow(
                 .padding(horizontal = 24.dp, vertical = 4.dp),
         )
         Role.USER -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            // 길게 누르면 시스템 텍스트 선택(부분 선택·복사). 전체 복사는 접근성 동작으로 남긴다.
+            SelectionContainer {
             Text(
                 text,
                 style = t.body1ReadingRegular,
@@ -267,6 +270,7 @@ fun MessageRow(
                     .background(c.surfaceBrandPrimary)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
+            }
         }
         Role.ASSISTANT -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
             val style = t.body1ReadingRegular
@@ -277,6 +281,7 @@ fun MessageRow(
                 baseFontSize = style.fontSize,
                 onLink = onLink,
             )
+            SelectionContainer {
             Text(
                 body,
                 style = style,
@@ -288,15 +293,16 @@ fun MessageRow(
                     .background(c.surfaceNeutralSecondary)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
+            }
         }
     }
 }
 
-/** 길게 누르면 본문을 복사한다(접근성 서비스에는 "복사" 동작으로 노출). 링크 탭은 자식이 먼저 처리한다. */
+/**
+ * 손으로 길게 누르면 [SelectionContainer]가 부분 선택을 띄운다. 접근성 서비스에는 "전체 복사" 동작으로 본문 전체를 복사하게 노출한다.
+ */
 private fun Modifier.copyOnLongPress(text: String, onCopy: (String) -> Unit): Modifier =
-    this
-        .pointerInput(text) { detectTapGestures(onLongPress = { onCopy(text) }) }
-        .semantics { onLongClick(label = "복사") { onCopy(text); true } }
+    this.semantics { onLongClick(label = "전체 복사") { onCopy(text); true } }
 
 // ---- 활동 상태 한 줄 ------------------------------------------------------------
 
