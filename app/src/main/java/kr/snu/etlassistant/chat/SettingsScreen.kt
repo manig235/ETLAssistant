@@ -1,6 +1,9 @@
 package kr.snu.etlassistant.chat
 
+import android.content.Intent
+import android.net.Uri
 import android.text.format.DateFormat
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -798,6 +801,7 @@ private fun AboutSection() {
     val version = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
     }
+    var feedbackOpen by remember { mutableStateOf(false) }
     Section("앱 정보") {
         SettingsCard {
             Text("영민이", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
@@ -805,9 +809,41 @@ private fun AboutSection() {
             Caption("만든 사람: 박영민 · 버전 $version")
             Spacer(Modifier.height(10.dp))
             Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
+            Spacer(Modifier.height(4.dp))
+            LinkRow("건의사항 · 오류 제보", onClick = { feedbackOpen = true })
         }
     }
+
+    if (feedbackOpen) {
+        val c = DesignSystemTheme.colors
+        val t = DesignSystemTheme.typography
+        AlertDialog(
+            onDismissRequest = { feedbackOpen = false },
+            containerColor = c.backgroundNeutralPrimary,
+            title = { Text("건의사항 · 오류 제보", style = t.headline2Bold, color = c.foregroundNeutralPrimary) },
+            text = {
+                Text(
+                    "앱에 오류가 있나요? 오픈채팅에 접속해서 혼내주세요!\n바라는 기능이 있으면 건의도 편하게 남겨 주세요.",
+                    style = t.body2Regular,
+                    color = c.foregroundNeutralSecondary,
+                )
+            },
+            confirmButton = {
+                WantedTextButton(text = "오픈채팅 열기", onClick = {
+                    feedbackOpen = false
+                    val opened = runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FEEDBACK_URL)))
+                    }.isSuccess
+                    if (!opened) Toast.makeText(context, "링크를 열 앱이 없어요: $FEEDBACK_URL", Toast.LENGTH_LONG).show()
+                })
+            },
+            dismissButton = { WantedTextButton(text = "닫기", onClick = { feedbackOpen = false }) },
+        )
+    }
 }
+
+/** 건의사항·오류 제보용 카카오톡 오픈채팅. */
+private const val FEEDBACK_URL = "https://open.kakao.com/o/gpg3G9Xi"
 
 @Composable
 private fun LinkRow(title: String, onClick: () -> Unit) {
