@@ -26,12 +26,65 @@ object EtlFiles {
 
     fun isPdf(name: String): Boolean = name.substringAfterLast('.', "").lowercase() == "pdf"
 
+    /** 글을 뽑아 읽을 수 있는 Office 문서(docx, pptx). 강의계획서 첨부가 docx인 경우가 많다. */
+    fun isOoxml(name: String): Boolean = name.substringAfterLast('.', "").lowercase() in setOf("docx", "pptx")
+
+    /** 압축을 풀었을 때 읽을 XML 한 부분의 상한(압축 폭탄 방지). */
+    private const val MAX_XML_BYTES = 8L shl 20
+
+    /**
+     * docx(word/document.xml), pptx(ppt/slides/slideN.xml, 쪽 순서)의 글만 뽑는다. 문단·표 칸·줄바꿈은 줄로, 슬라이드는
+     * `--- 슬라이드 N ---`으로 나눈다. 서식·그림은 버린다. 형식이 아니면 [EtlException].
+     */
+    fun ooxmlText(f: File): String {
+        val isPptx = f.name.substringAfterLast('.', "").lowercase() == "pptx"
+        val parts = sortedMapOf<Int, String>()
+        java.util.zip.ZipInputStream(f.inputStream().buffered()).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: break
+                val key = if (isPptx) Regex("^ppt/slides/slide(\\d+)\\.xml$").find(e.name)?.groupValues?.get(1)?.toIntOrNull()
+                else if (e.name == "word/document.xml") 0 else null
+                if (key == null) continue
+                val buf = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(1 shl 16)
+                while (true) {
+                    val n = zip.read(chunk)
+                    if (n < 0) break
+                    buf.write(chunk, 0, n)
+                    if (buf.size() > MAX_XML_BYTES) throw EtlException("문서가 너무 커서 읽을 수 없습니다")
+                }
+                parts[key] = xmlText(buf.toString("UTF-8"))
+            }
+        }
+        if (parts.isEmpty()) throw EtlException("문서 형식을 읽을 수 없습니다")
+        return if (isPptx) parts.entries.joinToString("\n\n") { "--- 슬라이드 ${it.key} ---\n${it.value}" } else parts.values.first()
+    }
+
+    /** WordprocessingML/DrawingML의 글: 문단(`</w:p>`, `</a:p>`)·줄바꿈·탭·표 칸을 살리고 태그를 지운다. */
+    fun xmlText(xml: String): String {
+        var s = xml
+        s = Regex("<w:tab\\b[^>]*/>").replace(s, "\t")
+        s = Regex("<(?:w:br|w:cr|a:br)\\b[^>]*/>").replace(s, "\n")
+        // 표: 칸 안의 마지막 문단은 " | "로, 행 끝은 줄로(칸 안의 다른 문단은 아래에서 줄이 된다).
+        s = Regex("</w:p>\\s*</w:tc>").replace(s, " | ")
+        s = Regex("</w:tr>").replace(s, "\n")
+        s = Regex("</(?:w:p|a:p)>").replace(s, "\n")
+        s = Regex("<[^>]+>").replace(s, "")
+        s = s.replace(" | \n", "\n")
+        s = s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
+        s = Regex("[ \\t]+\\n").replace(s, "\n")
+        s = Regex("\\n{3,}").replace(s, "\n\n")
+        return s.trim()
+    }
+
     /**
      * 작업 폴더에 저장할 이름: `{파일ID}-{정리된 이름}`. 같은 파일(ID)이면 이름이 같아 반복해서 받아도 쌓이지 않는다.
      * 리눅스 파일 이름 한계(255바이트)를 넘지 않도록 **바이트 기준**으로 줄이고 확장자는 지킨다(한글은 글자당 3바이트).
      */
-    fun storedName(fileId: Long, safeName: String, maxBytes: Int = 200): String {
-        val full = "$fileId-$safeName"
+    fun storedName(fileId: Long, safeName: String, maxBytes: Int = 200): String = fitName("$fileId-$safeName", maxBytes)
+
+    /** [full]을 확장자를 지키며 UTF-8 [maxBytes] 바이트 안으로 줄인다. */
+    fun fitName(full: String, maxBytes: Int = 200): String {
         if (full.toByteArray(Charsets.UTF_8).size <= maxBytes) return full
         val dot = full.lastIndexOf('.')
         val ext = if (dot > 0 && full.length - dot <= 10) full.substring(dot) else ""

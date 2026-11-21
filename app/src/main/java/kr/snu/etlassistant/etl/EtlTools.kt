@@ -81,7 +81,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 Triple("board_id", "integer", "게시판 첨부일 때만: 게시판 ID"),
                 Triple("post_id", "integer", "게시판 첨부일 때만: 글 ID"),
                 required = listOf("file_id_or_url"))))
-        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일은 본문을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
+        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일과 docx·pptx는 본문(글만)을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
             schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf) 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("max_chars", "integer", "텍스트 최대 글자 수. 기본 20000, 최대 60000"),
                 required = listOf("path"))))
@@ -101,6 +101,11 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_board_post", "게시글 하나의 본문, 첨부파일 목록(이름·크기·file_id), 댓글. 필요한 글만 연다.",
             schema(Triple("course_id", "integer", "과목 ID"), Triple("board_id", "integer", "게시판 ID"), Triple("post_id", "integer", "글 ID(etl_board_posts)"),
                 required = listOf("course_id", "board_id", "post_id"))))
+        .put(tool("etl_syllabus", "과목의 강의계획서. 시험 일정(중간·기말고사), 평가 비율, 주차별 계획, 수업 목표, 교재, 출석 규정, 담당교수 질문에 먼저 쓴다. eTL 강의계획서 본문(글과 거기 걸린 eTL 파일 ID)과, 본문이 연결한 서울대 수강편람의 강의계획서(평가 비율·주차별 계획 등, 로그인 없이 공개 조회)를 합쳐 돌려준다. 교수가 계획서를 첨부파일로만 올린 경우가 많으니 attachments가 있고 답이 없으면 attachment에 그 index를 넣어 다시 불러 받은 뒤 etl_read_file(docx·pptx·텍스트)이나 etl_render_pages(PDF)로 읽는다. linked_files는 etl_download로 받는다.",
+            schema(Triple("course_id", "integer", "과목 ID(etl_courses)"),
+                Triple("attachment", "integer", "수강편람 첨부(attachments의 index)를 작업 폴더에 받는다(선택)"),
+                Triple("save_to_phone", "boolean", "attachment를 폰의 Download/etl/에도 저장할지. 기본 false"),
+                required = listOf("course_id"))))
         .put(tool("etl_timetable", "수업 시간표. 정규 수업 요일·시간·강의실은 각 과목 강의계획서에 연결된 서울대 수강편람에서 가져오고(하루 캐시), 사용자가 앱의 '시간표' 화면에 넣은 보강·휴강을 반영하고(휴강은 cancelled), 그날 eTL 캘린더 일정을 더한다. 기본은 오늘(KST)의 수업. week=true면 요일별 주간 시간표. 사용자에게 시간표를 따로 묻지 않는다.",
             schema(Triple("date", "string", "YYYY-MM-DD(KST). 기본 오늘"), Triple("week", "boolean", "주간 시간표 전체. 기본 false"),
                 Triple("refresh", "boolean", "캐시를 무시하고 수강편람을 다시 조회. 기본 false"))))
@@ -135,7 +140,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 required = listOf("path"))))
 
     override fun call(name: String, args: JSONObject): ToolResult {
-        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable",
+        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable", "etl_syllabus",
             "my_deadline_add", "my_deadline_update", "my_deadline_delete", "timetable_change_add", "timetable_change_delete")
         if (name !in known) throw UnknownToolException(name)
         return try {
@@ -168,6 +173,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_board_posts" -> board().posts(id(args, "course_id"), id(args, "board_id"), args.optInt("page", 1), args.optString("keyword", ""))
                 "etl_board_post" -> board().post(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"))
                 "etl_timetable" -> timetable(client(), args)
+                "etl_syllabus" -> syllabus(client(), id(args, "course_id"), (if (args.has("attachment") && !args.isNull("attachment")) args.optInt("attachment", -1) else null), args.optBoolean("save_to_phone", false))
                 else -> getRaw(client(), args.optString("path", ""), args.optBoolean("all", false))
             }
             ToolResult(out.toString(), detail = logDetail(name, args, null))
@@ -187,6 +193,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 (if (args.has("days")) " days=${args.optInt("days")}" else "") + if (args.has("course_id")) " course=${args.optLong("course_id")}" else ""
             "etl_digest" -> "days=${args.optInt("days", 7)}"
             "etl_announcements" -> "days=${args.optInt("days", 7)}" + if (args.has("course_id")) " course=${args.optLong("course_id")}" else ""
+            "etl_syllabus" -> "course=${args.optLong("course_id")}" + if (args.has("attachment")) " attachment=${args.optInt("attachment")}" else ""
             "etl_grades", "etl_files" -> if (args.has("course_id")) "course=${args.optLong("course_id")}" else ""
             "my_deadlines" -> args.optString("range", "all")
             "etl_board_posts" -> "board=${args.optLong("board_id")} page=${args.optInt("page", 1)}"
@@ -587,6 +594,80 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         return BoardClient(EtlClient(token), BoardSession.ownerOf(token))
     }
 
+    /**
+     * 강의계획서 = eTL 강의계획서 본문 + 본문이 가리키는 수강편람 강의계획서(cc103ajax, 공개, eTL 토큰 없이).
+     * 서울대 eTL의 강의계획서 본문은 보통 수강편람 페이지를 띄우는 iframe 하나뿐이라, etl_get으로는 내용을 볼 수 없었다.
+     */
+    private fun syllabus(c: EtlClient, cid: Long, attachment: Int?, saveToPhone: Boolean): JSONObject {
+        val course = c.getObject("/api/v1/courses/$cid?include[]=syllabus_body")
+        val body = course.str("syllabus_body")
+        val out = JSONObject().put("course_id", cid).put("course", course.str("name"))
+        val text = EtlLogic.unsignText(EtlLogic.htmlToText(body, 12_000))
+        if (text.isNotBlank()) out.put("etl_syllabus_text", text)
+        val linked = Queries.linkedFiles(body, cid)
+        if (linked.isNotEmpty()) out.put("linked_files", JSONArray(linked))
+        val ref = TimetableLogic.catalogRef(body)
+        var detail: JSONObject? = null
+        if (ref != null) {
+            try {
+                detail = CatalogClient.syllabus(ref)
+                out.put("catalog", TimetableLogic.syllabusJson(detail))
+            } catch (e: java.io.IOException) {
+                out.put("catalog_error", e.message ?: "수강편람 조회 실패")
+            }
+        }
+        if (text.isBlank() && ref == null && linked.isEmpty()) {
+            out.put("note", "eTL 강의계획서가 비어 있고 수강편람 연결도 없습니다. 강의자료(etl_files)·공지·게시판에 계획서가 있을 수 있습니다.")
+        }
+        if (attachment != null) {
+            val atts = TimetableLogic.syllabusAttachments(detail)
+            val a = atts.getOrNull(attachment)
+                ?: throw EtlException(if (detail == null) "수강편람 강의계획서를 읽지 못해 첨부를 받을 수 없습니다" else "attachment는 0~${atts.size - 1} 중 하나여야 합니다(첨부 ${atts.size}개)")
+            out.put("downloaded", saveSyllabusAttachment(a, ref!!, saveToPhone))
+        }
+        return out
+    }
+
+    /** 수강편람 강의계획서 첨부를 작업 폴더에 받는다(shine.snu.ac.kr GET, eTL 토큰 없음). */
+    private fun saveSyllabusAttachment(a: TimetableLogic.SyllabusAttachment, ref: Map<String, String>, saveToPhone: Boolean): JSONObject {
+        val url = TimetableLogic.attachmentUrl(a) ?: throw EtlException("첨부 번호가 올바르지 않습니다")
+        val name = EtlLogic.safeName(a.name, "syllabus-${ref["sbjtCd"]}")
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+        val dir = File(workspace, EtlFiles.DIR).apply { mkdirs() }
+        EtlFiles.prune(dir, System.currentTimeMillis())
+        // 이름이 "숫자-"로 시작하지 않게 해 eTL 파일(savedFileIds)과 섞이지 않게 한다.
+        val stored = File(dir, EtlFiles.fitName("syllabus-${ref["openSchyy"]}-${ref["sbjtCd"]}-${ref["ltNo"]}-${a.lang}-$name"))
+        val tmp = File(dir, stored.name + ".part")
+        val bytes = try {
+            FileOutputStream(tmp).use { CatalogClient.downloadAttachment(url, it, 50L shl 20) }
+        } catch (e: java.io.IOException) {
+            tmp.delete()
+            throw EtlException(e.message ?: "첨부파일을 받지 못했습니다")
+        }
+        if (!tmp.renameTo(stored)) { tmp.copyTo(stored, overwrite = true); tmp.delete() }
+        var savedTo: String? = null
+        var phoneUri: String? = null
+        if (saveToPhone) {
+            val sink = DownloadSink.open(context, name, mime)
+            try {
+                sink.stream.use { o -> stored.inputStream().use { it.copyTo(o) } }
+                sink.finish()
+                savedTo = sink.shownPath
+                phoneUri = sink.uri
+            } catch (_: Exception) {
+                sink.abort()
+            }
+        }
+        EtlEvents.fileSaved(EtlEvents.SavedFile(a.name, mime, bytes, stored, phoneUri, savedTo))
+        return JSONObject().put("name", a.name).put("workspace_path", EtlFiles.relPath(workspace, stored)).put("bytes", bytes)
+            .put("saved_to", savedTo ?: JSONObject.NULL)
+            .put("hint", when {
+                EtlFiles.isPdf(stored.name) -> "etl_render_pages로 쪽 이미지를 만들어 읽으세요"
+                EtlFiles.isOoxml(stored.name) || EtlFiles.isTextLike(stored.name) -> "etl_read_file로 읽으세요"
+                else -> "이 형식(${stored.name.substringAfterLast('.', "?")})은 내용을 읽을 수 없습니다. 폰에 저장해 직접 여세요"
+            })
+    }
+
     private fun timetable(c: EtlClient, args: JSONObject): JSONObject {
         val w = Timetable.weekly(c, TimetableStore(context), force = args.optBoolean("refresh", false))
         val out = JSONObject().put("source", "서울대 수강편람(정규 수업) + eTL 캘린더 일정")
@@ -722,6 +803,11 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 val buf = CharArray(limit + 1)
                 val n = f.reader(Charsets.UTF_8).use { it.read(buf) }.coerceAtLeast(0)
                 o.put("kind", "text").put("truncated", n > limit).put("text", String(buf, 0, minOf(n, limit)))
+            }
+            EtlFiles.isOoxml(f.name) -> {
+                val limit = maxChars.coerceIn(1, EtlFiles.MAX_TEXT_CHARS)
+                val text = EtlFiles.ooxmlText(f)
+                o.put("kind", "text").put("truncated", text.length > limit).put("text", text.take(limit))
             }
             EtlFiles.isPdf(f.name) ->
                 o.put("kind", "pdf").put("pages", PdfPages.pageCount(f))

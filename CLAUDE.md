@@ -95,6 +95,9 @@ AI는 `my_deadlines`로 내 마감을 읽고, 2026-11-21부터 쓰기 도구로 
 eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussion_topics`는 비어 있다(2026-2학기 8과목 모두 0건 확인).
 시간표는 강의계획서 본문(수강편람 iframe 링크) → 수강편람 상세 조회로 가져오고 하루 캐시한다(`TimetableStore`). 아침 브리핑에 "오늘 수업" 섹션이 붙는다.
 수강편람 조회는 Kotlin 코드로 실조회까지 확인했다. 게시판 LTI 실행은 기기에서 아직 확인하지 못했다(ttokttok-pet에서는 실사용).
+**강의계획서 내용(2026-11-21)**: eTL `syllabus_body`는 대개 수강편람 iframe 하나뿐이라 AI가 `etl_get`으로 받아도 내용이 없었다("기말고사 일정" 같은 질문 실패).
+실제 내용은 수강편람 `cc103ajax.action`(세션 쿠키 필요, 없으면 302)과 그 첨부(docx/pdf, 교수가 계획서를 첨부로만 올리는 경우가 많음)에 있다.
+`etl_syllabus` 도구를 추가하고 `etl_read_file`이 docx·pptx 글을 읽게 했다. 검색 페이지 GET은 이제 302(메인으로)지만 쿠키는 그대로 준다.
 
 **ttokttok-pet 기능 이식(2026-11-21, 사용자 지시: "저기서 구현했던 기능은 다 가져온다")**: 기준은 `etl-board` 브랜치 + main의 알림 기록(etl-history).
 데스크톱 전용(말풍선 UI, 토큰 창, 채팅 폴더 workspace.js, 휴대폰 연동, eTL 비서 말풍선)은 대상이 아니다. 옮긴 것:
@@ -185,6 +188,7 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 - 쓰기(폰 안만): `my_deadline_add(title, due, memo)`, `my_deadline_update(id, …)`, `my_deadline_delete(id)`, `timetable_change_add(kind, date, course, start, end, room, note)`, `timetable_change_delete(id)`
 - `etl_boards(course_id)`, `etl_board_posts(course_id, board_id, page=1, keyword)`, `etl_board_post(course_id, board_id, post_id)`: LearningX 게시판
 - `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
+- `etl_syllabus(course_id, attachment?, save_to_phone=false)`: 강의계획서. eTL `syllabus_body`(글, 걸린 eTL 파일 ID) + 수강편람 강의계획서(`cc103ajax`: 평가 비율, 주차별 계획, 목표, 교재, 출석 규정, 첨부 목록). `attachment`(index)로 첨부 계획서를 작업 폴더에 받는다
 - `etl_download`에 게시판 첨부용 `course_id`, `board_id`, `post_id`(선택)
 - `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
 
@@ -196,7 +200,8 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
   Canvas 실행 페이지가 준(서명한) 폼 필드만 그대로 보낸다(`etl/Board.kt`). 실행 링크·폼·LearningX 토큰(`xn_api_token`)은 결과·오류·로그에 넣지 않고
   메모리(`BoardSession`)에만 둔다. 게시글 "읽음" 처리 POST는 보내지 않는다.
 - 시간표는 서울대 공개 수강편람(sugang.snu.ac.kr)의 검색 페이지 GET(세션 쿠키)과 상세 조회 POST(`cc101ajax.action`, 공개 과목 코드만)를 쓴다.
-  로그인 없음, **eTL 토큰은 보내지 않는다**(`etl/Timetable.kt`).
+  로그인 없음, **eTL 토큰은 보내지 않는다**(`etl/Timetable.kt`). 강의계획서 내용은 같은 방식의 상세 조회 POST `cc103ajax.action`,
+  계획서 첨부는 수강편람 화면이 쓰는 공개 다운로드 `https://shine.snu.ac.kr/com/download/noflt/downloadWebFile.action`(GET, 리다이렉트 안 따라감, 50MB 상한)로 받는다.
 - `etl_get`은 토큰·로그인·`sessionless_launch` 경로를 거부하고, 응답의 서명 링크(`verifier`, `session_token` 등)와 피드 주소를 `***`로 가린다.
 - 숨김 파일(`hidden_for_user`)은 받지 않는다. 게시판 첨부만 예외로, LearningX가 그 글의 첨부임을 확인한 경우에만 받는다.
 - MCP 서버는 127.0.0.1에만 바인딩하고, 실행마다 바뀌는 비밀값을 요구한다.

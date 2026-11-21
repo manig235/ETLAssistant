@@ -173,6 +173,107 @@ object TimetableLogic {
 
     fun weekdayOf(date: LocalDate): String = WEEKDAYS[date.dayOfWeek.value - 1].toString()
 
+    // ---- 강의계획서(수강편람 cc103ajax) ----------------------------------------
+
+    /** 수강편람 강의계획서 첨부 하나. [no]·[seq]로 [attachmentUrl]을 만든다. */
+    data class SyllabusAttachment(val name: String, val lang: String, val no: String, val seq: Int)
+
+    private val ATTACH_NO = Regex("^[\\w-]{1,64}$")
+    private const val ATTACH_BASE = "https://shine.snu.ac.kr/com/download/noflt/downloadWebFile.action"
+
+    /** 수강편람 화면이 쓰는 공개 첨부 다운로드 주소. 번호가 이상하면 null. */
+    fun attachmentUrl(a: SyllabusAttachment): String? =
+        if (!ATTACH_NO.matches(a.no) || a.seq !in 0..999) null
+        else "$ATTACH_BASE?cscLocale=ko_KR&attcFileNo=${a.no}&attcFileDetaNo=${a.seq}"
+
+    /** "[430.309A]Syllabus.docx (31.73KB)" → "[430.309A]Syllabus.docx". */
+    fun attachmentName(s: String): String = s.replace(Regex("\\s*\\(\\s*[\\d.,]+\\s*[KMG]?B\\s*\\)\\s*$", RegexOption.IGNORE_CASE), "").trim()
+
+    fun syllabusAttachments(detail: JSONObject?): List<SyllabusAttachment> {
+        val arr = detail?.optJSONArray("LISTTAB03_LIST_ATTACH") ?: return emptyList()
+        val out = mutableListOf<SyllabusAttachment>()
+        for (i in 0 until arr.length()) {
+            val a = arr.optJSONObject(i) ?: continue
+            for ((lang, p) in listOf("ko" to "kor", "en" to "eng")) {
+                val name = a.str("${p}FileNm")?.let(::attachmentName)?.ifEmpty { null } ?: continue
+                val no = a.str("${p}AttachNo") ?: continue
+                out += SyllabusAttachment(name, lang, no, a.optInt("${p}AttachDetaNo", 0))
+            }
+        }
+        return out
+    }
+
+    private fun koEn(o: JSONObject?, ko: String, en: String, limit: Int = 4000): String? {
+        if (o == null) return null
+        val s = EtlLogic.htmlToText(o.str(ko)?.ifBlank { null } ?: o.str(en), limit)
+        return s.ifBlank { null }
+    }
+
+    private val MARKS = listOf("attendance" to "출석", "homeWork" to "과제", "mid" to "중간고사", "final" to "기말고사", "quiz" to "퀴즈", "attitude" to "태도", "etc" to "기타")
+
+    /**
+     * cc103ajax(수강편람 '강의계획서' 탭) 응답을 비서가 읽기 쉬운 JSON으로. 장애학생 지원 같은 공통 문구는 뺀다.
+     * 첨부는 번호(no)를 숨기고 index로만 알려 준다(받을 때 etl_syllabus의 attachment).
+     */
+    fun syllabusJson(detail: JSONObject): JSONObject {
+        val t1 = detail.optJSONObject("LISTTAB01")
+        val t3 = detail.optJSONObject("LISTTAB03")
+        val plan = detail.optJSONArray("LISTTAB03_LIST_PLAN")?.optJSONObject(0)
+        val o = JSONObject()
+        t1?.let { o.put("course", listOfNotNull(it.str("sbjtNm"), it.str("ltNo")?.let { n -> "($n)" }).joinToString(" ")).put("course_code", it.str("sbjtCd")) }
+        (t3?.str("profNm") ?: t1?.str("profNm"))?.let { o.put("professor", it) }
+        t3?.str("profEmail")?.let { o.put("professor_email", it) }
+        t1?.str("openPnt")?.let { o.put("credits", it) }
+        t1?.str("lsnProgLang")?.let { o.put("language", it) }
+        detail.optJSONArray("ltTime")?.let { times ->
+            val rooms = detail.optJSONArray("ltRoom")
+            o.put("meetings", JSONArray((0 until times.length()).map { i -> times.optString(i) + (rooms?.optString(i, "")?.ifEmpty { null }?.let { " $it" } ?: "") }))
+        }
+        koEn(t3, "ltPurp", "ltEngPurp")?.let { o.put("goals", it) }
+        koEn(plan, "ltPlanCtnt", "ltPlanEngCtnt", 8000)?.let { o.put("plan", it) }
+        detail.optJSONObject("LISTTAB03_LIST_MRKS")?.let { m ->
+            val g = JSONArray()
+            for ((k, label) in MARKS) {
+                val pct = m.optInt(k, 0)
+                val remark = EtlLogic.htmlToText(m.str("${k}Remk"), 300).ifBlank { null }
+                if (pct > 0 || remark != null) g.put(JSONObject().put("item", label).put("percent", pct).apply { remark?.let { put("note", it) } })
+            }
+            if (g.length() > 0) o.put("grading", g)
+        }
+        koEn(t3, "etcMrksApprMthd", "etcMrksApprEngMthd")?.let { o.put("grading_note", it) }
+        listOfNotNull(t3?.str("mrksRelevalYnNm"), t3?.str("mrksGvMthdFgNm")).takeIf { it.isNotEmpty() }?.let { o.put("grading_type", it.joinToString(", ")) }
+        koEn(plan, "attendRegulKorCtnt", "attendRegulEngCtnt", 600)?.let { o.put("attendance_rule", it) }
+        detail.optJSONArray("LISTTAB03_LIST_WEEK_PLAN")?.let { weeks ->
+            val w = JSONArray()
+            for (i in 0 until weeks.length()) {
+                val r = weeks.optJSONObject(i) ?: continue
+                val text = koEn(r, "wekClsfLtPlanCtnt", "wekClsfLtPlanEngCtnt", 800) ?: continue
+                w.put(JSONObject().put("week", r.opt("ltPlanDocWekClsfSeq") ?: (i + 1)).put("plan", text))
+            }
+            if (w.length() > 0) o.put("weekly_plan", w)
+        }
+        val books = mutableListOf<String>()
+        koEn(t3, "teachmAndRefBookList", "teachmAndRefBookEngList", 1500)?.let { books += it }
+        detail.optJSONArray("LISTTAB03_LIST_TEACHM_BOOK")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val b = arr.optJSONObject(i) ?: continue
+                listOfNotNull(b.str("ltTeachmFgNm")?.let { "[$it]" }, b.str("ltTeachmNm"), b.str("ltTeachmAuthNm"), b.str("ltTeachmPubcoNm"), b.str("ltTeachmPublshYy"))
+                    .joinToString(" ").ifBlank { null }?.let { books += it }
+            }
+        }
+        if (books.isNotEmpty()) o.put("textbooks", JSONArray(books))
+        t3?.str("preCptnSbjtNm")?.ifBlank { null }?.let { o.put("prerequisites", it) }
+        koEn(t3, "stdIntrvPl", "stdIntrvEngPl", 500)?.let { o.put("office_hours", it) }
+            ?: t1?.str("stdIntrvPosbTmList")?.ifBlank { null }?.let { o.put("office_hours", it) }
+        koEn(t3, "genrAiUtlzKorCtnt", "genrAiUtlzEngCtnt", 1500)?.let { o.put("generative_ai_policy", it) }
+        koEn(t3, "etcLsnMthd", "etcLsnEngMthd", 500)?.let { o.put("teaching_method_note", it) }
+        koEn(t3, "ltPlanDocRemk", "ltPlanDocEngRemk", 1500)?.let { o.put("remarks", it) }
+        val atts = syllabusAttachments(detail)
+        if (atts.isNotEmpty()) o.put("attachments", JSONArray(atts.mapIndexed { i, a -> JSONObject().put("index", i).put("name", a.name).put("lang", a.lang) }))
+        return o
+    }
+
+    /** 그날 수업(보강·휴강 반영): [day]의 classes. */
     fun dayClasses(weekly: Weekly?, date: LocalDate, events: List<ClassRow> = emptyList(), changes: List<Change> = emptyList()): List<ClassRow> =
         day(weekly, date, changes, events).classes
 
@@ -235,11 +336,12 @@ object TimetableLogic {
     }
 }
 
-/** 공개 수강편람 조회(로그인 없음, eTL 토큰 없음). sugang.snu.ac.kr에만 보낸다. */
+/** 공개 수강편람 조회(로그인 없음, eTL 토큰 없음). sugang.snu.ac.kr과 강의계획서 첨부용 shine.snu.ac.kr(GET)에만 보낸다. */
 object CatalogClient {
     private const val SUGANG = "https://sugang.snu.ac.kr"
     private const val SEARCH_PATH = "/sugang/cc/cc100InterfaceSrch.action"
     private const val DETAIL_PATH = "/sugang/cc/cc101ajax.action"
+    private const val SYLLABUS_PATH = "/sugang/cc/cc103ajax.action"
     private const val TIMEOUT_MS = 15_000
 
     /** 참조마다 수업 목록 또는 오류 문구. 한 번에 하나씩 묻는다. */
@@ -259,6 +361,43 @@ object CatalogClient {
             } catch (e: Exception) {
                 Result.failure(e)
             }
+        }
+    }
+
+    /** 수강편람 '강의계획서' 탭(cc103ajax)의 원본 응답. 실패하면 사용자에게 보여 줄 문구를 담은 [IOException]. */
+    fun syllabus(ref: Map<String, String>): JSONObject = try {
+        post(SYLLABUS_PATH, ref, session())
+    } catch (e: IOException) {
+        throw IOException(netError(e))
+    } catch (e: Exception) {
+        throw IOException(e.message ?: "수강편람 조회 실패")
+    }
+
+    /**
+     * 강의계획서 첨부(shine.snu.ac.kr 공개 다운로드)를 [out]에 쓴다. 로그인·eTL 토큰 없이 GET만 보낸다.
+     * 리다이렉트는 따라가지 않고, [maxBytes]를 넘으면 중단한다. 받은 바이트 수를 돌려준다.
+     */
+    fun downloadAttachment(url: String, out: java.io.OutputStream, maxBytes: Long): Long {
+        require(url.startsWith("https://shine.snu.ac.kr/")) { "수강편람 첨부 주소가 아닙니다" }
+        val c = connect(url, "GET")
+        try {
+            val code = c.responseCode
+            if (code !in 200..299) throw IOException("첨부파일 응답 오류($code)")
+            if ((c.getHeaderField("Content-Type") ?: "").startsWith("text/html", ignoreCase = true)) throw IOException("첨부파일 대신 웹 페이지가 왔습니다")
+            var total = 0L
+            c.inputStream.use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > maxBytes) throw IOException("첨부파일이 너무 큽니다")
+                    out.write(buf, 0, n)
+                }
+            }
+            return total
+        } finally {
+            c.disconnect()
         }
     }
 
