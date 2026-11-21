@@ -25,7 +25,7 @@ object NotifyUiFormat {
     /** 마감 알림 시점 이름(분 단위 값). */
     fun windowLabel(minutes: Int): String = NotifySettings.windowLabel(minutes)
 
-    /** "3일, 24시간, 3시간, 1시간 전에 알려요" */
+    /** "3일, 24시간, 3시간, 10분 전에 알려요" */
     fun windowsSummary(minutes: List<Int>): String =
         NotifySettings.normalizeWindows(minutes).joinToString(", ") { windowLabel(it) } + " 전에 알려요"
 

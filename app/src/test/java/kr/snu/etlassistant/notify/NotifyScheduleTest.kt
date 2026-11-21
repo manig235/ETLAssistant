@@ -109,7 +109,7 @@ class NotifyScheduleTest {
     private val aMin = 60_000L
     private val aHour = 60 * aMin
 
-    /** 시스템 최대 지연(남은 시간 × 0.75, 최대 1시간)을 넣어 끝까지 따라가 본다. 목표를 넘지 않고, 마지막 지연은 6분 이하. */
+    /** 시스템 최대 지연(남은 시간 × 0.75, 최대 1시간)을 넣어 끝까지 따라가 본다. 목표를 넘지 않고, 마지막 지연은 45초 이하. */
     private fun worstCase(startLeft: Long): Pair<Long, Int> {
         val target = 1_000_000_000L
         var now = target - startLeft
@@ -125,18 +125,27 @@ class NotifyScheduleTest {
         }
     }
 
-    @Test fun farTargetApproachesAndEndsWithin6Minutes() {
-        for (left in listOf(3 * 24 * aHour, 5 * aHour, 2 * aHour + 1, 90 * aMin, 30 * aMin, 9 * aMin)) {
+    @Test fun farTargetApproachesAndEndsWithin45Seconds() {
+        for (left in listOf(3 * 24 * aHour, 5 * aHour, 2 * aHour + 1, 90 * aMin, 30 * aMin, 9 * aMin, 4 * aMin, 2 * aMin)) {
             val (late, wakes) = worstCase(left)
-            assertTrue("left=$left late=$late", late <= 6 * aMin)
+            assertTrue("left=$left late=$late", late <= 45_000L)
             assertTrue("left=$left wakes=$wakes", wakes <= 8)
         }
     }
 
     @Test fun nearTargetIsFinal() {
         assertEquals(1_000L to true, NotifySchedule.nextAlarm(0, 1_000))
-        assertEquals((8 * aMin) to true, NotifySchedule.nextAlarm(0, 8 * aMin))
+        assertEquals(aMin to true, NotifySchedule.nextAlarm(0, aMin))
+        assertEquals((4 * aMin) to false, NotifySchedule.nextAlarm(0, 8 * aMin))
         assertEquals((9 * aHour - 5 * aMin) to false, NotifySchedule.nextAlarm(0, 10 * aHour))
         assertEquals((45 * aMin) to false, NotifySchedule.nextAlarm(0, 90 * aMin))
+    }
+
+    @Test fun rearmAfterRebootOrTimeChange() {
+        assertEquals(NotifySchedule.Rearm.NONE, NotifySchedule.rearmAction(0L, 1_000L))
+        assertEquals(NotifySchedule.Rearm.ARM, NotifySchedule.rearmAction(2_000L, 1_000L))
+        // 꺼져 있던 사이 목표가 지났으면 바로 확인한다(내 마감 알림은 늦게라도 보낸다)
+        assertEquals(NotifySchedule.Rearm.FIRE_NOW, NotifySchedule.rearmAction(1_000L, 1_000L))
+        assertEquals(NotifySchedule.Rearm.FIRE_NOW, NotifySchedule.rearmAction(500L, 1_000L))
     }
 }

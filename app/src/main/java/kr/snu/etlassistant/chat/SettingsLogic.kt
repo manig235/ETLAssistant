@@ -87,7 +87,7 @@ object SettingsLogic {
     /** 더 추가할 수 있는가(최대 개수). */
     fun canAddWindow(current: List<Int>): Boolean = NotifySettings.normalizeWindows(current).size < NotifySettings.MAX_WINDOWS
 
-    /** 기본값(3일, 24시간, 3시간, 1시간 전)인가. 기본값이면 "기본값으로 되돌리기"를 숨긴다. */
+    /** 기본값(3일, 24시간, 3시간, 10분 전)인가. 기본값이면 "기본값으로 되돌리기"를 숨긴다. */
     fun isDefaultWindows(current: List<Int>): Boolean =
         NotifySettings.normalizeWindows(current) == NotifySettings.normalizeWindows(NotifySettings.DEFAULT_DEADLINE_WINDOWS)
 

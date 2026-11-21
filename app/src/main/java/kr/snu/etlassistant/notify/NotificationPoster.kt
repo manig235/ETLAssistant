@@ -25,13 +25,25 @@ object NotificationPoster {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
+            // HIGH = 화면 위 팝업(헤드업). 브리핑은 긴 요약이라 팝업 없이 알림창에만 둔다.
             nm.createNotificationChannel(NotificationChannel(Channel.DEADLINE.id, "마감 알림", NotificationManager.IMPORTANCE_HIGH))
-            nm.createNotificationChannel(NotificationChannel(Channel.ANNOUNCEMENT.id, "공지 알림", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(Channel.ANNOUNCEMENT.id, "공지 알림", upgraded(nm, LEGACY_ANNOUNCEMENT)))
             nm.createNotificationChannel(NotificationChannel(Channel.BRIEF.id, "정기 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
-            nm.createNotificationChannel(NotificationChannel(Channel.CHANGE.id, "새 과제·마감 변경·성적", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(Channel.CHANGE.id, "새 과제·마감 변경·성적", upgraded(nm, LEGACY_CHANGE)))
             nm.createNotificationChannel(NotificationChannel(Channel.CLASS.id, "수업 알림", NotificationManager.IMPORTANCE_HIGH))
+            nm.deleteNotificationChannel(LEGACY_ANNOUNCEMENT)
+            nm.deleteNotificationChannel(LEGACY_CHANGE)
         }
     }
+
+    /** 중요도를 DEFAULT로 만들었던 옛 채널 ID(팝업으로 올리며 바꿨다). */
+    internal const val LEGACY_ANNOUNCEMENT = "announcement"
+    internal const val LEGACY_CHANGE = "change"
+
+    /** 새 채널의 중요도: 사용자가 옛 채널을 꺼 두었으면 계속 꺼 두고, 아니면 HIGH(팝업). */
+    private fun upgraded(nm: NotificationManager, legacyId: String): Int =
+        if (nm.getNotificationChannel(legacyId)?.importance == NotificationManager.IMPORTANCE_NONE) NotificationManager.IMPORTANCE_NONE
+        else NotificationManager.IMPORTANCE_HIGH
 
     /** 알림 권한(Android 13+)이 있고 앱 알림이 꺼져 있지 않은가. */
     fun canPost(context: Context): Boolean {
@@ -60,7 +72,7 @@ object NotificationPoster {
                 .setContentIntent(contentIntent)
                 .setAutoCancel(true)
                 .setCategory(if (notice.channel == Channel.DEADLINE) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_EVENT)
-                .setPriority(if (notice.channel == Channel.DEADLINE) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+                .setPriority(if (notice.channel == Channel.BRIEF) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
 
             notice.bigText?.takeIf { it.isNotBlank() }?.let {
                 b.setStyle(NotificationCompat.BigTextStyle().bigText(it))

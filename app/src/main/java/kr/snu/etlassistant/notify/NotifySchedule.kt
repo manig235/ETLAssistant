@@ -51,10 +51,24 @@ object NotifySchedule {
 
     // ---- 마감 알람(권한 없는 알람의 지연 줄이기) ----------------------------------
 
-    /** 마지막 알람을 목표 시각에 직접 거는 거리. 시스템 지연은 남은 시간의 75%라 최대 약 6분. */
-    const val ALARM_FINAL_MILLIS = 8 * 60_000L
+    /**
+     * 마지막 알람을 목표 시각에 직접 거는 거리. 시스템 지연은 남은 시간의 75%라 최대 45초.
+     * 삼성 기기는 권한 없는 알람을 거의 항상 창 끝에 울린다(2026-11-21 실측: 3분 39초 앞에 건 마지막 알람이 2분 44초 늦게 울림).
+     * 처음에는 8분이었는데, 그러면 "내가 정한 알림"이 최대 6분 늦었다.
+     */
+    const val ALARM_FINAL_MILLIS = 60_000L
     /** 시스템이 권한 없는 알람을 늦출 수 있는 최대 폭. */
     private const val ALARM_MAX_WINDOW_MILLIS = HOUR_MILLIS
+
+    /** 재부팅·시간 변경 뒤 저장된 알람 목표를 어떻게 다시 걸지. */
+    enum class Rearm { NONE, ARM, FIRE_NOW }
+
+    /** 목표가 없으면 NONE, 아직 오지 않았으면 ARM(다시 다가가기), 꺼져 있던 사이 지났으면 FIRE_NOW(바로 확인해 늦게라도 보낸다). */
+    fun rearmAction(targetMillis: Long, nowMillis: Long): Rearm = when {
+        targetMillis <= 0L -> Rearm.NONE
+        targetMillis > nowMillis -> Rearm.ARM
+        else -> Rearm.FIRE_NOW
+    }
 
     /**
      * 권한 없는 알람(`setAndAllowWhileIdle`)은 [trigger, trigger + min(남은 시간 × 0.75, 1시간)] 사이 아무 때나 울린다.

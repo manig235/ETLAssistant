@@ -108,7 +108,9 @@ class SettingsLogicTest {
         assertEquals(def, SettingsLogic.removeWindow(def, 90))
         // 되돌리기
         assertTrue(SettingsLogic.isDefaultWindows(SettingsLogic.defaultWindows()))
-        assertTrue(SettingsLogic.isDefaultWindows(listOf(60, 180, 1440, 4320)))
+        assertTrue(SettingsLogic.isDefaultWindows(listOf(10, 180, 1440, 4320)))
+        // 예전 기본값(1시간 전)은 이제 기본값이 아니다
+        assertFalse(SettingsLogic.isDefaultWindows(listOf(60, 180, 1440, 4320)))
         // 개수 제한: 꽉 차면 더하지 않는다
         val full = (1..12).map { it * 60 }
         assertEquals(NotifySettings.normalizeWindows(full), SettingsLogic.addWindow(full, 30))

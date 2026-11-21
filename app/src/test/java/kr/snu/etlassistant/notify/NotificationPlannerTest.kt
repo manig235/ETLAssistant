@@ -14,7 +14,8 @@ class NotificationPlannerTest {
     /** 2026-11-19(목) 12:00 KST */
     private val now: Instant = Instant.parse("2026-11-19T03:00:00Z")
     /** 이 테스트들은 방해 금지 23:00~07:00이 켜진 상태를 기준으로 쓰였다(기본값은 2026-11-21부터 꺼짐). */
-    private val settings = NotifySettings(quietEnabled = true)
+    // 시점은 고정해 둔다(기본값이 바뀌어도 계획 로직 시험은 그대로): 3일, 24시간, 3시간, 1시간 전.
+    private val settings = NotifySettings(quietEnabled = true, deadlineWindowsMinutes = listOf(4320, 1440, 180, 60))
 
     private fun asg(
         id: Long,
@@ -387,8 +388,8 @@ class NotificationPlannerTest {
     private fun next(s: Snapshot, st: NotifyState = state(), set: NotifySettings = settings) =
         NotificationPlanner.nextDeadlineCheckAt(s, st, now, set)
 
-    @Test fun defaultWindowsAre3d24h3h1h() {
-        assertEquals(listOf(4320, 1440, 180, 60), NotifySettings().deadlineWindowsMinutes)
+    @Test fun defaultWindowsAre3d24h3h10m() {
+        assertEquals(listOf(4320, 1440, 180, 10), NotifySettings().deadlineWindowsMinutes)
     }
 
     @Test fun nextCheckIsEarliestUnfiredWindow() {

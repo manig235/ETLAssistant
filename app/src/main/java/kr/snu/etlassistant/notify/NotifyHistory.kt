@@ -39,9 +39,9 @@ object NotifyHistoryLogic {
 
     fun channelLabel(id: String): String = when (id) {
         Channel.DEADLINE.id -> "마감"
-        Channel.ANNOUNCEMENT.id -> "공지"
+        Channel.ANNOUNCEMENT.id, NotificationPoster.LEGACY_ANNOUNCEMENT -> "공지"
         Channel.BRIEF.id -> "브리핑"
-        Channel.CHANGE.id -> "과제·성적"
+        Channel.CHANGE.id, NotificationPoster.LEGACY_CHANGE -> "과제·성적"
         Channel.CLASS.id -> "수업"
         else -> "알림"
     }

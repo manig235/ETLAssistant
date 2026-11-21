@@ -48,12 +48,16 @@ data class Snapshot(
     val errors: List<String> = emptyList(),
 )
 
+/**
+ * 알림 채널. 중요도는 채널을 처음 만들 때만 정해지고 그 뒤에는 앱이 바꿀 수 없어서, 중요도를 올릴 때는 ID를 바꾼다
+ * ([NotificationPoster.ensureChannels]가 옛 채널을 지운다). 공지·과제/성적은 2026-11-22에 팝업(HIGH)으로 올리며 `_v2`가 됐다.
+ */
 enum class Channel(val id: String) {
     DEADLINE("deadline"),
-    ANNOUNCEMENT("announcement"),
+    ANNOUNCEMENT("announcement_v2"),
     BRIEF("brief"),
     /** 새 과제·마감 변경·성적 등록. */
-    CHANGE("change"),
+    CHANGE("change_v2"),
     /** 수업 시작 전 알림. */
     CLASS("class"),
 }
@@ -127,7 +131,7 @@ data class NotifyState(
 data class NotifySettings(
     val deadlineAlerts: Boolean = true,
     val announcementAlerts: Boolean = true,
-    /** 마감 몇 분 전에 알릴지(내림차순). 기본은 3일, 24시간, 3시간, 1시간 전. 사용자가 직접 추가한 값도 들어간다. */
+    /** 마감 몇 분 전에 알릴지(내림차순). 기본은 3일, 24시간, 3시간, 10분 전. 사용자가 직접 추가한 값도 들어간다. */
     val deadlineWindowsMinutes: List<Int> = DEFAULT_DEADLINE_WINDOWS,
     val briefEnabled: Boolean = false,
     /** 브리핑을 보낼 시각(하루 중 분, 0..1439). 최대 2개. 기기의 현재 시간대 기준. */
@@ -157,10 +161,14 @@ data class NotifySettings(
 
         private const val HOUR = 60
         private const val DAY = 24 * HOUR
-        val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(3 * DAY, DAY, 3 * HOUR, HOUR)
-        /** 설정에 늘 보이는 마감 알림 시점(분). 이 밖의 값은 "직접 추가"로 넣는다. */
-        val DEADLINE_WINDOW_PRESETS: List<Int> = listOf(HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY)
-        /** 직접 추가할 수 있는 범위. 제시간 알람의 지연(최대 약 6분)보다 짧은 값은 의미가 없다. */
+        /**
+         * 기본 시점. 2026-11-22에 "1시간 전"을 "10분 전"으로 바꿨다(사용자 결정). 이미 저장된 설정은 그대로 둔다
+         * ([NotifySettingsStore]는 저장값이 있으면 기본값을 쓰지 않는다).
+         */
+        val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(3 * DAY, DAY, 3 * HOUR, 10)
+        /** 추가 대화상자의 빠른 버튼(분). 이 밖의 값은 "직접 추가"로 넣는다. */
+        val DEADLINE_WINDOW_PRESETS: List<Int> = listOf(10, 30, HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY)
+        /** 직접 추가할 수 있는 범위. 제시간 알람의 지연(최대 약 45초)과 주기 확인을 생각해 10분보다 짧게는 받지 않는다. */
         const val MIN_WINDOW_MINUTES = 10
         const val MAX_WINDOW_MINUTES = 14 * DAY
         /** 시점 개수 상한(알람과 중복 방지 키가 끝없이 늘지 않게). */

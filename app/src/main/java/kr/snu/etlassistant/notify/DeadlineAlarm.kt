@@ -19,8 +19,8 @@ import java.time.Instant
  *
  * 정확한 알람 권한(SCHEDULE_EXACT_ALARM)은 쓰지 않는다. 권한 없는 `setAndAllowWhileIdle`은 남은 시간에 비례해
  * 최대 1시간까지 늦게 울린다(기기에서 `window=+1h` 확인). 그래서 목표가 멀면 중간 알람으로 다가가고
- * ([NotifySchedule.nextAlarm], 중간에는 네트워크 없이 다시 걸기만 한다) 마지막 몇 분 안에서만 목표에 맞춘다. 지연은 최대 약 6분.
- * 재부팅하면 알람이 사라지지만 다음 주기 확인이 다시 건다.
+ * ([NotifySchedule.nextAlarm], 중간에는 네트워크 없이 다시 걸기만 한다) 마지막 1분 안에서만 목표에 맞춘다. 지연은 최대 약 45초.
+ * 재부팅·시간 변경 때는 [SystemEventReceiver]가 [rearm]으로 다시 건다(재부팅하면 알람이 사라진다).
  */
 object DeadlineAlarm {
     private const val REQUEST_CODE = 41
@@ -52,6 +52,22 @@ object DeadlineAlarm {
         val cur = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_TARGET, 0L)
         val now = System.currentTimeMillis()
         if (cur <= now || at.toEpochMilli() + SLACK_MS < cur) schedule(app, at)
+    }
+
+    /**
+     * 재부팅·시간 변경·앱 업데이트 뒤: 저장된 목표가 남아 있으면 다시 걸고, 꺼져 있던 사이 지났으면 바로 확인한다
+     * (내 마감 알림은 마감 전까지 늦게라도 보낸다). 목표가 없어도 내 마감 알림 시각이 남아 있으면 그쪽으로 건다.
+     */
+    fun rearm(context: Context) {
+        val app = context.applicationContext
+        val target = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_TARGET, 0L)
+        when (NotifySchedule.rearmAction(target, System.currentTimeMillis())) {
+            NotifySchedule.Rearm.ARM -> arm(app, System.currentTimeMillis())
+            NotifySchedule.Rearm.FIRE_NOW -> onFired(app, final = true)
+            NotifySchedule.Rearm.NONE -> Unit
+        }
+        val fired = NotifyStateStore(app).load().fired.keys
+        scheduleEarlier(app, MyDeadlines.nextReminderAt(MyDeadlineStore(app).load(), java.time.Instant.now(), fired))
     }
 
     /** 저장된 목표를 향해 다음 알람(중간 또는 마지막)을 건다. */

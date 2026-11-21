@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 재부팅 뒤 마감·내 마감 알림 알람을 다시 건다(SystemEventReceiver). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".Phase0App"
@@ -32,6 +34,18 @@
         <receiver
             android:name="kr.snu.etlassistant.notify.DeadlineAlarmReceiver"
             android:exported="false" />
+
+        <!-- 시스템 방송만 받는다(exported=false여도 시스템이 보내는 방송은 온다). -->
+        <receiver
+            android:name="kr.snu.etlassistant.notify.SystemEventReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".RunService"

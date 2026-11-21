@@ -1,0 +1,29 @@
+package kr.snu.etlassistant.notify
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/**
+ * 재부팅, 앱 업데이트, 시각·시간대 변경 때 알림 예약을 되살린다.
+ * 재부팅하면 AlarmManager 알람이 모두 사라져서, 이것이 없으면 다음 주기 확인(최대 약 1시간 뒤)까지
+ * 내 마감 알림과 제시간 마감 알림이 울리지 않는다. WorkManager 작업은 WorkManager가 스스로 되살리지만
+ * 브리핑은 남은 시간으로 예약하므로 시각이 바뀌면 [NotifyScheduler.apply]로 다시 계산한다.
+ */
+class SystemEventReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action !in ACTIONS) return
+        runCatching { NotifyScheduler.apply(context) }
+        runCatching { DeadlineAlarm.rearm(context) }
+        runCatching { kr.snu.etlassistant.phase0.CodexRunner.log.line("[notify] 예약 되살림: ${intent.action?.substringAfterLast('.')}") }
+    }
+
+    companion object {
+        val ACTIONS = setOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_TIMEZONE_CHANGED,
+        )
+    }
+}
