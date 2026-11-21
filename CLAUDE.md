@@ -33,6 +33,15 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 - **`SSL_CERT_FILE`(assets의 CA 번들)도 필요한 것으로 보인다.** 없이 시험하면 터널은 열리는데 요청이 실패한다(원인이 TLS인지는 직접 확인하지 못함).
 - 샌드박스는 `read-only`로도 동작한다. eTL 작업은 셸이 아니라 MCP 도구로 하므로 문제없다. bubblewrap 경고는 무시해도 된다.
 
+**빌드·서명·배포 (2026-11-22)**
+- release APK는 전용 키로 서명한다: `~/.android/youngmin-release.jks`(PKCS12, RSA 4096, alias `youngmin`, `CN=Youngmin, O=etl-android`).
+  비밀번호와 경로는 `~/.android/youngmin-release.properties`(storeFile/storePassword/keyAlias/keyPassword, 둘 다 chmod 600, 저장소 밖).
+  위치는 `-Pyoungmin.signing.props=…` 또는 `YOUNGMIN_SIGNING_PROPS`로 바꿀 수 있다. 파일이 없으면 release 빌드는 오류로 멈추고 debug 빌드·단위 테스트는 된다.
+- **키와 properties 파일은 반드시 따로 백업한다.** 잃어버리면 같은 앱으로 업데이트를 낼 수 없다(사용자가 지우고 새로 설치해야 함).
+- 0.1.5까지는 debug 키로 서명했다. **0.1.6부터 키가 바뀌어 이전 설치본 위에 업데이트되지 않는다.** 지우고 다시 설치해야 하며,
+  이때 폰 안의 eTL 토큰·ChatGPT 로그인·내 마감·대화가 모두 지워진다(키 순환은 쓰지 않기로 했다).
+- 배포본은 `./gradlew testDebugUnitTest assembleRelease` 뒤 `~/shared/youngmin-v<버전>.apk`와 `.sha256`으로 둔다. 버전 올림은 따로 커밋한다.
+
 **백그라운드에서 네트워크가 막힌다 (중요)**
 - 앱이 백그라운드가 되면(예: 로그인하러 브라우저로 나감) 앱 UID의 DNS가 `No address associated with hostname`으로 실패한다.
   같은 시각 셸과 Chrome은 정상이다. 포그라운드 대조 실험으로 확정했다.

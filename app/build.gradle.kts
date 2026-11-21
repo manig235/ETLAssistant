@@ -1,7 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// release 서명 키. 저장소 밖 ~/.android/youngmin-release.properties(storeFile, storePassword, keyAlias, keyPassword)에서 읽는다.
+// 경로는 gradle 속성 youngmin.signing.props 또는 환경변수 YOUNGMIN_SIGNING_PROPS로 바꿀 수 있다.
+// 파일이 없어도 debug 빌드와 단위 테스트는 된다. release APK·AAB를 만들 때만 오류로 멈춘다(debug 키로 넘어가지 않는다).
+val releaseSigningFile: File = file(
+    (findProperty("youngmin.signing.props") as String?)
+        ?: System.getenv("YOUNGMIN_SIGNING_PROPS")
+        ?: "${System.getProperty("user.home")}/.android/youngmin-release.properties"
+)
+val releaseSigning: Properties? = releaseSigningFile.takeIf { it.isFile }?.let { f ->
+    Properties().apply { f.inputStream().use { load(it) } }
 }
 
 android {
@@ -19,15 +33,25 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                storeFile = file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             // 코드와 리소스를 줄여 APK 크기를 낮춘다. 규칙은 app/proguard-rules.pro.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // 지인에게 직접 파일로 전달하는 용도라 debug 키로 서명한다(같은 키라야 기존 설치 위에 업데이트된다).
-            // 스토어 배포 전에는 전용 서명 키로 바꿔야 한다.
-            signingConfig = signingConfigs.getByName("debug")
+            // 0.1.6부터 전용 release 키(CN=Youngmin)로 서명한다. 그 전 설치본(debug 키)은 지우고 다시 설치해야 한다.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -72,4 +96,17 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+}
+
+// release 산출물을 만들 때 서명 키가 없으면 서명 안 된 APK를 만들지 않고 바로 멈춘다.
+gradle.taskGraph.whenReady {
+    val needsRelease = allTasks.any { it.project == project && it.name in setOf("packageRelease", "packageReleaseBundle", "signReleaseBundle") }
+    if (needsRelease && releaseSigning == null) {
+        throw GradleException(
+            // 콘솔 인코딩에 따라 한글이 깨져 보여서 영어로 쓴다.
+            "Release signing config not found: ${releaseSigningFile.path}\n" +
+                "Create it with storeFile, storePassword, keyAlias, keyPassword, " +
+                "or point to it with -Pyoungmin.signing.props=<path> or YOUNGMIN_SIGNING_PROPS."
+        )
+    }
 }

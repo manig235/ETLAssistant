@@ -18,3 +18,8 @@ captures/
 /app/src/main/jniLibs/
 /app/src/main/assets/cacert.pem
 /app/src/main/assets/codex-version.txt
+
+# 서명 키(저장소에 두지 않는다)
+*.jks
+*.keystore
+*release.properties
