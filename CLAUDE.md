@@ -98,6 +98,8 @@ eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussi
 **강의계획서 내용(2026-11-21)**: eTL `syllabus_body`는 대개 수강편람 iframe 하나뿐이라 AI가 `etl_get`으로 받아도 내용이 없었다("기말고사 일정" 같은 질문 실패).
 실제 내용은 수강편람 `cc103ajax.action`(세션 쿠키 필요, 없으면 302)과 그 첨부(docx/pdf, 교수가 계획서를 첨부로만 올리는 경우가 많음)에 있다.
 `etl_syllabus` 도구를 추가하고 `etl_read_file`이 docx·pptx 글을 읽게 했다. 검색 페이지 GET은 이제 302(메인으로)지만 쿠키는 그대로 준다.
+**한글 문서(2026-11-21)**: `etl_read_file`이 hwp(5.x)·hwpx 글도 읽는다(`etl/HwpText.kt`, 외부 라이브러리 없음: 직접 만든 CFB 리더 + `BodyText/Section*` raw deflate + PARA_TEXT 레코드, hwpx는 `Contents/section*.xml`의 `<hp:t>`). PDF 변환은 하지 않는다(기기 안 렌더러 없음, 외부 변환 서버 금지).
+배포용·암호 문서는 `PrvText` 앞부분 미리보기만 주고 `preview_only`·`note`로 알린다. hwp 3.x는 못 읽는다. 공개 샘플(pyhwp·hwplib·hwpxlib)과 기기에서 실제 eTL hwp로 확인.
 
 **ttokttok-pet 기능 이식(2026-11-21, 사용자 지시: "저기서 구현했던 기능은 다 가져온다")**: 기준은 `etl-board` 브랜치 + main의 알림 기록(etl-history).
 데스크톱 전용(말풍선 UI, 토큰 창, 채팅 폴더 workspace.js, 휴대폰 연동, eTL 비서 말풍선)은 대상이 아니다. 옮긴 것:

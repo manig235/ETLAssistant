@@ -81,7 +81,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 Triple("board_id", "integer", "게시판 첨부일 때만: 게시판 ID"),
                 Triple("post_id", "integer", "게시판 첨부일 때만: 글 ID"),
                 required = listOf("file_id_or_url"))))
-        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일과 docx·pptx는 본문(글만)을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
+        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일과 docx·pptx·hwp·hwpx는 본문(글만)을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
             schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf) 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("max_chars", "integer", "텍스트 최대 글자 수. 기본 20000, 최대 60000"),
                 required = listOf("path"))))
@@ -101,7 +101,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_board_post", "게시글 하나의 본문, 첨부파일 목록(이름·크기·file_id), 댓글. 필요한 글만 연다.",
             schema(Triple("course_id", "integer", "과목 ID"), Triple("board_id", "integer", "게시판 ID"), Triple("post_id", "integer", "글 ID(etl_board_posts)"),
                 required = listOf("course_id", "board_id", "post_id"))))
-        .put(tool("etl_syllabus", "과목의 강의계획서. 시험 일정(중간·기말고사), 평가 비율, 주차별 계획, 수업 목표, 교재, 출석 규정, 담당교수 질문에 먼저 쓴다. eTL 강의계획서 본문(글과 거기 걸린 eTL 파일 ID)과, 본문이 연결한 서울대 수강편람의 강의계획서(평가 비율·주차별 계획 등, 로그인 없이 공개 조회)를 합쳐 돌려준다. 교수가 계획서를 첨부파일로만 올린 경우가 많으니 attachments가 있고 답이 없으면 attachment에 그 index를 넣어 다시 불러 받은 뒤 etl_read_file(docx·pptx·텍스트)이나 etl_render_pages(PDF)로 읽는다. linked_files는 etl_download로 받는다.",
+        .put(tool("etl_syllabus", "과목의 강의계획서. 시험 일정(중간·기말고사), 평가 비율, 주차별 계획, 수업 목표, 교재, 출석 규정, 담당교수 질문에 먼저 쓴다. eTL 강의계획서 본문(글과 거기 걸린 eTL 파일 ID)과, 본문이 연결한 서울대 수강편람의 강의계획서(평가 비율·주차별 계획 등, 로그인 없이 공개 조회)를 합쳐 돌려준다. 교수가 계획서를 첨부파일로만 올린 경우가 많으니 attachments가 있고 답이 없으면 attachment에 그 index를 넣어 다시 불러 받은 뒤 etl_read_file(docx·pptx·hwp·hwpx·텍스트)이나 etl_render_pages(PDF)로 읽는다. linked_files는 etl_download로 받는다.",
             schema(Triple("course_id", "integer", "과목 ID(etl_courses)"),
                 Triple("attachment", "integer", "수강편람 첨부(attachments의 index)를 작업 폴더에 받는다(선택)"),
                 Triple("save_to_phone", "boolean", "attachment를 폰의 Download/etl/에도 저장할지. 기본 false"),
@@ -663,7 +663,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             .put("saved_to", savedTo ?: JSONObject.NULL)
             .put("hint", when {
                 EtlFiles.isPdf(stored.name) -> "etl_render_pages로 쪽 이미지를 만들어 읽으세요"
-                EtlFiles.isOoxml(stored.name) || EtlFiles.isTextLike(stored.name) -> "etl_read_file로 읽으세요"
+                EtlFiles.isOoxml(stored.name) || HwpText.isHwp(stored.name) || EtlFiles.isTextLike(stored.name) -> "etl_read_file로 읽으세요"
                 else -> "이 형식(${stored.name.substringAfterLast('.', "?")})은 내용을 읽을 수 없습니다. 폰에 저장해 직접 여세요"
             })
     }
@@ -808,6 +808,13 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 val limit = maxChars.coerceIn(1, EtlFiles.MAX_TEXT_CHARS)
                 val text = EtlFiles.ooxmlText(f)
                 o.put("kind", "text").put("truncated", text.length > limit).put("text", text.take(limit))
+            }
+            HwpText.isHwp(f.name) -> {
+                val limit = maxChars.coerceIn(1, EtlFiles.MAX_TEXT_CHARS)
+                val r = HwpText.read(f)
+                o.put("kind", "text").put("truncated", r.text.length > limit).put("text", r.text.take(limit))
+                if (r.previewOnly) o.put("preview_only", true).put("note", r.note)
+                o
             }
             EtlFiles.isPdf(f.name) ->
                 o.put("kind", "pdf").put("pages", PdfPages.pageCount(f))
