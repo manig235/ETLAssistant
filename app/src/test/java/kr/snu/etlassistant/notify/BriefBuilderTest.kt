@@ -48,14 +48,14 @@ class BriefBuilderTest {
 
     @Test fun allEmpty() {
         val b = build(snap())
-        assertEquals("급한 마감, 누락, 새 공지가 없습니다", b.text)
-        assertEquals("급한 마감, 누락, 새 공지가 없습니다", b.bigText)
+        assertEquals("급한 마감, 누락, 새 공지가 없어요", b.text)
+        assertEquals("급한 마감, 누락, 새 공지가 없어요", b.bigText)
     }
 
     @Test fun allEmptyWithErrors() {
         val b = build(snap(errors = listOf("강의 3 조회 실패")))
-        assertEquals("급한 마감, 누락, 새 공지가 없습니다", b.text)
-        assertEquals("급한 마감, 누락, 새 공지가 없습니다\n\n※ 일부 항목을 조회하지 못했습니다", b.bigText)
+        assertEquals("급한 마감, 누락, 새 공지가 없어요", b.text)
+        assertEquals("급한 마감, 누락, 새 공지가 없어요\n\n※ 일부 항목을 조회하지 못했어요", b.bigText)
     }
 
     @Test fun countsAndSections() {
@@ -167,7 +167,7 @@ class BriefBuilderTest {
 
     @Test fun submittedMissingFlagIgnored() {
         val b = build(snap(listOf(asg(1, h(-5), missing = true, submitted = true))))
-        assertEquals("급한 마감, 누락, 새 공지가 없습니다", b.text)
+        assertEquals("급한 마감, 누락, 새 공지가 없어요", b.text)
     }
 
     @Test fun announcementsLookbackBoundaryAndOrderAndLimit() {
@@ -194,7 +194,7 @@ class BriefBuilderTest {
 
     @Test fun errorsLineLast() {
         val b = build(snap(listOf(asg(1, h(5))), errors = listOf("x")))
-        assertTrue(b.bigText!!.endsWith("\n\n※ 일부 항목을 조회하지 못했습니다"))
+        assertTrue(b.bigText!!.endsWith("\n\n※ 일부 항목을 조회하지 못했어요"))
         assertFalse(b.bigText!!.contains("x 조회"))
     }
 

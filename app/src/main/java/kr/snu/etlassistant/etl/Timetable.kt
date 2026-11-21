@@ -378,12 +378,12 @@ object CatalogClient {
      * 리다이렉트는 따라가지 않고, [maxBytes]를 넘으면 중단한다. 받은 바이트 수를 돌려준다.
      */
     fun downloadAttachment(url: String, out: java.io.OutputStream, maxBytes: Long): Long {
-        require(url.startsWith("https://shine.snu.ac.kr/")) { "수강편람 첨부 주소가 아닙니다" }
+        require(url.startsWith("https://shine.snu.ac.kr/")) { "수강편람 첨부 주소가 아니에요" }
         val c = connect(url, "GET")
         try {
             val code = c.responseCode
             if (code !in 200..299) throw IOException("첨부파일 응답 오류($code)")
-            if ((c.getHeaderField("Content-Type") ?: "").startsWith("text/html", ignoreCase = true)) throw IOException("첨부파일 대신 웹 페이지가 왔습니다")
+            if ((c.getHeaderField("Content-Type") ?: "").startsWith("text/html", ignoreCase = true)) throw IOException("첨부파일 대신 웹 페이지가 왔어요")
             var total = 0L
             c.inputStream.use { input ->
                 val buf = ByteArray(64 * 1024)
@@ -391,7 +391,7 @@ object CatalogClient {
                     val n = input.read(buf)
                     if (n < 0) break
                     total += n
-                    if (total > maxBytes) throw IOException("첨부파일이 너무 큽니다")
+                    if (total > maxBytes) throw IOException("첨부파일이 너무 커요")
                     out.write(buf, 0, n)
                 }
             }
@@ -432,7 +432,7 @@ object CatalogClient {
             val code = c.responseCode
             if (code !in 200..299) throw Exception("수강편람 응답 오류($code)")
             val text = c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
-            return try { JSONObject(text) } catch (_: Exception) { throw Exception("수강편람 응답을 해석할 수 없습니다") }
+            return try { JSONObject(text) } catch (_: Exception) { throw Exception("수강편람 응답을 해석할 수 없어요") }
         } finally {
             c.disconnect()
         }
@@ -487,7 +487,7 @@ object Timetable {
             val id = c.optLong("id")
             val name = c.str("name").orEmpty()
             val k = asked.indexOf(i)
-            val got = if (k >= 0) answers[k] else Result.failure(Exception("강의계획서에 수강편람 링크가 없습니다"))
+            val got = if (k >= 0) answers[k] else Result.failure(Exception("강의계획서에 수강편람 링크가 없어요"))
             got.fold(
                 onSuccess = { courses += TimetableLogic.CourseMeetings(id, name, it) },
                 onFailure = { e ->

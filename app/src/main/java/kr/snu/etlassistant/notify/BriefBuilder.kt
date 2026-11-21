@@ -10,7 +10,7 @@ object BriefBuilder {
     private const val UPCOMING_LINES = 8
     private const val MISSING_LINES = 5
     private const val ANN_LINES = 5
-    private const val EMPTY = "급한 마감, 누락, 새 공지가 없습니다"
+    private const val EMPTY = "급한 마감, 누락, 새 공지가 없어요"
 
     fun build(
         snapshot: Snapshot,
@@ -61,7 +61,7 @@ object BriefBuilder {
             sections += "■ 새 공지 (최근 ${lookbackHours}시간)\n" + NoticeText.joinLimited(recent.map { NoticeText.annLine(it) }, ANN_LINES)
         }
         if (allEmpty) sections += EMPTY
-        if (snapshot.errors.isNotEmpty()) sections += "※ 일부 항목을 조회하지 못했습니다"
+        if (snapshot.errors.isNotEmpty()) sections += "※ 일부 항목을 조회하지 못했어요"
 
         return Notice(
             channel = Channel.BRIEF,

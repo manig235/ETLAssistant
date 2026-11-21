@@ -310,7 +310,7 @@ object CodexSession {
             } catch (e: Exception) {
                 CodexRunner.log.line("[session] 시작 실패: ${e.javaClass.simpleName}: ${e.message}")
                 teardown()
-                setState(SessionState.FAILED, e.message ?: "시작하지 못했습니다")
+                setState(SessionState.FAILED, e.message ?: "시작하지 못했어요")
             }
         }
     }
@@ -333,10 +333,10 @@ object CodexSession {
 
     private fun startBlocking() {
         val workspace = File(app.filesDir, "workspace").apply { mkdirs() }
-        val h = CodexRunner.startHost(workspace) ?: throw IOException("code-mode host를 시작하지 못했습니다")
+        val h = CodexRunner.startHost(workspace) ?: throw IOException("code-mode host를 시작하지 못했어요")
         host = h
         val prep = CodexRunner.prepare(CodexRunner.appServerArgs(h), options(), "채팅 세션")
-            ?: throw IOException("Codex 실행 파일을 준비하지 못했습니다")
+            ?: throw IOException("Codex 실행 파일을 준비하지 못했어요")
         val p = prep.pb.start()
         proc = p
         CodexRunner.pump(p.errorStream, "err")
@@ -381,7 +381,7 @@ object CodexSession {
         CodexRunner.log.line("[session] app-server가 종료됐습니다")
         control.execute {
             teardown()
-            setState(SessionState.FAILED, "비서 프로세스가 종료됐습니다")
+            setState(SessionState.FAILED, "비서 프로세스가 종료됐어요")
         }
     }
 
@@ -427,7 +427,7 @@ object CodexSession {
                 loginId = r.optString("loginId").takeIf { it.isNotEmpty() }
                 val url = if (kind == LoginKind.BROWSER) r.optString("authUrl") else r.optString("verificationUrl")
                 val code = if (kind == LoginKind.DEVICE_CODE) r.optString("userCode").takeIf { it.isNotEmpty() } else null
-                if (url.isEmpty()) throw IOException("로그인 주소를 받지 못했습니다")
+                if (url.isEmpty()) throw IOException("로그인 주소를 받지 못했어요")
                 val prompt = SessionEvent.LoginPrompt(kind, url, code)
                 lastLogin = prompt
                 main.post { acquireLoginHold() }
@@ -457,7 +457,7 @@ object CodexSession {
             } catch (_: IOException) {
             }
             main.post { releaseLoginHold() }
-            emit(SessionEvent.LoginDone(false, "취소했습니다"))
+            emit(SessionEvent.LoginDone(false, "취소했어요"))
         }
     }
 
@@ -490,8 +490,8 @@ object CodexSession {
     /** @return 보낼 수 없는 상태면 이유 문구, 보냈으면 null */
     fun send(text: String, attachments: List<Attachment> = emptyList()): String? {
         val c = client
-        if (state != SessionState.READY || c == null) return "비서가 아직 준비되지 않았습니다"
-        if (account?.loggedIn != true) return "먼저 로그인해야 합니다"
+        if (state != SessionState.READY || c == null) return "비서가 아직 준비되지 않았어요"
+        if (account?.loggedIn != true) return "먼저 로그인해야 해요"
         if (busy) return "이전 답변이 끝날 때까지 기다려 주세요"
         val workspace = File(app.filesDir, "workspace")
         val images = attachments.filter { it.isImage && it.path != null }
@@ -518,7 +518,7 @@ object CodexSession {
                 currentTurnId = r.optJSONObject("turn")?.optString("id")
             } catch (e: IOException) {
                 main.post {
-                    model.addNotice("보내지 못했습니다: ${e.message}")
+                    model.addNotice("보내지 못했어요: ${e.message}")
                     model.closeStreaming()
                     setActivity(tracker.turnEnded())
                     setBusy(false)
@@ -607,7 +607,7 @@ object CodexSession {
             } catch (e: IOException) {
                 CodexRunner.log.line("[session] 스레드 재개 실패, 새로 시작합니다: ${e.message}")
                 chats.setThread(forChat, null)
-                main.post { if (chatId == forChat) model.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 갑니다.") }
+                main.post { if (chatId == forChat) model.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 가요.") }
             }
         }
         val start = JSONObject().put("cwd", cwd)
@@ -615,7 +615,7 @@ object CodexSession {
         choice.model?.let { start.put("model", it) }
         val r = c.request("thread/start", start)
         val id = r.optJSONObject("thread")?.optString("id")?.takeIf { it.isNotEmpty() }
-            ?: throw IOException("스레드를 만들지 못했습니다")
+            ?: throw IOException("스레드를 만들지 못했어요")
         chats.setThread(forChat, id)
         return id
     }
@@ -640,10 +640,10 @@ object CodexSession {
                 main.post {
                     model.closeStreaming()
                     if (status == "failed") {
-                        model.addNotice(err ?: "답변을 만들지 못했습니다")
+                        model.addNotice(err ?: "답변을 만들지 못했어요")
                         if (!modelChoice.isAuto) model.addNotice("선택한 모델 설정 때문일 수 있어요. 설정에서 '자동'으로 되돌려 보세요.")
                     }
-                    if (status == "interrupted") model.addNotice("답변을 중단했습니다")
+                    if (status == "interrupted") model.addNotice("답변을 멈췄어요")
                     currentTurnId = null
                     setActivity(tracker.turnEnded())
                     setBusy(false)
@@ -697,7 +697,7 @@ object CodexSession {
 
     private fun onServerRequest(method: String, params: JSONObject?) {
         CodexRunner.log.line("[session] 서버 요청을 거절했습니다: $method")
-        main.post { model.addNotice("지원하지 않는 요청을 거절했습니다: $method") }
+        main.post { model.addNotice("지원하지 않는 요청이라 거절했어요: $method") }
     }
 
     // ---- 포그라운드 서비스, 알림 ------------------------------------------------
@@ -739,8 +739,8 @@ object CodexSession {
         val pi = PendingIntent.getActivity(app, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = android.app.Notification.Builder(app, "login")
             .setSmallIcon(kr.snu.etlassistant.phase0.R.drawable.ic_stat_etl)
-            .setContentTitle("로그인이 완료됐습니다")
-            .setContentText("탭하면 미니 eTL 비서로 돌아갑니다")
+            .setContentTitle("로그인이 끝났어요")
+            .setContentText("탭하면 미니 eTL 비서로 돌아가요")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()

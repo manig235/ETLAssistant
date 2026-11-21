@@ -37,7 +37,7 @@ class AppServerClient(
             } catch (_: IOException) {
             } finally {
                 closed = true
-                val e = IOException("app-server 연결이 닫혔습니다")
+                val e = IOException("app-server 연결이 닫혔어요")
                 waiters.values.forEach { it.completeExceptionally(e) }
                 onClosed()
             }
@@ -54,7 +54,7 @@ class AppServerClient(
 
     /** 응답의 result를 돌려준다. 오류 응답이면 [IOException]. */
     fun request(method: String, params: JSONObject, timeoutSec: Long = 60): JSONObject {
-        if (closed) throw IOException("app-server 연결이 닫혔습니다")
+        if (closed) throw IOException("app-server 연결이 닫혔어요")
         val id = ids.getAndIncrement()
         val f = CompletableFuture<JSONObject>()
         waiters[id] = f

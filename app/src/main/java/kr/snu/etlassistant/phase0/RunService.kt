@@ -28,7 +28,7 @@ class RunService : Service() {
         )
         val notification = Notification.Builder(this, CHANNEL)
             .setContentTitle("미니 eTL 비서가 일하는 중")
-            .setContentText("작업이 끝나면 자동으로 사라집니다")
+            .setContentText("작업이 끝나면 저절로 사라져요")
             .setSmallIcon(R.drawable.ic_stat_etl)
             .setOngoing(true)
             .build()

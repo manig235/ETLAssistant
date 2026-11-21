@@ -30,14 +30,14 @@ object NotifyUiFormat {
         NotifySettings.normalizeWindows(minutes).joinToString(", ") { windowLabel(it) } + " 전에 알려요"
 
     fun describeLastCheck(lastCheckAt: Long, lastResult: String): String {
-        if (lastCheckAt <= 0L) return "아직 확인한 적이 없습니다"
+        if (lastCheckAt <= 0L) return "아직 확인한 적이 없어요"
         val time = EtlLogic.fmtKst(Instant.ofEpochMilli(lastCheckAt))
         val result = lastResult.trim()
         return if (result.isEmpty()) "마지막 확인: $time" else "마지막 확인: $time · $result"
     }
 
     fun describeLastBrief(lastBriefAt: Long): String {
-        if (lastBriefAt <= 0L) return "아직 브리핑을 보낸 적이 없습니다"
+        if (lastBriefAt <= 0L) return "아직 브리핑을 보낸 적이 없어요"
         return "마지막 브리핑: " + EtlLogic.fmtKst(Instant.ofEpochMilli(lastBriefAt))
     }
 }

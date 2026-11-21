@@ -30,7 +30,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
     private val tokenValue: String
 
     init {
-        if (!TOKEN_RE.matches(token)) throw EtlException("eTL 토큰이 없거나 형식이 올바르지 않습니다")
+        if (!TOKEN_RE.matches(token)) throw EtlException("eTL 토큰이 없거나 형식이 올바르지 않아요")
         tokenValue = token
     }
 
@@ -54,9 +54,9 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             val abs = try {
                 URL(URL(url), next).toString()
             } catch (_: Exception) {
-                throw EtlException("다음 페이지 링크를 해석할 수 없습니다")
+                throw EtlException("다음 페이지 링크를 해석할 수 없어요")
             }
-            if (!abs.startsWith("$origin/")) throw EtlException("다음 페이지 링크가 eTL 밖을 가리킵니다") // 토큰 유출 방지
+            if (!abs.startsWith("$origin/")) throw EtlException("다음 페이지 링크가 eTL 밖을 가리켜요") // 토큰 유출 방지
             url = abs
         }
         return out
@@ -68,7 +68,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
      */
     fun download(rawUrl: String, out: OutputStream, maxBytes: Long = MAX_DOWNLOAD): Download {
         var url = URL(URL("$origin/"), rawUrl).toString()
-        if (!url.startsWith("$origin/")) throw EtlException("다운로드 URL이 eTL이 아닙니다")
+        if (!url.startsWith("$origin/")) throw EtlException("다운로드 주소가 eTL이 아니에요")
         val shownPath = URL(url).path
         repeat(MAX_REDIRECTS + 1) {
             val onEtl = url.startsWith("$origin/")
@@ -80,9 +80,9 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                     throw EtlException("다운로드 실패: $shownPath (${e.javaClass.simpleName})", ioKind(e))
                 }
                 if (code in 300..399) {
-                    val loc = c.getHeaderField("Location") ?: throw EtlException("리다이렉트 위치가 없습니다: $shownPath")
+                    val loc = c.getHeaderField("Location") ?: throw EtlException("리다이렉트 위치가 없어요: $shownPath")
                     val next = URL(URL(url), loc).toString()
-                    if (!next.startsWith("https://")) throw EtlException("https가 아닌 리다이렉트를 거부했습니다: $shownPath")
+                    if (!next.startsWith("https://")) throw EtlException("https가 아닌 리다이렉트를 거부했어요: $shownPath")
                     url = next
                     return@repeat
                 }
@@ -97,7 +97,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                             val r = input.read(buf)
                             if (r < 0) break
                             n += r
-                            if (n > maxBytes) throw EtlException("파일이 ${maxBytes shr 20}MB보다 큽니다: $shownPath")
+                            if (n > maxBytes) throw EtlException("파일이 ${maxBytes shr 20}MB보다 커요: $shownPath")
                             md.update(buf, 0, r)
                             out.write(buf, 0, r)
                         }
@@ -110,13 +110,13 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                 c.disconnect()
             }
         }
-        throw EtlException("리다이렉트가 너무 많습니다: $shownPath")
+        throw EtlException("리다이렉트가 너무 많아요: $shownPath")
     }
 
     // ---- 내부 ---------------------------------------------------------------
 
     private fun resolveApi(path: String): String {
-        if (!path.startsWith("/api/v1/")) throw EtlException("/api/v1/ 경로만 요청할 수 있습니다")
+        if (!path.startsWith("/api/v1/")) throw EtlException("/api/v1/ 경로만 요청할 수 있어요")
         return origin + path
     }
 
@@ -199,7 +199,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
 
         fun ioKind(e: IOException): String = if (e is java.net.SocketTimeoutException) "timeout" else "network"
         const val MAX_DOWNLOAD = 300L shl 20
-        private const val AUTH_REJECTED = "eTL이 토큰을 거부했습니다(401): 만료되었거나 올바르지 않습니다"
+        private const val AUTH_REJECTED = "eTL이 토큰을 거부했어요(401): 만료됐거나 올바르지 않아요"
         private val TOKEN_RE = Regex("[\\u0021-\\u007e]+")
         private val XSSI = Regex("^\\s*while\\(1\\);")
 

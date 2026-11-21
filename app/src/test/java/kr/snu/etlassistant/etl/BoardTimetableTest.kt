@@ -154,7 +154,7 @@ class BoardTimetableTest {
                 TimetableLogic.CourseMeetings(1, "2026-2 전기에너지변환 (001)", listOf(TimetableLogic.Meeting("월", "17:00", "18:15", "301-103"))),
                 TimetableLogic.CourseMeetings(2, "2026-2 제어공학개론 (001)", listOf(TimetableLogic.Meeting("월", "09:30", "10:45", null), TimetableLogic.Meeting("수", "09:30", "10:45", null))),
             ),
-            listOf("체력단련: 강의계획서에 수강편람 링크가 없습니다"),
+            listOf("체력단련: 강의계획서에 수강편람 링크가 없어요"),
         )
         val monday = LocalDate.of(2026, 11, 23)
         val ev = TimetableLogic.ClassRow("12:00", "13:00", "제어공학개론", 2, "301-118", "일정", "보강")

@@ -46,7 +46,7 @@ class NotifyUiFormatTest {
 
     @Test
     fun describeLastCheckNever() {
-        assertEquals("아직 확인한 적이 없습니다", NotifyUiFormat.describeLastCheck(0L, "성공"))
+        assertEquals("아직 확인한 적이 없어요", NotifyUiFormat.describeLastCheck(0L, "성공"))
     }
 
     @Test
@@ -62,7 +62,7 @@ class NotifyUiFormatTest {
 
     @Test
     fun describeLastBrief() {
-        assertEquals("아직 브리핑을 보낸 적이 없습니다", NotifyUiFormat.describeLastBrief(0L))
+        assertEquals("아직 브리핑을 보낸 적이 없어요", NotifyUiFormat.describeLastBrief(0L))
         val ms = ZonedDateTime.of(2026, 11, 19, 14, 10, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
         assertEquals("마지막 브리핑: 11-19(목) 23:10", NotifyUiFormat.describeLastBrief(ms))
     }

@@ -188,8 +188,8 @@ object NotifyRunner {
                     app,
                     Notice(
                         channel = Channel.DEADLINE,
-                        title = "eTL 토큰 확인이 필요합니다",
-                        text = "토큰이 만료되었거나 올바르지 않습니다. 설정에서 다시 저장하세요.",
+                        title = "eTL 토큰을 확인해 주세요",
+                        text = "토큰이 만료됐거나 올바르지 않아요. 설정에서 다시 저장해 주세요.",
                         tag = "auth",
                         firedKeys = listOf(AUTH_KEY),
                     ),
@@ -200,7 +200,7 @@ object NotifyRunner {
             stateStore.update { s ->
                 if (posted) s.fired[AUTH_KEY] = nowMs
                 s.lastCheckAt = nowMs
-                s.lastResult = "실패 · eTL이 토큰을 거부했습니다"
+                s.lastResult = "실패 · eTL이 토큰을 거부했어요"
             }
         }
         log("실패: 토큰 거부")

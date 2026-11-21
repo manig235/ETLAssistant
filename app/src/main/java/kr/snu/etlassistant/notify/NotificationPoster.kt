@@ -90,7 +90,7 @@ object NotificationPoster {
                 val pub = NotificationCompat.Builder(context, notice.channel.id)
                     .setSmallIcon(R.drawable.ic_stat_etl)
                     .setContentTitle("미니 eTL 알림")
-                    .setContentText("새 알림이 있습니다")
+                    .setContentText("새 알림이 있어요")
                     .build()
                 b.setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(pub)
             } else {
