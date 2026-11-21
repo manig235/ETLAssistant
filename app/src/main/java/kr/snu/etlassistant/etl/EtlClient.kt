@@ -187,6 +187,16 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
         const val MAX_CONCURRENT = 3
         private val gate = java.util.concurrent.Semaphore(MAX_CONCURRENT, true)
 
+        /** 같은 동시 요청 한도 안에서 [block]을 실행한다(게시판처럼 이 클라이언트 밖에서 eTL 호스트에 보내는 요청용). */
+        fun <T> gated(block: () -> T): T {
+            gate.acquire()
+            try {
+                return block()
+            } finally {
+                gate.release()
+            }
+        }
+
         fun ioKind(e: IOException): String = if (e is java.net.SocketTimeoutException) "timeout" else "network"
         const val MAX_DOWNLOAD = 300L shl 20
         private const val AUTH_REJECTED = "eTL이 토큰을 거부했습니다(401): 만료되었거나 올바르지 않습니다"

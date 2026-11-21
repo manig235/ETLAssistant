@@ -18,6 +18,8 @@ object BriefBuilder {
         settings: NotifySettings,
         zone: ZoneId = ZoneId.systemDefault(),
         lookbackHours: Int = 24,
+        /** 오늘 수업 줄(시간표). 비면 섹션을 넣지 않는다. */
+        todayClasses: List<String> = emptyList(),
     ): Notice {
         val today = now.atZone(zone).toLocalDate()
 
@@ -37,9 +39,11 @@ object BriefBuilder {
 
         val title = "eTL 브리핑 · ${NoticeText.dayLabel(now, zone)}"
         val allEmpty = upcoming.isEmpty() && missing.isEmpty() && recent.isEmpty()
-        val text = if (allEmpty) EMPTY else "마감 임박 ${upcoming.size}건 · 누락 ${missing.size}건 · 새 공지 ${recent.size}건"
+        val counts = if (allEmpty) EMPTY else "마감 임박 ${upcoming.size}건 · 누락 ${missing.size}건 · 새 공지 ${recent.size}건"
+        val text = if (todayClasses.isEmpty()) counts else "수업 ${todayClasses.size}개 · $counts"
 
         val sections = mutableListOf<String>()
+        if (todayClasses.isNotEmpty()) sections += "■ 오늘 수업\n" + todayClasses.joinToString("\n")
         if (upcoming.isNotEmpty()) {
             val lines = upcoming.map { a ->
                 val isToday = a.due!!.atZone(zone).toLocalDate() == today

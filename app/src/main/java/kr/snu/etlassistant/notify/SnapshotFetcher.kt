@@ -5,6 +5,7 @@ import kr.snu.etlassistant.etl.EtlAuthException
 import kr.snu.etlassistant.etl.EtlClient
 import kr.snu.etlassistant.etl.EtlException
 import kr.snu.etlassistant.etl.EtlLogic
+import kr.snu.etlassistant.etl.EtlLogic.obj
 import kr.snu.etlassistant.etl.EtlLogic.str
 import org.json.JSONObject
 import java.time.Instant
@@ -71,6 +72,7 @@ object SnapshotFetcher {
                 url = a.str("html_url"),
                 submitted = EtlLogic.isSubmitted(a),
                 missing = EtlLogic.isMissing(a, now),
+                score = if (kr.snu.etlassistant.etl.Queries.isGraded(a)) a.obj("submission")?.optDouble("score")?.takeIf { !it.isNaN() } else null,
             )
         }
 

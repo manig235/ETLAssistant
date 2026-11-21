@@ -24,6 +24,8 @@ data class AssignmentItem(
     val submitted: Boolean,
     /** 미제출이면서 `submission.missing`이거나, 마감이 지난 온라인 과제. */
     val missing: Boolean,
+    /** 채점되었으면 점수(`workflow_state == graded`이고 score 있음). 성적 등록 알림에 쓴다. */
+    val score: Double? = null,
 )
 
 data class AnnouncementItem(
@@ -50,6 +52,10 @@ enum class Channel(val id: String) {
     DEADLINE("deadline"),
     ANNOUNCEMENT("announcement"),
     BRIEF("brief"),
+    /** 새 과제·마감 변경·성적 등록. */
+    CHANGE("change"),
+    /** 수업 시작 전 알림. */
+    CLASS("class"),
 }
 
 /**
@@ -132,11 +138,18 @@ data class NotifySettings(
     val quietEndMinutes: Int = 7 * 60,
     /** 잠금화면에서는 내용을 숨기고 "미니 eTL 알림"만 보인다. */
     val hideContentOnLockScreen: Boolean = true,
+    /** 새 과제, 마감 변경, 성적 등록 알림. */
+    val changeAlerts: Boolean = true,
+    /** 수업 시작 전 알림(시간표: 수강편람 + 보강·휴강). */
+    val classAlerts: Boolean = false,
+    val classLeadMinutes: Int = 10,
 ) {
     /** 어떤 알림이든 켜져 있는가(전부 꺼져 있으면 예약 작업을 만들지 않는다). */
-    val anyEnabled: Boolean get() = deadlineAlerts || announcementAlerts || briefEnabled
-    /** 마감·공지 주기 확인이 필요한가(브리핑도 데이터가 필요하므로 브리핑만 켜도 브리핑 시점에 조회한다). */
-    val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts
+    val anyEnabled: Boolean get() = deadlineAlerts || announcementAlerts || briefEnabled || changeAlerts || classAlerts
+    /** 주기 확인이 필요한가(브리핑도 데이터가 필요하므로 브리핑만 켜도 브리핑 시점에 조회한다). */
+    val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts || changeAlerts || classAlerts
+    /** 제시간 알람(마감·수업 시각에 맞춘 추가 확인)이 필요한가. */
+    val needsTimedCheck: Boolean get() = deadlineAlerts || classAlerts
 
     companion object {
         /** 마감·공지 주기 확인 간격(시간). 사용자가 고르지 않고 1시간으로 고정한다. */

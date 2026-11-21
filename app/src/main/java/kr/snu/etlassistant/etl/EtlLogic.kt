@@ -151,7 +151,29 @@ object EtlLogic {
     private val SAFE_PATH = Regex("^/api/v1/[\\w\\-./?=&\\[\\]%:,]*$")
 
     /** etl_get이 허용하는 경로인지. `..`는 막는다(상위 경로로 빠져나가는 것 방지). */
-    fun isAllowedGetPath(path: String): Boolean = SAFE_PATH.matches(path) && !path.contains("..")
+    fun isAllowedGetPath(path: String): Boolean {
+        if (path.length > 600 || !SAFE_PATH.matches(path) || path.contains("..") || path.contains("//")) return false
+        val decoded = try { java.net.URLDecoder.decode(path.substringBefore('?'), "UTF-8") } catch (_: Exception) { return false }
+        if (decoded.contains("..") || decoded.contains("//") || decoded.contains('\\')) return false
+        // 토큰 경로, 로그인(session_token은 사용자로 로그인되는 링크를 준다), 외부 도구 실행(일회용 로그인 링크)은 거부한다.
+        return !Regex("(^|/)tokens?(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(decoded) &&
+            !Regex("^/api/v1/login(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(decoded) &&
+            !Regex("sessionless_launch", RegexOption.IGNORE_CASE).containsMatchIn(decoded)
+    }
+
+    private val SIGNED = Regex("([?&](?:verifier|sf_verifier|download_frd_token|session_token)=)[^&#\"\\s]+", RegexOption.IGNORE_CASE)
+    private val FEED = Regex("(/feeds/[a-z_]+/)[^\\s\"?#]+", RegexOption.IGNORE_CASE)
+
+    /** 서명 링크(파일 verifier, session_token)와 피드 주소의 비밀 부분을 ***로 가린다. 모델에게 주기 전에 쓴다. */
+    fun unsignText(s: String): String = FEED.replace(SIGNED.replace(s) { it.groupValues[1] + "***" }) { it.groupValues[1] + "***" }
+
+    /** JSON 전체(문자열 값)에 [unsignText]를 적용한 사본. */
+    fun unsign(v: Any?): Any? = when (v) {
+        is String -> unsignText(v)
+        is JSONArray -> JSONArray().also { out -> for (i in 0 until v.length()) out.put(unsign(v.opt(i))) }
+        is JSONObject -> JSONObject().also { out -> v.keys().forEach { k -> out.put(k, unsign(v.opt(k)) ?: JSONObject.NULL) } }
+        else -> v
+    }
 
     // ---- 제출 판정 ----------------------------------------------------------
 

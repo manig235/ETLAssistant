@@ -1,6 +1,7 @@
 package kr.snu.etlassistant.notify
 
 import kr.snu.etlassistant.etl.EtlLogic
+import kr.snu.etlassistant.etl.Queries
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -253,7 +254,8 @@ object NotificationPlanner {
                 val body = NoticeText.clean(a.text)
                 Notice(
                     channel = Channel.ANNOUNCEMENT,
-                    title = NoticeText.cut(NoticeText.clean(a.courseName) + " · 새 공지", NoticeText.TITLE_MAX),
+                    // 보강·휴강 공지는 따로 표시한다(ttokttok-pet watch.js announcementBadge).
+                    title = NoticeText.cut(NoticeText.clean(a.courseName) + " · " + Queries.announcementBadge(a.title, a.text), NoticeText.TITLE_MAX),
                     text = NoticeText.safe(a.title, NoticeText.LINE_MAX),
                     bigText = if (body.isEmpty()) null else NoticeText.cut(body, ANN_BODY_MAX),
                     url = NoticeText.safeUrl(a.url),
@@ -262,7 +264,10 @@ object NotificationPlanner {
                 )
             }
         }
-        val lines = fresh.map { NoticeText.annLine(it) }
+        val lines = fresh.map { a ->
+            val badge = Queries.announcementBadge(a.title, a.text)
+            if (badge == "새 공지") NoticeText.annLine(a) else NoticeText.annLine(a).replaceFirst("• ", "• ($badge) ")
+        }
         return listOf(
             Notice(
                 channel = Channel.ANNOUNCEMENT,

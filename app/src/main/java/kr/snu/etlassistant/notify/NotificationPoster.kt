@@ -20,7 +20,7 @@ object NotificationPoster {
     private const val ETL_ORIGIN = "https://myetl.snu.ac.kr/"
     private const val CHAT_ACTIVITY = "kr.snu.etlassistant.chat.ChatActivity"
 
-    /** 채널 3개를 만든다(멱등: 이미 있으면 이름만 갱신되고 사용자가 바꾼 설정은 유지된다). */
+    /** 채널들을 만든다(멱등: 이미 있으면 이름만 갱신되고 사용자가 바꾼 설정은 유지된다). */
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
@@ -28,6 +28,8 @@ object NotificationPoster {
             nm.createNotificationChannel(NotificationChannel(Channel.DEADLINE.id, "마감 알림", NotificationManager.IMPORTANCE_HIGH))
             nm.createNotificationChannel(NotificationChannel(Channel.ANNOUNCEMENT.id, "공지 알림", NotificationManager.IMPORTANCE_DEFAULT))
             nm.createNotificationChannel(NotificationChannel(Channel.BRIEF.id, "정기 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(Channel.CHANGE.id, "새 과제·마감 변경·성적", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(Channel.CLASS.id, "수업 알림", NotificationManager.IMPORTANCE_HIGH))
         }
     }
 
@@ -84,6 +86,7 @@ object NotificationPoster {
             }
 
             NotificationManagerCompat.from(context).notify(id, b.build())
+            NotifyHistory(context).record(notice)
         }
     }
 }

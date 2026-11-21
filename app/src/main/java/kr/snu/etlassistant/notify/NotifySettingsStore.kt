@@ -19,6 +19,9 @@ class NotifySettingsStore(context: Context) {
             quietStartMinutes = prefs.getInt("quietStartMinutes", d.quietStartMinutes).coerceIn(0, 1439),
             quietEndMinutes = prefs.getInt("quietEndMinutes", d.quietEndMinutes).coerceIn(0, 1439),
             hideContentOnLockScreen = prefs.getBoolean("hideContentOnLockScreen", d.hideContentOnLockScreen),
+            changeAlerts = prefs.getBoolean("changeAlerts", d.changeAlerts),
+            classAlerts = prefs.getBoolean("classAlerts", d.classAlerts),
+            classLeadMinutes = prefs.getInt("classLeadMinutes", d.classLeadMinutes).coerceIn(1, 120),
         )
     }
 
@@ -36,6 +39,9 @@ class NotifySettingsStore(context: Context) {
             .putInt("quietStartMinutes", s.quietStartMinutes)
             .putInt("quietEndMinutes", s.quietEndMinutes)
             .putBoolean("hideContentOnLockScreen", s.hideContentOnLockScreen)
+            .putBoolean("changeAlerts", s.changeAlerts)
+            .putBoolean("classAlerts", s.classAlerts)
+            .putInt("classLeadMinutes", s.classLeadMinutes)
             .apply()
     }
 

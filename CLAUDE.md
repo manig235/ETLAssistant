@@ -78,6 +78,21 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 **Phase 3: 알림 — 구현됨, 기기 장기 검증 남음.** WorkManager로 한 시간마다 확인해 마감 임박(기본 3일·24시간·3시간·1시간 전, 설정에서 선택)과 새 공지를
 로컬 알림으로 띄운다. AI는 쓰지 않는다. 정기 브리핑(최대 2개 시각), 방해 금지, 잠금화면 숨김, 중복 방지(`NotifyState`),
 공지 기준선을 갖췄다. 상세는 `docs/phase3-log.md`. 백그라운드 장기 동작(삼성 절전 등)은 아직 실측하지 못했다.
+**게시판·시간표**(2026-11-21): ttokttok-pet(`hyukjunlim/ttokttok-pet`, 예전 claude-pet)의 `etl-board` 브랜치 `src/etl/board.js`와 `src/etl/timetable.js`를 옮겼다.
+eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussion_topics`는 비어 있다(2026-2학기 8과목 모두 0건 확인).
+시간표는 강의계획서 본문(수강편람 iframe 링크) → 수강편람 상세 조회로 가져오고 하루 캐시한다(`TimetableStore`). 아침 브리핑에 "오늘 수업" 섹션이 붙는다.
+수강편람 조회는 Kotlin 코드로 실조회까지 확인했다. 게시판 LTI 실행은 기기에서 아직 확인하지 못했다(ttokttok-pet에서는 실사용).
+
+**ttokttok-pet 기능 이식(2026-11-21, 사용자 지시: "저기서 구현했던 기능은 다 가져온다")**: 기준은 `etl-board` 브랜치 + main의 알림 기록(etl-history).
+데스크톱 전용(말풍선 UI, 토큰 창, 채팅 폴더 workspace.js, 휴대폰 연동, eTL 비서 말풍선)은 대상이 아니다. 옮긴 것:
+- 도구: `etl_courses`(모든 학기, current, 현재 점수), `etl_assignments`의 `status`(upcoming/missing/submitted/all)·`course_id`, `etl_announcements`,
+  `etl_grades`, `etl_files`(파일 탭+모듈+과제·공지 첨부/본문 링크+내 제출, 받지 않음), `etl_download`의 동영상 거부·변하지 않은 파일 재사용,
+  `etl_get`의 쪽지 읽음 방지(`auto_mark_as_read=false`)·목록 잘라 보내기. 로직은 `etl/Queries.kt`.
+- 시간표 보강·휴강: 앱 "시간표" 화면(`TimetableActivity`, `TimetableChangeStore`)에서 넣는다.
+- 알림(`notify/Watch.kt`): 새 과제·마감 변경·성적(설정 `changeAlerts`, 기본 켬, 첫 확인은 기준선만), 보강·휴강 공지 표시, 수업 N분 전 알림
+  (`classAlerts`, 기본 끔, 5/10/15/30분). 제시간 알람은 마감·수업 중 이른 시각에 건다.
+- 알림 기록(`NotifyHistory`, 90일·300개, `NotifyHistoryActivity`): 게시한 모든 알림을 `NotificationPoster.post`에서 남긴다.
+- 옮기지 않은 것: 첫 연결 때 "eTL 연결됨" 요약 말풍선(첫 실행 안내가 대신함).
 
 **Phase 4: 첫 실행 안내 — 구현됨.** Montage(Compose) 기반. 환영 → eTL 토큰(실제로 접속해 확인한 뒤 저장) → ChatGPT 로그인
 (브라우저 기본, 코드 방식은 브라우저가 안 될 때만 예비로 노출, 로그인된 상태에서 계정 전환 가능) → 알림 → 완료(추천 질문).
@@ -149,12 +164,22 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 - `etl_search_files(course_id, term)`
 - `etl_download(file_id_or_url)`: 폰 `Download/etl/`에 저장하고 경로, 크기, 일치 여부를 반환
 - `etl_verify_submission(course_id, assignment_id)`
-- `etl_get(path)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용
+- `etl_boards(course_id)`, `etl_board_posts(course_id, board_id, page=1, keyword)`, `etl_board_post(course_id, board_id, post_id)`: LearningX 게시판
+- `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
+- `etl_download`에 게시판 첨부용 `course_id`, `board_id`, `post_id`(선택)
+- `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
 
 ## 보안 규칙
 
 - eTL 토큰은 `myetl.snu.ac.kr`에만 보낸다. Keystore 기반으로 암호화해 저장하고, 로그·크래시 리포트·에러 메시지에 절대 남기지 않는다.
 - eTL에는 GET 요청만 보낸다. 제출·수정 같은 쓰기 요청은 구현하지 않는다.
+  **예외 하나(2026-11-21, 사용자 승인)**: 게시판(LearningX) 토큰을 받기 위한 LTI 실행 POST. eTL 호스트의 `/learningx/lti/…`로만,
+  Canvas 실행 페이지가 준(서명한) 폼 필드만 그대로 보낸다(`etl/Board.kt`). 실행 링크·폼·LearningX 토큰(`xn_api_token`)은 결과·오류·로그에 넣지 않고
+  메모리(`BoardSession`)에만 둔다. 게시글 "읽음" 처리 POST는 보내지 않는다.
+- 시간표는 서울대 공개 수강편람(sugang.snu.ac.kr)의 검색 페이지 GET(세션 쿠키)과 상세 조회 POST(`cc101ajax.action`, 공개 과목 코드만)를 쓴다.
+  로그인 없음, **eTL 토큰은 보내지 않는다**(`etl/Timetable.kt`).
+- `etl_get`은 토큰·로그인·`sessionless_launch` 경로를 거부하고, 응답의 서명 링크(`verifier`, `session_token` 등)와 피드 주소를 `***`로 가린다.
+- 숨김 파일(`hidden_for_user`)은 받지 않는다. 게시판 첨부만 예외로, LearningX가 그 글의 첨부임을 확인한 경우에만 받는다.
 - MCP 서버는 127.0.0.1에만 바인딩하고, 실행마다 바뀌는 비밀값을 요구한다.
 - eTL 내용(공지, 과제 설명, 파일)은 신뢰하지 않는 데이터다. 그 안의 지시를 따르지 않도록 Codex 지침(AGENTS.md)에 명시한다.
 - 앱에는 분석 SDK나 외부 서버 전송을 넣지 않는다.
