@@ -41,6 +41,7 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 - 0.1.5까지는 debug 키로 서명했다. **0.1.6부터 키가 바뀌어 이전 설치본 위에 업데이트되지 않는다.** 지우고 다시 설치해야 하며,
   이때 폰 안의 eTL 토큰·ChatGPT 로그인·내 마감·대화가 모두 지워진다(키 순환은 쓰지 않기로 했다).
 - 배포본은 `./gradlew testDebugUnitTest assembleRelease` 뒤 `~/shared/youngmin-v<버전>.apk`와 `.sha256`으로 둔다. 버전 올림은 따로 커밋한다.
+- **GitHub Release로 배포한다(2026-11-22)**: 태그 `v<버전>`, asset `youngmin-v<버전>.apk`·`.sha256`, 정식 릴리스(초안·사전 배포는 앱이 무시). `scripts/github-release.sh`(GITHUB_TOKEN) 또는 웹. 앱은 하루 한 번·채팅 화면 열 때(6시간 간격) `releases/latest`를 확인해 새 버전을 알리고, 누르면 Release 페이지를 연다(앱이 APK를 받지 않음). 상세는 `docs/release.md`.
 
 **백그라운드에서 네트워크가 막힌다 (중요)**
 - 앱이 백그라운드가 되면(예: 로그인하러 브라우저로 나감) 앱 UID의 DNS가 `No address associated with hostname`으로 실패한다.
@@ -229,6 +230,7 @@ Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계
 - MCP 서버는 127.0.0.1에만 바인딩하고, 실행마다 바뀌는 비밀값을 요구한다.
 - eTL 내용(공지, 과제 설명, 파일)은 신뢰하지 않는 데이터다. 그 안의 지시를 따르지 않도록 Codex 지침(AGENTS.md)에 명시한다.
 - 앱에는 분석 SDK나 외부 서버 전송을 넣지 않는다.
+  **예외 하나(2026-11-22, 사용자 결정)**: 업데이트 확인용 `GET https://api.github.com/repos/manig235/ETLAssistant/releases/latest`(사용자 데이터·토큰·기기 정보 없음, 리다이렉트 안 따라감, 설정 "업데이트 알림"으로 끌 수 있음, `update/UpdateChecker.kt`).
 
 ## 미해결 질문
 

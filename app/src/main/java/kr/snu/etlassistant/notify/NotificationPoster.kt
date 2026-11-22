@@ -31,6 +31,7 @@ object NotificationPoster {
             nm.createNotificationChannel(NotificationChannel(Channel.BRIEF.id, "정기 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
             nm.createNotificationChannel(NotificationChannel(Channel.CHANGE.id, "새 과제·마감 변경·성적", upgraded(nm, LEGACY_CHANGE)))
             nm.createNotificationChannel(NotificationChannel(Channel.CLASS.id, "수업 알림", NotificationManager.IMPORTANCE_HIGH))
+            nm.createNotificationChannel(NotificationChannel(Channel.UPDATE.id, "앱 업데이트", NotificationManager.IMPORTANCE_DEFAULT))
             nm.deleteNotificationChannel(LEGACY_ANNOUNCEMENT)
             nm.deleteNotificationChannel(LEGACY_CHANGE)
         }

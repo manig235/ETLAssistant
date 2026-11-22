@@ -29,6 +29,10 @@ import kr.snu.etlassistant.notify.NotifySettingsStore
 import kr.snu.etlassistant.notify.NotifyStateStore
 import kr.snu.etlassistant.onboarding.OnboardingActivity
 import kr.snu.etlassistant.phase0.CodexRunner
+import kr.snu.etlassistant.update.UpdateChecker
+import kr.snu.etlassistant.update.UpdateLogic
+import kr.snu.etlassistant.update.UpdateScheduler
+import kr.snu.etlassistant.update.UpdateStore
 
 /**
  * 설정 화면: ChatGPT 계정(브라우저 / 기기 코드), eTL 토큰, 알림, AI 모델, API 키(고급). 화면은 Montage(Wanted 디자인 시스템)로 그린다.
@@ -40,6 +44,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
     private val apiKeys by lazy { ApiKeyStore(this) }
     private val notifyStore by lazy { NotifySettingsStore(this) }
     private val main = Handler(Looper.getMainLooper())
+    private val updateStore by lazy { UpdateStore(this) }
 
     /** 로그인 코드 만료 시각의 기준이 되는 마지막 로그인 URL(같은 로그인이 다시 전달돼도 15분을 리셋하지 않는다). */
     private var lastPromptUrl: String? = null
@@ -103,6 +108,20 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
                 AppSettings.casualTone = v
                 state.casualTone = v
             },
+            setUpdateAlerts = { v ->
+                updateStore.enabled = v
+                state.updateAlerts = v
+                UpdateScheduler.apply(this)
+            },
+            checkUpdate = ::checkUpdate,
+            openUpdate = {
+                val url = state.updateUrl
+                if (url != null && UpdateLogic.isAllowedUrl(url)) {
+                    if (runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isFailure) {
+                        toast("링크를 열 앱이 없어요: $url", long = true)
+                    }
+                }
+            },
         )
         setContent { SettingsRoot(state, actions) }
     }
@@ -117,6 +136,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
         refreshNotifySettings()
         refreshNotifyPermission()
         refreshNotifyStatusLines()
+        refreshUpdate()
         state.modelChoice = CodexSession.modelChoice
         maybeLoadModels()
     }
@@ -167,6 +187,36 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
     /** 목록이 비어 있고 불러오는 중도 아니면 다시 불러온다(세션이 준비되기 전이면 준비된 뒤 한 번 더 시도한다). */
     private fun maybeLoadModels() {
         if (CodexSession.models.isEmpty() && !CodexSession.modelsLoading) CodexSession.refreshModels()
+    }
+
+    // ---- 업데이트 확인 -------------------------------------------------------------
+
+    /** 저장된 최신 Release가 지금 버전보다 새것일 때만 "새 버전" 링크를 보인다(이미 업데이트했으면 사라진다). */
+    private fun refreshUpdate() {
+        state.updateAlerts = updateStore.enabled
+        val latest = updateStore.latest?.takeIf { UpdateLogic.isNewer(it.tag, UpdateChecker.currentVersion(this)) }
+        state.updateVersion = latest?.version
+        state.updateUrl = latest?.htmlUrl
+    }
+
+    /** "업데이트 확인": 사용자가 직접 누른 것이라 알림 설정이 꺼져 있어도 확인하고, 알림 대신 화면에 결과를 보인다. */
+    private fun checkUpdate() {
+        if (state.updateChecking) return
+        state.updateChecking = true
+        state.updateResult = null
+        val app = applicationContext
+        Thread {
+            val outcome = UpdateChecker.check(app, notify = false)
+            main.post {
+                state.updateChecking = false
+                state.updateResult = when (outcome) {
+                    is UpdateChecker.Outcome.Available -> null
+                    UpdateChecker.Outcome.UpToDate -> "지금 최신 버전이에요"
+                    is UpdateChecker.Outcome.Failed -> "확인하지 못했어요(${outcome.reason}). 인터넷 연결을 확인해 주세요"
+                }
+                refreshUpdate()
+            }
+        }.start()
     }
 
     // ---- API 키 / eTL 토큰 -------------------------------------------------------

@@ -29,6 +29,8 @@ import kr.snu.etlassistant.onboarding.OnboardingPrefs
 import kr.snu.etlassistant.phase0.R
 import java.io.File
 import java.util.concurrent.Executors
+import kr.snu.etlassistant.update.UpdateChecker
+import kr.snu.etlassistant.update.UpdateScheduler
 import android.app.NotificationManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
@@ -132,6 +134,9 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
         )
         setContent { ChatRoot(vm, actions) }
         applyPrefill(intent)
+        // 새 버전 확인: 하루 한 번 워커 예약 + 마지막 확인 후 6시간이 지났으면 지금 뒤에서 한 번.
+        UpdateScheduler.apply(this)
+        UpdateChecker.maybeCheckOnStart(this)
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
