@@ -42,6 +42,7 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
   이때 폰 안의 eTL 토큰·ChatGPT 로그인·내 마감·대화가 모두 지워진다(키 순환은 쓰지 않기로 했다).
 - 배포본은 `./gradlew testDebugUnitTest assembleRelease` 뒤 `~/shared/youngmin-v<버전>.apk`와 `.sha256`으로 둔다. 버전 올림은 따로 커밋한다.
 - **GitHub Release로 배포한다(2026-11-22)**: 태그 `v<버전>`, asset `youngmin-v<버전>.apk`·`.sha256`, 정식 릴리스(초안·사전 배포는 앱이 무시). `scripts/github-release.sh`(GITHUB_TOKEN) 또는 웹. 앱은 하루 한 번·채팅 화면 열 때(6시간 간격) `releases/latest`를 확인해 새 버전을 알리고, 누르면 Release 페이지를 연다(앱이 APK를 받지 않음). 상세는 `docs/release.md`.
+  새 버전 알림은 팝업(채널 `update_v2`, HIGH; 옛 `update`는 지우고 꺼 둔 채널이면 새 채널도 끈 채로, 방해 금지 시간엔 미룸)이고, 채팅 화면을 열면 앱 안 팝업(`update/UpdatePrompt`, 바뀐 점 요약·크기, "받기"/"나중에", 같은 버전은 하루 한 번까지)도 뜬다.
 
 **백그라운드에서 네트워크가 막힌다 (중요)**
 - 앱이 백그라운드가 되면(예: 로그인하러 브라우저로 나감) 앱 UID의 DNS가 `No address associated with hostname`으로 실패한다.

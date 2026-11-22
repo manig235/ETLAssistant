@@ -60,8 +60,8 @@ enum class Channel(val id: String) {
     CHANGE("change_v2"),
     /** 수업 시작 전 알림. */
     CLASS("class"),
-    /** 새 버전 알림(GitHub Release, update/UpdateChecker). */
-    UPDATE("update"),
+    /** 새 버전 알림(GitHub Release, update/UpdateChecker). 2026-11-22에 팝업(HIGH)으로 올리며 `_v2`가 됐다. */
+    UPDATE("update_v2"),
 }
 
 /**

@@ -25,7 +25,8 @@ data class ReleaseInfo(
 object UpdateLogic {
     const val REPO_PAGE = "https://github.com/manig235/ETLAssistant/"
     const val LATEST_API = "https://api.github.com/repos/manig235/ETLAssistant/releases/latest"
-    const val NOTES_MAX = 300
+    /** 본문은 앱 안 팝업 요약([promptSummary])에 쓰므로 바뀐 점 몇 줄이 들어갈 만큼 받는다. */
+    const val NOTES_MAX = 2000
     private const val MAX_PARTS = 4
 
     /** "v0.1.8", "0.1.8", "V1.2" → 숫자 목록. 숫자와 점 외의 글자(예: "-beta")가 있거나 비어 있으면 null. */
@@ -123,6 +124,62 @@ object UpdateLogic {
 
     fun notificationText(info: ReleaseInfo): String =
         listOfNotNull("눌러서 받아요", sizeText(info.apkSize)).joinToString(" · ")
+
+    /** 앱 안 팝업에서 "나중에"를 누른(또는 받기로 연) 뒤 같은 버전을 다시 띄우지 않는 시간. */
+    const val PROMPT_SNOOZE_MS = 24L * 60 * 60 * 1000
+    private const val SUMMARY_LINES = 4
+    private const val SUMMARY_LINE_MAX = 60
+
+    /**
+     * 앱 안 팝업을 띄울지. 지금 버전보다 새롭고, 이 태그를 [PROMPT_SNOOZE_MS] 안에 미뤄 두지 않았을 때만.
+     * 시각이 거꾸로 갔으면(미룬 시각이 미래) 미룸이 끝난 것으로 본다.
+     */
+    fun shouldPrompt(info: ReleaseInfo?, currentVersion: String?, snoozedTag: String?, snoozedAtMs: Long, nowMs: Long): Boolean {
+        if (info == null || !isNewer(info.tag, currentVersion)) return false
+        if (info.tag != snoozedTag) return true
+        return nowMs < snoozedAtMs || nowMs - snoozedAtMs >= PROMPT_SNOOZE_MS
+    }
+
+    /**
+     * 릴리스 본문에서 팝업에 보일 "바뀐 점" 몇 줄을 뽑는다(마크다운 기호는 지운다).
+     * "## 바뀐 점" 절이 있으면 그 절의 목록만, 없으면 본문 전체의 목록을 본다. 목록 항목이 `**요약.**`으로 시작하면 그 요약만 쓴다.
+     * 목록이 없으면 제목이 아닌 첫 줄 하나. 링크 주소는 보이지 않는다(글자만 남긴다).
+     */
+    fun promptSummary(notes: String?): List<String> {
+        val lines = notes.orEmpty().replace("\r", "").lines()
+        val start = lines.indexOfFirst { it.trimStart().startsWith("#") && it.contains("바뀐 점") }
+        val section = if (start >= 0) {
+            val rest = lines.drop(start + 1)
+            rest.takeWhile { !it.trimStart().startsWith("#") }
+        } else lines
+        val bullets = section.map { it.trim() }.filter { it.startsWith("- ") || it.startsWith("* ") }
+        val picked = if (bullets.isNotEmpty()) bullets.map { bulletSummary(it.drop(2)) }
+        else section.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.take(1).map { plain(it) }
+        return picked.filter { it.isNotBlank() }.take(SUMMARY_LINES).map { clip(it) }
+    }
+
+    private fun bulletSummary(item: String): String {
+        val t = item.trim()
+        if (t.startsWith("**")) {
+            val end = t.indexOf("**", 2)
+            if (end > 2) return plain(t.substring(2, end)).trimEnd('.', ' ')
+        }
+        return plain(t)
+    }
+
+    /** 마크다운 강조·코드·링크 기호를 지운 글자. */
+    internal fun plain(s: String): String =
+        s.replace(Regex("""!?\[([^\]]*)]\([^)]*\)"""), "$1")
+            .replace("**", "").replace("__", "").replace("`", "")
+            .replace(Regex("""https?://\S+"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+    private fun clip(s: String): String = if (s.length <= SUMMARY_LINE_MAX) s else s.take(SUMMARY_LINE_MAX - 1).trimEnd() + "…"
+
+    /** 앱 안 팝업 본문: 바뀐 점 요약 + 크기. */
+    fun promptBody(info: ReleaseInfo, summary: List<String>): String =
+        (summary.map { "· $it" } + listOfNotNull(sizeText(info.apkSize)?.let { "크기 $it" })).joinToString("\n")
 
     /** 설정 "앱 정보"에 보일 문구. */
     fun availableText(version: String): String = "새 버전 $version${subjectParticle(version)} 있어요"
