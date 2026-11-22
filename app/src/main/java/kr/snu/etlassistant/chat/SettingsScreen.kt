@@ -78,6 +78,7 @@ import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.notify.NotifySettings
+import kr.snu.etlassistant.update.UpdateLogic
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextDecoration
@@ -115,6 +116,15 @@ class SettingsState {
     var powerSave by mutableStateOf(false)
     var lastCheckText by mutableStateOf("")
     var lastBriefText by mutableStateOf("")
+
+    /** 업데이트 알림(GitHub Release 확인) 켬/끔. */
+    var updateAlerts by mutableStateOf(true)
+    /** 지금보다 새 버전(예: "0.1.8")과 그 Release 페이지. 없으면 null. */
+    var updateVersion by mutableStateOf<String?>(null)
+    var updateUrl by mutableStateOf<String?>(null)
+    var updateChecking by mutableStateOf(false)
+    /** "업데이트 확인"을 누른 뒤 보일 짧은 결과(예: "최신 버전이에요"). */
+    var updateResult by mutableStateOf<String?>(null)
 }
 
 /** 화면이 바깥(액티비티, 세션, 시스템)에 부탁하는 일들. 저장 계열은 성공 여부를 돌려줘서 입력칸을 비울지 정한다. */
@@ -144,6 +154,9 @@ class SettingsActions(
     val openTimetable: () -> Unit = {},
     val openMyDeadlines: () -> Unit = {},
     val setCasualTone: (Boolean) -> Unit = {},
+    val setUpdateAlerts: (Boolean) -> Unit = {},
+    val checkUpdate: () -> Unit = {},
+    val openUpdate: () -> Unit = {},
 )
 
 @Composable
@@ -190,9 +203,9 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
                 Spacer(Modifier.height(32.dp))
                 ApiKeySection(s, a)
                 Spacer(Modifier.height(32.dp))
-                MiscSection(a)
+                MiscSection(s, a)
                 Spacer(Modifier.height(32.dp))
-                AboutSection()
+                AboutSection(s, a)
                 Spacer(Modifier.height(40.dp))
             }
         }
@@ -805,9 +818,10 @@ private fun ApiKeySection(s: SettingsState, a: SettingsActions) {
 // ---- 6. 기타 -----------------------------------------------------------------
 
 @Composable
-private fun MiscSection(a: SettingsActions) {
+private fun MiscSection(s: SettingsState, a: SettingsActions) {
     Section("기타") {
         SettingsCard {
+            SwitchRow("업데이트 알림", "새 버전이 나오면 알려 줘요(GitHub에 최신 버전만 물어봐요)", s.updateAlerts, onChange = a.setUpdateAlerts)
             LinkRow("알림 기록", onClick = a.openHistory)
             LinkRow("시간표 · 보강/휴강", onClick = a.openTimetable)
             LinkRow("내 일정", onClick = a.openMyDeadlines)
@@ -817,7 +831,7 @@ private fun MiscSection(a: SettingsActions) {
 }
 
 @Composable
-private fun AboutSection() {
+private fun AboutSection(s: SettingsState, a: SettingsActions) {
     val context = LocalContext.current
     val version = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
@@ -831,19 +845,18 @@ private fun AboutSection() {
             Spacer(Modifier.height(10.dp))
             Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
             Spacer(Modifier.height(4.dp))
-            // 화살표 줄 대신 하이퍼링크처럼: 브랜드 색 + 밑줄. 터치 영역은 48dp 높이로 둔다.
-            Box(
-                Modifier
-                    .heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClickLabel = "제보 안내 열기") { feedbackOpen = true },
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text(
-                    "건의사항 · 오류 제보",
-                    style = DesignSystemTheme.typography.body2Medium,
-                    color = DesignSystemTheme.colors.foregroundBrandPrimary,
-                    textDecoration = TextDecoration.Underline,
+            HyperLink("건의사항 · 오류 제보", onClickLabel = "제보 안내 열기") { feedbackOpen = true }
+            val newVersion = s.updateVersion
+            if (newVersion != null && s.updateUrl != null) {
+                HyperLink(UpdateLogic.availableText(newVersion), onClickLabel = "Release 페이지 열기", onClick = a.openUpdate)
+            } else {
+                HyperLink(
+                    if (s.updateChecking) "확인하는 중…" else "업데이트 확인",
+                    onClickLabel = "새 버전 확인",
+                    enabled = !s.updateChecking,
+                    onClick = a.checkUpdate,
                 )
+                s.updateResult?.let { Caption(it) }
             }
         }
     }
@@ -872,6 +885,24 @@ private fun AboutSection() {
                 })
             },
             dismissButton = { WantedTextButton(text = "닫기", onClick = { feedbackOpen = false }) },
+        )
+    }
+}
+
+/** 화살표 줄 대신 하이퍼링크처럼: 브랜드 색 + 밑줄. 터치 영역은 48dp 높이로 둔다. */
+@Composable
+private fun HyperLink(text: String, onClickLabel: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .heightIn(min = 48.dp)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = onClickLabel, onClick = onClick),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text,
+            style = DesignSystemTheme.typography.body2Medium,
+            color = if (enabled) DesignSystemTheme.colors.foregroundBrandPrimary else DesignSystemTheme.colors.foregroundNeutralTertiary,
+            textDecoration = if (enabled) TextDecoration.Underline else null,
         )
     }
 }

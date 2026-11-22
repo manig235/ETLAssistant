@@ -15,6 +15,7 @@ class SystemEventReceiver : BroadcastReceiver() {
         if (intent.action !in ACTIONS) return
         runCatching { NotifyScheduler.apply(context) }
         runCatching { DeadlineAlarm.rearm(context) }
+        runCatching { kr.snu.etlassistant.update.UpdateScheduler.apply(context) }
         runCatching { kr.snu.etlassistant.phase0.CodexRunner.log.line("[notify] 예약 되살림: ${intent.action?.substringAfterLast('.')}") }
     }
 
