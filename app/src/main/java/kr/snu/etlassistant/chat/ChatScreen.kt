@@ -115,6 +115,8 @@ class ChatActions(
 fun ChatRoot(vm: ChatViewModel, a: ChatActions) {
     DesignSystemTheme {
         ChatScreen(vm, a)
+        // 새 버전이 있으면 앞에 팝업(하루 한 번까지, update/UpdatePrompt).
+        kr.snu.etlassistant.update.UpdatePrompt()
     }
 }
 

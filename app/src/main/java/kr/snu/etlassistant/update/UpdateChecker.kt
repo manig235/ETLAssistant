@@ -5,6 +5,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import kr.snu.etlassistant.notify.Channel
@@ -12,6 +15,10 @@ import kr.snu.etlassistant.notify.Notice
 import kr.snu.etlassistant.notify.NotificationPoster
 import kr.snu.etlassistant.notify.NotifyHistory
 import kr.snu.etlassistant.notify.NotifySchedule
+import kr.snu.etlassistant.notify.NotifySettingsStore
+import kr.snu.etlassistant.notify.Quiet
+import java.time.LocalTime
+import java.time.ZoneId
 import kr.snu.etlassistant.phase0.R
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
@@ -44,16 +51,26 @@ class UpdateStore(context: Context) {
             val tag = prefs.getString("latestTag", null) ?: return null
             val url = prefs.getString("latestUrl", null)?.takeIf { UpdateLogic.isAllowedUrl(it) } ?: return null
             return ReleaseInfo(
-                tag = tag, version = tag.removePrefix("v").removePrefix("V"), htmlUrl = url, name = "", notes = "",
+                tag = tag, version = tag.removePrefix("v").removePrefix("V"), htmlUrl = url, name = "",
+                notes = prefs.getString("latestNotes", null).orEmpty(),
                 apkName = null, apkSize = prefs.getLong("latestSize", -1L).takeIf { it > 0 },
             )
         }
         set(v) {
             val e = prefs.edit()
-            if (v == null) e.remove("latestTag").remove("latestUrl").remove("latestSize")
+            if (v == null) e.remove("latestTag").remove("latestUrl").remove("latestSize").remove("latestNotes")
             else e.putString("latestTag", v.tag).putString("latestUrl", v.htmlUrl).putLong("latestSize", v.apkSize ?: -1L)
+                .putString("latestNotes", v.notes.take(UpdateLogic.NOTES_MAX))
             e.apply()
         }
+
+    /** 앱 안 팝업을 미룬 태그와 시각("나중에"·"받기"·바깥 누름). 같은 태그는 [UpdateLogic.PROMPT_SNOOZE_MS] 동안 다시 안 띄운다. */
+    val promptSnoozedTag: String? get() = prefs.getString("promptSnoozedTag", null)
+    val promptSnoozedAtMs: Long get() = prefs.getLong("promptSnoozedAt", 0L)
+
+    fun snoozePrompt(tag: String, nowMs: Long = System.currentTimeMillis()) {
+        prefs.edit().putString("promptSnoozedTag", tag).putLong("promptSnoozedAt", nowMs).apply()
+    }
 }
 
 /**
@@ -78,6 +95,13 @@ object UpdateChecker {
 
     private val running = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * 확인 결과가 바뀔 때마다 올라가는 값. 앱 안 팝업([UpdatePrompt])이 읽어 두었다가 뒤에서 확인이 끝나면 다시 그린다.
+     * (값 자체는 [UpdateStore.latest]에 있다.)
+     */
+    internal val checkedTick = mutableStateOf(0)
 
     fun currentVersion(context: Context): String? =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
@@ -107,13 +131,17 @@ object UpdateChecker {
             when (outcome) {
                 is Outcome.Available -> {
                     store.latest = outcome.info
-                    if (notify && store.enabled && UpdateLogic.shouldNotify(outcome.info, currentVersion(app), store.notifiedTag)) {
+                    // 방해 금지 시간에는 알림을 미룬다(태그를 기록하지 않아 다음 확인 때 다시 알린다). 앱 안 팝업은 그대로 뜬다.
+                    if (notify && store.enabled && !inQuietHours(app) &&
+                        UpdateLogic.shouldNotify(outcome.info, currentVersion(app), store.notifiedTag)
+                    ) {
                         if (post(app, outcome.info)) store.notifiedTag = outcome.info.tag
                     }
                 }
                 Outcome.UpToDate -> store.latest = null
                 is Outcome.Failed -> {}
             }
+            main.post { checkedTick.value++ }
             return outcome
         } finally {
             running.set(false)
@@ -161,6 +189,11 @@ object UpdateChecker {
         }
     }
 
+    private fun inQuietHours(context: Context): Boolean = runCatching {
+        val t = LocalTime.now(ZoneId.systemDefault()) // NotifyRunner와 같은 기준(기기 시간대)
+        Quiet.isQuiet(t.hour * 60 + t.minute, NotifySettingsStore(context).load())
+    }.getOrDefault(false)
+
     /** 업데이트 알림을 띄운다. 누르면 Release 페이지(허용된 주소만)를 연다. @return 띄웠으면 true. */
     @SuppressLint("MissingPermission")
     fun post(context: Context, info: ReleaseInfo): Boolean = runCatching {
@@ -179,7 +212,8 @@ object UpdateChecker {
             .setContentIntent(pi)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            // 화면 위 팝업(헤드업). Android 8+에서는 채널 중요도(update_v2 = HIGH)가 정하고, 이 값은 그 아래 버전용이다.
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         NotificationManagerCompat.from(context).notify(id, n)

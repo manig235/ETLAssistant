@@ -31,15 +31,17 @@ object NotificationPoster {
             nm.createNotificationChannel(NotificationChannel(Channel.BRIEF.id, "정기 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
             nm.createNotificationChannel(NotificationChannel(Channel.CHANGE.id, "새 과제·마감 변경·성적", upgraded(nm, LEGACY_CHANGE)))
             nm.createNotificationChannel(NotificationChannel(Channel.CLASS.id, "수업 알림", NotificationManager.IMPORTANCE_HIGH))
-            nm.createNotificationChannel(NotificationChannel(Channel.UPDATE.id, "앱 업데이트", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(Channel.UPDATE.id, "앱 업데이트", upgraded(nm, LEGACY_UPDATE)))
             nm.deleteNotificationChannel(LEGACY_ANNOUNCEMENT)
             nm.deleteNotificationChannel(LEGACY_CHANGE)
+            nm.deleteNotificationChannel(LEGACY_UPDATE)
         }
     }
 
     /** 중요도를 DEFAULT로 만들었던 옛 채널 ID(팝업으로 올리며 바꿨다). */
     internal const val LEGACY_ANNOUNCEMENT = "announcement"
     internal const val LEGACY_CHANGE = "change"
+    internal const val LEGACY_UPDATE = "update"
 
     /** 새 채널의 중요도: 사용자가 옛 채널을 꺼 두었으면 계속 꺼 두고, 아니면 HIGH(팝업). */
     private fun upgraded(nm: NotificationManager, legacyId: String): Int =
