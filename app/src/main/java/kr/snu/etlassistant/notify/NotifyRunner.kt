@@ -133,6 +133,12 @@ object NotifyRunner {
             if (!NotificationPoster.canPost(app)) return@guarded skipped(stateStore, now, "건너뜀 · 알림 권한 없음")
             val fetched = fetchWithFallback(app, token, now, announcementDays = 1)
             fetched.failure?.let { if (!allowFallback || fetched.cachedAt == null) throw it }
+            // 일부만 연결 실패: 마지막 시도 전이면 보내지 않고 다시 시도한다(다음 시도는 대개 네트워크가 열린 작업으로 돈다).
+            if (fetched.failure == null && !allowFallback && SnapshotFallback.hasConnectionErrors(fetched.snapshot.errors)) {
+                logErrors(fetched.snapshot.errors, null)
+                log("브리핑 미룸: 일부 조회가 연결 실패라 다시 시도")
+                return@guarded Outcome.RETRY
+            }
             val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
             logErrors(snapshot.errors, fetched.cachedAt)
             val classes = if (token.isNullOrEmpty()) emptyList() else todayClassLines(app, token, now)

@@ -135,4 +135,15 @@ class ChatLogicTest {
         assertTrue(b!!.text.startsWith("배터리 최적화"))
         assertTrue(b.dismissible)
     }
+
+    @Test fun powerSaveWarnsOnlyWhenNotExempt() {
+        assertEquals(NotifyProblem.PowerSave, ChatLogic.notifyProblem(true, listOf("deadline"), emptySet(), batteryOptimized = true, powerSave = true))
+        // 배터리 최적화 예외면 절전 모드의 네트워크 차단에서 빠지므로 경고하지 않는다
+        assertEquals(null, ChatLogic.notifyProblem(true, listOf("deadline"), emptySet(), batteryOptimized = false, powerSave = true))
+        assertEquals(NotifyProblem.ChannelOff("deadline"), ChatLogic.notifyProblem(true, listOf("deadline"), setOf("deadline"), batteryOptimized = true, powerSave = true))
+        val b = ChatLogic.banner(true, kr.snu.etlassistant.codex.SessionState.READY, null, true, NotifyProblem.PowerSave)
+        assertTrue(b!!.text.startsWith("절전 모드"))
+        assertTrue(b.dismissible)
+        assertEquals(BannerAction.NOTIFICATIONS, b.action)
+    }
 }

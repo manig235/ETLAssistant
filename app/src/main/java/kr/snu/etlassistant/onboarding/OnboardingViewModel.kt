@@ -51,6 +51,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     var notifyGranted by mutableStateOf(false)
     /** 배터리 최적화 예외인가(앱을 닫아도 알림 확인이 제때 돈다). */
     var batteryUnrestricted by mutableStateOf(true)
+    var powerSave by mutableStateOf(false)
     var deadlineAlerts by mutableStateOf(true)
     var announcementAlerts by mutableStateOf(true)
     var briefEnabled by mutableStateOf(true)

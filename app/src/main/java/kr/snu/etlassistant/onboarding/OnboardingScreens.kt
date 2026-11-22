@@ -570,6 +570,10 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 SecondaryButton("배터리 제한 풀기") { a.requestBatteryExemption() }
             }
         }
+        if (vm.powerSave) {
+            Spacer(Modifier.height(8.dp))
+            Text(BatteryOpt.POWER_SAVE_HINT, style = t.caption1Regular, color = c.foregroundNeutralTertiary)
+        }
         Spacer(Modifier.height(20.dp))
         SwitchRow("마감 임박 알림", NotifyUiFormat.windowsSummary(vm.deadlineWindows) + " (설정에서 바꿀 수 있어요)", vm.deadlineAlerts) { vm.deadlineAlerts = it }
         SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면", vm.announcementAlerts) { vm.announcementAlerts = it }

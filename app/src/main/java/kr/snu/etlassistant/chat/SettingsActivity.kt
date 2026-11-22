@@ -263,6 +263,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
     private fun refreshNotifyPermission() {
         state.notifyPermitted = NotificationPoster.canPost(this)
         state.batteryUnrestricted = BatteryOpt.isIgnoring(this)
+        state.powerSave = BatteryOpt.isPowerSaveMode(this) && !BatteryOpt.isIgnoring(this)
     }
 
     private fun refreshNotifyStatusLines() {

@@ -17,6 +17,13 @@ class SnapshotFallbackTest {
     private fun cache(hoursAgo: Long, vararg a: AssignmentItem) = CachedSnapshot(now.minus(Duration.ofHours(hoursAgo)).toEpochMilli(), a.toList())
     private fun snap(a: List<AssignmentItem> = emptyList(), errors: List<String> = emptyList()) = Snapshot(now, a, emptyList(), errors)
 
+    @Test fun connectionErrorsAreDetected() {
+        assertTrue(SnapshotFallback.hasConnectionErrors(listOf("강의1: eTL 연결 실패: /api/v1/courses/1/assignments (UnknownHostException)")))
+        assertTrue(SnapshotFallback.hasConnectionErrors(listOf("공지: eTL 연결 실패: /api/v1/announcements (SocketTimeoutException)")))
+        assertEquals(false, SnapshotFallback.hasConnectionErrors(listOf("강의1: 사용자에게 이 동작을 수행할 권한이 없음")))
+        assertEquals(false, SnapshotFallback.hasConnectionErrors(emptyList()))
+    }
+
     @Test fun totalFailureUsesCache() {
         val r = SnapshotFallback.apply(snap(errors = listOf("eTL 연결 실패")), cache(2, asg(1, 11, h(30)), asg(2, 21, h(5))), now, totalFailure = true)
         assertEquals(listOf(21L, 11L), r.snapshot.assignments.map { it.assignmentId }) // 마감순

@@ -112,6 +112,7 @@ class SettingsState {
     var notifyPermitted by mutableStateOf(true)
     /** 배터리 최적화 예외인가(아니면 앱을 닫았을 때 알림 확인이 늦거나 끊길 수 있다). */
     var batteryUnrestricted by mutableStateOf(true)
+    var powerSave by mutableStateOf(false)
     var lastCheckText by mutableStateOf("")
     var lastBriefText by mutableStateOf("")
 }
@@ -715,6 +716,10 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
             }
             Spacer(Modifier.height(6.dp))
             Caption(BatteryOpt.SAMSUNG_HINT)
+            if (s.powerSave) {
+                Spacer(Modifier.height(10.dp))
+                StatusBanner(BatteryOpt.POWER_SAVE_HINT, StatusTone.CAUTION)
+            }
             Spacer(Modifier.height(16.dp))
             Caption(s.lastCheckText)
             Spacer(Modifier.height(2.dp))

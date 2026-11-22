@@ -29,8 +29,18 @@ object NotifyScheduler {
 
     private fun briefName(index: Int) = "notify-brief-$index"
 
+    /** 사용자가 화면에서 누른 "지금 확인"·"지금 브리핑"용: 앱이 앞에 있으니 네트워크가 될 때 돈다. */
     private val networkConstraints: Constraints
         get() = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+
+    /**
+     * 주기 확인·정기 브리핑은 네트워크 제약을 걸지 않는다(2026-11-22 실측). 절전 모드·삼성 앱 얼림·Android 15+ 백그라운드 차단으로
+     * 앱 UID의 네트워크가 막히면 CONNECTED 작업은 "미충족"으로 **아예 시작되지 않고**, 사용자가 앱을 열 때 밀린 것이 한꺼번에 돌았다.
+     * 제약 없이 제시간에 시작하면 조회가 막혀도 받아 둔 과제로 마감 알림·브리핑을 보내고(SnapshotFallback),
+     * 재시도는 지수 백오프로 최대 3번이라 배터리를 크게 쓰지 않는다. 절전 모드가 아니면 작업 실행 중에는 차단이 풀려 새로 조회된다.
+     */
+    private val backgroundConstraints: Constraints
+        get() = Constraints.NONE
 
     /** 저장된 설정에 맞춰 주기 확인과 정기 브리핑을 (재)예약하거나, 모두 꺼져 있으면 취소한다. 설정이 바뀔 때마다 부른다. */
     fun apply(context: Context) {
@@ -45,7 +55,7 @@ object NotifyScheduler {
                 NotifySettings.CHECK_INTERVAL_HOURS.toLong(), TimeUnit.HOURS,
                 NotifySchedule.flexMillis(NotifySettings.CHECK_INTERVAL_HOURS), TimeUnit.MILLISECONDS,
             )
-                .setConstraints(networkConstraints)
+                .setConstraints(backgroundConstraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
             wm.enqueueUniquePeriodicWork(CHECK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
@@ -70,7 +80,7 @@ object NotifyScheduler {
             val delay = NotifySchedule.nextOccurrenceDelayMillis(now, minute)
             val req = OneTimeWorkRequestBuilder<BriefWorker>()
                 .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-                .setConstraints(networkConstraints)
+                .setConstraints(backgroundConstraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .setInputData(Data.Builder().putLong(BriefWorker.KEY_SCHEDULED_AT, nowMs + delay).build())
                 .build()

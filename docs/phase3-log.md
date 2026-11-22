@@ -104,3 +104,35 @@ AI 없이 앱 코드(WorkManager)만으로 마감·공지를 알린다. 코드�
 - 업데이트 설치(install -r) 뒤 앱을 열지 않아도 MY_PACKAGE_REPLACED로 작업·알람이 다시 예약되고 주기 확인이 한 번 돌았다(설치 직후 임시 허용 창에서 조회 성공).
 - 남은 일: 네트워크 제약(CONNECTED)을 빼서 작업이 시간만 되면 시작되게(시작되면 Freecess가 풀고 작업 중 APP_BACKGROUND가 풀린다) 하는 수정이 유력하나,
   자연 실행으로 검증하지 못했다. 배터리 예외만으로 OEM_DENY가 풀리는지도 확인하지 못했다.
+
+### 실측 2: 절전 모드를 끈 S938N, 절전 모드를 켠 S908N — 네트워크 제약 제거, 브리핑 재시도, 절전 모드 안내 (2026-11-22)
+
+시험 방법: 앱 화면을 열면 결과가 오염되므로, 진단 빌드가 `ACTION_MY_PACKAGE_REPLACED`(`adb install -r` 직후, 앱을 열지 않아도 옴)에서
+몇 분 뒤 한 번짜리 작업(확인 작업 제약 없음/CONNECTED, 브리핑)과 `setAndAllowWhileIdle` 알람을 예약하게 했다(커밋하지 않음).
+관찰은 `logcat -b all`, 5초 간격 `dumpsys netpolicy | grep 'UID=… state'`, `dumpsys connectivity`의 BLOCKED 이력, `dumpsys jobscheduler`의 START/STOP 이유, `am_freeze`/`am_unfreeze`.
+로그 사본: `~/etl-diag-logs-2026-11-22/`(`s938/`, `s908b/`, 저장소 밖).
+
+- **S938N, 절전 모드 끔(APP_BACKGROUND·앱 얼림만 남음)**: 설치 4분 뒤 예약한 확인 작업(제약 없음/CONNECTED 둘 다)이 13:07:08 제시간에 JobScheduler로 시작,
+  `sync unfroze … kr.snu.etlassistant.phase0`로 얼림이 풀리고 실행 중 `UNBLOCKED 10517 … 0`(`allowed=NOT_IN_BACKGROUND, effective=NONE`), 새 조회 성공("조회 오류 0").
+  작업이 끝나고 5~10초 뒤 `BLOCKED … 40`(APP_BACKGROUND)이 돌아오고 `Destroyed live tcp sockets for uids={10517}`.
+  알람 경로: 13:09:08 예약(창 4분 30초) → 13:13:38 수신 → 13:13:43 확인 작업 SUCCESS.
+- **"일부 항목을 조회하지 못했어요"의 메커니즘(S938N)**: 13:09:37 브리핑 작업이 시작 100ms 만에 `STOP … olaf`(삼성 OLAF). WorkManager가 앱 안에서 attempt 1로
+  이어 돌렸는데 작업 밖이라 약 5초 뒤 APP_BACKGROUND가 돌아와 소켓이 끊기고 3건이 `UnknownHostException` → 일부만 받은 브리핑.
+- **S908N(Android 14), 절전 모드 켬**(`low_power=1`, 실행 중에도 `blocked=BATTERY_SAVER, effective=BATTERY_SAVER`):
+  - CONNECTED 확인 작업은 `Unsatisfied constraints: CONNECTIVITY`로 **시작되지 않았다**(다음 install -r의 임시 허용 창에서야 돌았다).
+  - 제약 없는 확인 작업은 13:30:22 제시간에 시작됐지만 조회는 `SocketTimeoutException`/`UnknownHostException` → 받아 둔 과제로 메움, 백오프로 최대 3번 재시도 뒤 다음 주기.
+  - 브리핑(제약 없음)은 시도 0~2 RETRY, 4번째(13:35:02)에 "브리핑 전송 (받아 둔 정보: 8분 전)".
+  - 알람 경로도 같다(13:36:51 수신 → 조회 실패 → 받아 둔 과제). `setAndAllowWhileIdle`의 임시 허용은 절전 모드 차단을 풀지 않았다
+    (설치 직후 MY_PACKAGE_REPLACED 때만 잠깐 `allowed=POWER_SAVE_ALLOWLIST`가 보였다).
+  - **짧은 포그라운드 서비스 측정**: 배터리 최적화 예외가 없으면 백그라운드 작업에서 `startForegroundService()`가
+    `ForegroundServiceStartNotAllowedException(mAllowStartForeground false)`로 막힌다. 예외(`deviceidle whitelist +pkg`)면 서비스 없이도 이미
+    `allowed=POWER_SAVE_ALLOWLIST|POWER_SAVE_EXCEPT_IDLE_ALLOWLIST, effective=NONE`이고 새 조회가 성공했다(서비스 시작도 허용됨). 즉 **포그라운드 서비스는
+    예외 없이는 띄울 수 없고, 예외가 있으면 필요 없다** → 넣지 않는다.
+- **반영한 것**
+  - 주기 확인·정기 브리핑의 네트워크 제약(CONNECTED)을 뺐다(`NotifyScheduler.backgroundConstraints = Constraints.NONE`). 막혀 있어도 제시간에 시작해 받아 둔 과제로
+    마감 알림·브리핑을 보내고, 절전 모드가 아니면 작업 중 차단이 풀려 새로 조회된다. 재시도는 기존대로 지수 백오프 30초부터 최대 3번. 화면의 "지금 확인"·"지금 브리핑"은 CONNECTED 유지.
+  - 브리핑: 일부만 연결 실패(`SnapshotFallback.hasConnectionErrors`, "eTL 연결 실패" 문구)이고 마지막 시도 전이면 보내지 않고 RETRY(다음 시도는 대개 네트워크가 열린 작업 안에서 돈다).
+  - 절전 모드 안내(`BatteryOpt.POWER_SAVE_HINT`, `isPowerSaveMode`): 절전 모드이면서 배터리 최적화 예외가 아닐 때만 채팅 배너(`NotifyProblem.PowerSave`, 누르면 예외 요청, 7일 숨김),
+    설정 알림 카드, 첫 실행 안내 알림 단계에 "절전 모드에서는 새 과제·공지 알림이 늦을 수 있어요. 이미 받아 둔 마감 알림은 그대로 와요."
+- 확인하지 못한 것: 수정본으로 몇 시간·밤새 두는 장기 동작, S938N에서 앱이 얼어 있을 때 제약 없는 작업이 OEM_DENY(0x80)를 넘는지(절전 모드를 끈 시험에서는 OEM_DENY가 보이지 않았다),
+  배너·설정 문구의 실제 화면.

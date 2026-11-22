@@ -17,6 +17,17 @@ object BatteryOpt {
     /** 삼성 폰에서 따로 확인할 곳(시스템 창의 "허용"만으로는 절전 앱 목록에서 빠지지 않을 수 있다). */
     const val SAMSUNG_HINT = "삼성 폰은 설정 → 배터리 → 백그라운드 사용 제한에서 '절전 앱'이나 '딥 슬립 앱'에 영민이가 있으면 빼 주세요."
 
+    /**
+     * 절전 모드에서는 백그라운드 앱의 네트워크가 막혀(BATTERY_SAVER) 새 조회가 실패한다. 이미 받아 둔 과제로 마감 알림은 보낸다
+     * ([SnapshotFallback]). 배터리 최적화 예외면 이 차단에서 빠진다(2026-11-22 S938N·S908N 실측: 예외면 절전 모드에서도
+     * `effective=NONE`이고 새로 조회됨). 그래서 화면에는 절전 모드이면서 예외가 아닐 때만 보인다.
+     */
+    const val POWER_SAVE_HINT = "절전 모드에서는 새 과제·공지 알림이 늦을 수 있어요. 이미 받아 둔 마감 알림은 그대로 와요."
+
+    fun isPowerSaveMode(context: Context): Boolean = runCatching {
+        context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
+    }.getOrDefault(false)
+
     fun isIgnoring(context: Context): Boolean = runCatching {
         context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
     }.getOrDefault(true) // 확인할 수 없으면 경고하지 않는다

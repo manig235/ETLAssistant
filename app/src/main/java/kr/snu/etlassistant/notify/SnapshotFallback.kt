@@ -38,6 +38,12 @@ object SnapshotFallback {
         )
     }
 
+    /**
+     * 연결 끊김으로 실패한 항목이 있는가(`eTL 연결 실패: …`, 시간 초과 포함). 백그라운드에서는 작업이 끊긴 뒤 몇 초 만에
+     * 네트워크가 다시 막혀 요청 일부만 실패하는 일이 있다(삼성 OLAF가 작업을 멈춘 뒤 앱 안에서 이어 돌 때, 2026-11-22 S938N 실측).
+     */
+    fun hasConnectionErrors(errors: List<String>): Boolean = errors.any { "eTL 연결 실패" in it }
+
     fun usable(c: CachedSnapshot, now: Instant): Boolean {
         val age = now.toEpochMilli() - c.takenAt
         return c.takenAt > 0 && age >= -60_000L && age <= MAX_AGE_MS

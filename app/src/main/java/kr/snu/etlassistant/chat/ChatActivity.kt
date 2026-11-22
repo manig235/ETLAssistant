@@ -371,13 +371,13 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
         val permitted = Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         val blocked = used.filter { id -> nm.getNotificationChannel(id)?.importance == NotificationManager.IMPORTANCE_NONE }.toSet()
-        return ChatLogic.notifyProblem(permitted && nm.areNotificationsEnabled(), used, blocked, batteryOptimized = !BatteryOpt.isIgnoring(this))
+        return ChatLogic.notifyProblem(permitted && nm.areNotificationsEnabled(), used, blocked, batteryOptimized = !BatteryOpt.isIgnoring(this), powerSave = BatteryOpt.isPowerSaveMode(this))
     }
 
     /** 배너를 눌렀을 때: 권한을 물을 수 있으면 묻고, 아니면 앱 알림 설정(채널만 꺼졌으면 그 채널 설정)으로 보낸다. */
     private fun fixNotifications() {
         val problem = notifyProblem() ?: return updateBanner()
-        if (problem == NotifyProblem.BatteryOptimized) {
+        if (problem == NotifyProblem.BatteryOptimized || problem == NotifyProblem.PowerSave) {
             BatteryOpt.request(this)
             Toast.makeText(this, BatteryOpt.SAMSUNG_HINT, Toast.LENGTH_LONG).show()
             return

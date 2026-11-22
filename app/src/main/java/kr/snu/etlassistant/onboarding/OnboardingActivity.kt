@@ -94,6 +94,7 @@ class OnboardingActivity : ComponentActivity(), CodexSession.Listener {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         vm.notifyGranted = permitted && NotificationManagerCompat.from(this).areNotificationsEnabled()
         vm.batteryUnrestricted = BatteryOpt.isIgnoring(this)
+        vm.powerSave = BatteryOpt.isPowerSaveMode(this) && !BatteryOpt.isIgnoring(this)
     }
 
     private fun requestNotifications() {
