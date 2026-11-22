@@ -273,19 +273,15 @@ fun MessageRow(
             }
         }
         Role.ASSISTANT -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-            val style = t.body1ReadingRegular
-            val body = rememberMarkdown(
+            // 마크다운 일부와 LaTeX 수식을 그린다(수식은 기기 안에서 그림으로, MarkdownCompose.kt)
+            SelectionContainer {
+            MarkdownBody(
                 text = text.ifEmpty { "…" },
+                style = t.body1ReadingRegular,
+                color = c.foregroundNeutralPrimary,
                 codeBackground = c.surfaceNeutralTertiary,
                 linkColor = c.foregroundBrandPrimary,
-                baseFontSize = style.fontSize,
                 onLink = onLink,
-            )
-            SelectionContainer {
-            Text(
-                body,
-                style = style,
-                color = c.foregroundNeutralPrimary,
                 modifier = Modifier
                     .widthIn(max = maxBubbleWidth)
                     .copyOnLongPress(text, onCopy)

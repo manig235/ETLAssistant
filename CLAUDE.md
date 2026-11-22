@@ -108,6 +108,8 @@ APP_BACKGROUND·얼림이 풀린다), 실패한 부분은 마지막 성공 과�
 기본 마감 알림 시점과 별개이고 방해 금지와 무관하다. `NotifyRunner.runCheck`가 eTL 조회 전에 네트워크 없이 먼저 보내고(키 `mine-remind:{id}:{분}`),
 제시간 알람(`DeadlineAlarm`)은 네트워크를 기다리지 않고 manual로 돈다. 저장할 때 `DeadlineAlarm.scheduleEarlier`로 바로 건다.
 채팅 말풍선은 `SelectionContainer`로 길게 눌러 부분 선택·복사(접근성에는 "전체 복사" 동작).
+**수식(2026-11-22, 0.2.1)**: 말풍선의 LaTeX(`\( \)`, `$ $`, `\[ \]`, `$$ $$`)를 기기 안에서 그린다(`ru.noties:jlatexmath-android`, GPLv2+classpath exception, 외부 서버·WebView 없음).
+인라인은 `InlineTextContent`, 블록은 맞춰 줄이거나 가로로 밀기. 복사하면 원문 LaTeX. 못 그리면 유니코드 대체(`MathText.toUnicode`). 상세는 `docs/phase2-log.md`.
 방해 금지는 2026-11-21부터 **기본 꺼짐**이고 첫 실행 안내의 알림 단계에서 켤지·시간을 묻는다(이미 저장된 설정은 그대로).
 알림·브리핑에서는 `MyDeadlines.toItems`로 `courseId = -1`, 강의명 "내 마감"인 `AssignmentItem`이 되어 eTL 과제와 같은 규칙을 따른다.
 완료 = 제출됨, 지난 미완료 = 누락. 마감 시각을 고치면 새 ID로 저장해 이전 알림 기록이 새 알림을 막지 않게 한다. eTL 토큰이 없어도 내 마감만으로 알림이 돈다(이때 공지 기준선은 잡지 않는다).

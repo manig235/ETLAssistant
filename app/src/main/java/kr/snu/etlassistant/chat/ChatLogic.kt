@@ -116,6 +116,7 @@ object ChatLogic {
                 Kind.CODE -> MdStyle(start, end, s.kind, bold = false, mono = true, background = true, sizeScale = 0.92f, url = null)
                 Kind.CODE_BLOCK -> MdStyle(start, end, s.kind, bold = false, mono = true, background = true, sizeScale = 0.88f, url = null)
                 Kind.HEADER -> MdStyle(start, end, s.kind, bold = true, mono = false, background = false, sizeScale = 1.1f, url = null)
+                Kind.MATH, Kind.MATH_BLOCK -> null // 수식은 화면 쪽에서 그림으로 바꾼다
                 Kind.LINK -> {
                     val url = s.url?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return@mapNotNull null
                     MdStyle(start, end, s.kind, bold = false, mono = false, background = false, sizeScale = 1f, url = url)

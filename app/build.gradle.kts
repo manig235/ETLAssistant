@@ -97,6 +97,9 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // 채팅 수식(LaTeX)을 기기 안에서 그린다. GPLv2 + classpath exception(링크하는 앱은 자기 라이선스를 유지), 글꼴은 OFL 등.
+    // 외부 서버·CDN 없이 동작해야 해서 WebView+KaTeX 대신 이것을 쓴다.
+    implementation("ru.noties:jlatexmath-android:0.2.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

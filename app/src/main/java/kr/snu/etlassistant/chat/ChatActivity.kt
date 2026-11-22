@@ -83,6 +83,8 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
             return
         }
         ready = true
+        // 수식 글꼴을 처음 읽는 비용을 화면 밖에서 미리 치른다(첫 수식 답에서 화면이 멈칫하지 않게)
+        Thread({ runCatching { MathRender.warmUp() } }, "math-warmup").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         enableEdgeToEdge()
         val actions = ChatActions(
             onSend = { onSendClicked() },
