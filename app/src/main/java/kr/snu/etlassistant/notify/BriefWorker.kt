@@ -23,9 +23,9 @@ class BriefWorker(context: Context, params: WorkerParameters) : Worker(context, 
         // 너무 늦어지면 runBrief가 stale로 건너뛰므로 재시도가 무한히 쌓이지는 않는다.
         if (outcome == NotifyRunner.Outcome.RETRY && runAttemptCount < MAX_ATTEMPTS) return Result.retry()
 
-        // 끝났다(성공, 건너뜀, 포기): 다음 브리핑을 예약한다(minLead 덕분에 방금 실행한 슬롯은 다시 잡히지 않는다).
+        // 끝났다(성공, 건너뜀, 포기): 이 슬롯의 예약을 지우고 다음 브리핑을 예약한다(minLead 덕분에 방금 실행한 슬롯은 다시 잡히지 않는다).
         // 같은 이름을 REPLACE하므로 이 작업 자신이 취소 처리되지만, 이미 할 일을 마친 뒤다.
-        if (scheduledAt != null) runCatching { NotifyScheduler.apply(applicationContext) }
+        if (scheduledAt != null) runCatching { NotifyScheduler.briefFinished(applicationContext, scheduledAt) }
         return Result.success()
     }
 

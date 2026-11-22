@@ -36,6 +36,25 @@ object NotifySchedule {
     fun isStale(scheduledAtMillis: Long, nowMillis: Long, maxLateMillis: Long = MAX_LATE_MILLIS): Boolean =
         nowMillis - scheduledAtMillis > maxLateMillis
 
+    /**
+     * 이미 예약해 둔 브리핑([storedTargetMillis])을 그대로 둘지. 프로세스가 뜰 때마다 [NotifyScheduler.apply]가 불리는데,
+     * 브리핑 작업 자신이 프로세스를 띄운 경우 예약을 새로 계산하면(최소 1분 앞) 오늘 것이 취소되고 내일로 밀린다.
+     * 그래서 같은 시각(분) 설정의 예약이 아직 유효하면(너무 늦지 않았고 이상하게 먼 미래도 아니면) 건드리지 않는다.
+     */
+    fun keepBriefTarget(
+        storedTargetMillis: Long?,
+        minuteOfDay: Int,
+        nowMillis: Long,
+        zone: java.time.ZoneId,
+        maxLateMillis: Long = MAX_LATE_MILLIS,
+    ): Boolean {
+        val t = storedTargetMillis ?: return false
+        if (nowMillis - t > maxLateMillis) return false // 이미 지나 보낼 수 없는 예약
+        if (t - nowMillis > 2 * 24 * HOUR_MILLIS) return false // 시계가 뒤로 간 경우 등
+        val local = java.time.Instant.ofEpochMilli(t).atZone(zone)
+        return local.hour * 60 + local.minute == minuteOfDay.coerceIn(0, 1439)
+    }
+
     /** 주기 확인의 flex 간격: 주기의 약 1/4, 최소 [MIN_FLEX_MILLIS], 최대 주기 자체. */
     fun flexMillis(intervalHours: Int): Long {
         val interval = intervalHours.coerceAtLeast(1) * HOUR_MILLIS

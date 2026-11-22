@@ -148,4 +148,33 @@ class NotifyScheduleTest {
         assertEquals(NotifySchedule.Rearm.FIRE_NOW, NotifySchedule.rearmAction(1_000L, 1_000L))
         assertEquals(NotifySchedule.Rearm.FIRE_NOW, NotifySchedule.rearmAction(500L, 1_000L))
     }
+
+    // ---- 브리핑 예약 유지(프로세스가 뜰 때마다 apply가 불려도 오늘 브리핑이 밀리지 않게) ----
+
+    private fun ms(z: ZonedDateTime) = z.toInstant().toEpochMilli()
+
+    @Test fun keepBriefWhenBriefJobColdStartsProcess() {
+        // 08:00 브리핑 작업이 프로세스를 띄운 직후(08:00:05) apply가 불려도 그대로 둔다.
+        assertTrue(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 8 * 60, ms(at(8, 0, 5)), seoul))
+        // Doze로 늦어져 09:30에 프로세스가 떠도(4시간 이내) 그대로 둔다.
+        assertTrue(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 8 * 60, ms(at(9, 30)), seoul))
+        // 아직 오지 않은 예약도 그대로 둔다.
+        assertTrue(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 8 * 60, ms(at(6, 0)), seoul))
+    }
+
+    @Test fun rescheduleBriefWhenMissingChangedOrTooOld() {
+        assertFalse(NotifySchedule.keepBriefTarget(null, 8 * 60, ms(at(6, 0)), seoul))
+        // 시각 설정이 바뀌었다(08:00 → 09:00).
+        assertFalse(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 9 * 60, ms(at(6, 0)), seoul))
+        // 4시간 넘게 지나 보낼 수 없는 예약은 다음 것으로 바꾼다.
+        assertFalse(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 8 * 60, ms(at(12, 0, 1)), seoul))
+        // 이틀보다 먼 미래(시계가 뒤로 감)는 다시 계산한다.
+        assertFalse(NotifySchedule.keepBriefTarget(ms(at(8, 0)) + 3 * 24 * hour, 8 * 60, ms(at(6, 0)), seoul))
+    }
+
+    @Test fun rescheduleBriefWhenZoneChanged() {
+        // 서울 08:00으로 잡은 예약은 도쿄 시간대(같은 UTC+9)면 유지, UTC면 분이 달라 다시 계산한다.
+        assertTrue(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 8 * 60, ms(at(6, 0)), ZoneId.of("Asia/Tokyo")))
+        assertFalse(NotifySchedule.keepBriefTarget(ms(at(8, 0)), 8 * 60, ms(at(6, 0)), ZoneId.of("UTC")))
+    }
 }

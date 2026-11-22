@@ -143,7 +143,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
 
     override fun onStop() {
         main.removeCallbacks(refreshNotifyStatus)
-        CodexSession.detach(this)
+        CodexSession.detach(this, isChangingConfigurations)
         super.onStop()
     }
 

@@ -99,7 +99,9 @@ object AppSettings {
 /**
  * Codex 세션(code-mode host + app-server + eTL MCP 서버)을 들고 있는 싱글턴.
  *
- * - **채팅 화면이 열려 있을 때만** 돌린다. 화면이 모두 사라지면 [IDLE_STOP_MS] 뒤에 멈춘다(턴이나 로그인 중이면 멈추지 않는다).
+ * - **채팅 화면이 열려 있을 때만** 돌린다. 화면이 모두 사라지면 그 자리에서 멈춘다(턴이나 로그인 중이면 그것이 끝날 때 멈춘다).
+ *   예전에는 2분 뒤에 멈췄는데, 삼성이 그 전에 앱을 얼려 타이머가 돌지 못해 Codex 프로세스가 남았다(2026-11-22 S22 실측).
+ *   화면 회전처럼 화면이 다시 만들어질 때만 [CONFIG_CHANGE_STOP_MS] 뒤로 미룬다(새 화면이 곧 붙어 취소된다).
  * - 턴이나 로그인이 진행되는 동안은 포그라운드 서비스를 붙잡는다. 앱이 백그라운드가 되면 앱의 DNS가 막히기 때문이다.
  * - 이벤트는 메인 스레드에서 [Listener]로 전달한다. 대화 내용은 [model]이 들고 있다.
  */
@@ -275,9 +277,22 @@ object CodexSession {
         l.onEvent(lastLogin ?: SessionEvent.LoginIdle)
     }
 
-    fun detach(l: Listener) {
+    /**
+     * 화면이 세션에서 떨어진다. [changingConfigurations]가 참이면(화면 회전 등) 같은 화면이 곧 다시 붙으므로
+     * 바로 멈추지 않는다. 그 밖에는 마지막 화면이 떨어지는 즉시, 턴·로그인이 없으면 멈춘다.
+     */
+    fun detach(l: Listener, changingConfigurations: Boolean = false) {
         listeners -= l
-        if (listeners.isEmpty()) main.postDelayed(idleStop, IDLE_STOP_MS)
+        if (listeners.isNotEmpty()) return
+        main.removeCallbacks(idleStop)
+        if (changingConfigurations) main.postDelayed(idleStop, CONFIG_CHANGE_STOP_MS) else main.post(idleStop)
+    }
+
+    /** 턴이나 로그인이 끝났을 때, 화면이 없으면 바로 멈춘다(타이머에 기대지 않는다). */
+    private fun stopSoonIfIdle() {
+        if (!isIdle()) return
+        main.removeCallbacks(idleStop)
+        main.post(idleStop)
     }
 
     val isVisible: Boolean get() = listeners.isNotEmpty()
@@ -733,7 +748,7 @@ object CodexSession {
             RunService.release(app)
         }
         emit(SessionEvent.Busy(b))
-        if (!b && listeners.isEmpty()) main.postDelayed(idleStop, IDLE_STOP_MS)
+        if (!b) stopSoonIfIdle()
     }
 
     private fun acquireLoginHold() {
@@ -746,6 +761,7 @@ object CodexSession {
         if (!loginHold) return
         loginHold = false
         RunService.release(app)
+        stopSoonIfIdle()
     }
 
     private fun notifyLoginDone() {
@@ -767,6 +783,7 @@ object CodexSession {
         runCatching { nm.notify(2, n) }
     }
 
-    const val IDLE_STOP_MS = 120_000L
+    /** 화면 회전 등으로 화면이 다시 만들어질 때만 쓰는 유예. 새 화면이 붙으면 취소된다. */
+    const val CONFIG_CHANGE_STOP_MS = 5_000L
     private const val MODELS_MAX_PAGES = 5
 }

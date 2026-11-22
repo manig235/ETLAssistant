@@ -76,14 +76,14 @@ class OnboardingActivity : ComponentActivity(), CodexSession.Listener {
     override fun onStart() {
         super.onStart()
         CodexSession.attach(this)
-        // 로그인하러 나가 있는 동안 세션이 유휴 시간(IDLE_STOP_MS)을 넘겨 멈췄을 수 있다.
+        // 로그인하러 나가 있는 동안 세션이 멈췄을 수 있다(화면이 없으면 바로 멈춘다).
         // 단계가 바뀌지 않았으니 화면의 LaunchedEffect는 다시 돌지 않는다. 여기서 다시 띄운다.
         if (vm.step == Step.LOGIN) CodexSession.ensureStarted()
         refreshNotifyGranted()
     }
 
     override fun onStop() {
-        CodexSession.detach(this)
+        CodexSession.detach(this, isChangingConfigurations)
         super.onStop()
     }
 

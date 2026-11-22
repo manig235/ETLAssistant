@@ -184,7 +184,7 @@ class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Liste
         if (ready) {
             main.removeCallbacks(flush)
             flushPosted = false
-            CodexSession.detach(this)
+            CodexSession.detach(this, isChangingConfigurations)
             CodexSession.model.listener = null
         }
         super.onStop()

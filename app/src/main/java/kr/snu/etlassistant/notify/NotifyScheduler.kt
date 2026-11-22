@@ -42,9 +42,18 @@ object NotifyScheduler {
     private val backgroundConstraints: Constraints
         get() = Constraints.NONE
 
-    /** 저장된 설정에 맞춰 주기 확인과 정기 브리핑을 (재)예약하거나, 모두 꺼져 있으면 취소한다. 설정이 바뀔 때마다 부른다. */
-    fun apply(context: Context) {
+    private const val PREFS = "notify_schedule"
+    private fun targetKey(index: Int) = "brief-target-$index"
+
+    /**
+     * 저장된 설정에 맞춰 주기 확인과 정기 브리핑을 (재)예약하거나, 모두 꺼져 있으면 취소한다. 설정이 바뀔 때마다 부른다.
+     * 프로세스가 뜰 때마다도 불리므로 브리핑은 같은 시각의 유효한 예약이 있으면 그대로 둔다([NotifySchedule.keepBriefTarget]).
+     * [forceBriefs]는 시각·시간대가 바뀌었을 때만 참으로 준다(남은 시간을 새로 계산해야 한다).
+     * 주기 확인은 [ExistingPeriodicWorkPolicy.UPDATE]라 다시 불러도 주기 시작 시각이 밀리지 않는다.
+     */
+    fun apply(context: Context, forceBriefs: Boolean = false) {
         val app = context.applicationContext
+        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         NotificationPoster.ensureChannels(app)
         val settings = NotifySettingsStore(app).load()
         val wm = WorkManager.getInstance(app)
@@ -75,8 +84,11 @@ object NotifyScheduler {
             val minute = slots.getOrNull(i)
             if (minute == null) {
                 wm.cancelUniqueWork(briefName(i))
+                prefs.edit().remove(targetKey(i)).apply()
                 continue
             }
+            val stored = prefs.getLong(targetKey(i), -1L).takeIf { it >= 0 }
+            if (!forceBriefs && NotifySchedule.keepBriefTarget(stored, minute, nowMs, now.zone)) continue
             val delay = NotifySchedule.nextOccurrenceDelayMillis(now, minute)
             val req = OneTimeWorkRequestBuilder<BriefWorker>()
                 .setInitialDelay(delay, TimeUnit.MILLISECONDS)
@@ -85,7 +97,24 @@ object NotifyScheduler {
                 .setInputData(Data.Builder().putLong(BriefWorker.KEY_SCHEDULED_AT, nowMs + delay).build())
                 .build()
             wm.enqueueUniqueWork(briefName(i), ExistingWorkPolicy.REPLACE, req)
+            prefs.edit().putLong(targetKey(i), nowMs + delay).apply()
         }
+    }
+
+    /**
+     * 브리핑 작업이 끝났을 때(보냄, 건너뜀, 포기) 그 예약을 지우고 다음 것을 잡는다. 예약 시각이 [scheduledAt]과 같은 슬롯을 지우고,
+     * 맞는 것이 없으면(이전 버전에서 예약한 작업) 이미 지난 슬롯을 지운다.
+     */
+    fun briefFinished(context: Context, scheduledAt: Long) {
+        val app = context.applicationContext
+        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val nowMs = System.currentTimeMillis()
+        val edit = prefs.edit()
+        val matched = (0 until MAX_BRIEF_SLOTS).filter { prefs.getLong(targetKey(it), -1L) == scheduledAt }
+        val clear = matched.ifEmpty { (0 until MAX_BRIEF_SLOTS).filter { prefs.getLong(targetKey(it), Long.MAX_VALUE) <= nowMs } }
+        clear.forEach { edit.remove(targetKey(it)) }
+        edit.commit()
+        apply(app)
     }
 
     /** 지금 한 번 확인한다(설정 화면의 "지금 확인" 버튼). 결과는 [NotifyState.lastResult]에 남는다. */

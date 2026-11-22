@@ -13,7 +13,10 @@ import android.content.Intent
 class SystemEventReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in ACTIONS) return
-        runCatching { NotifyScheduler.apply(context) }
+        // 시각·시간대가 바뀌면 브리핑까지 남은 시간을 새로 계산한다. 재부팅·업데이트 때는 아직 유효한 브리핑 예약을 그대로 둔다
+        // (WorkManager가 작업을 스스로 되살리고, 다시 계산하면 지금 막 돌 브리핑이 내일로 밀릴 수 있다).
+        val timeChanged = intent.action == Intent.ACTION_TIME_CHANGED || intent.action == Intent.ACTION_TIMEZONE_CHANGED
+        runCatching { NotifyScheduler.apply(context, forceBriefs = timeChanged) }
         runCatching { DeadlineAlarm.rearm(context) }
         runCatching { kr.snu.etlassistant.update.UpdateScheduler.apply(context) }
         runCatching { kr.snu.etlassistant.phase0.CodexRunner.log.line("[notify] 예약 되살림: ${intent.action?.substringAfterLast('.')}") }
