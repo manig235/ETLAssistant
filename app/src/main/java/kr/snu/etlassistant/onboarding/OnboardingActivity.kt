@@ -21,6 +21,7 @@ import androidx.core.app.NotificationManagerCompat
 import kr.snu.etlassistant.chat.ChatActivity
 import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.SessionEvent
+import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.phase0.CodexRunner
 
 /**
@@ -48,6 +49,10 @@ class OnboardingActivity : ComponentActivity(), CodexSession.Listener {
                 if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(this).toString() else null
             },
             requestNotifications = { requestNotifications() },
+            requestBatteryExemption = {
+                BatteryOpt.request(this)
+                Toast.makeText(this, BatteryOpt.SAMSUNG_HINT, Toast.LENGTH_LONG).show()
+            },
             ensureSession = { CodexSession.ensureStarted() },
             retrySession = { CodexSession.restart() },
             loginBrowser = { CodexSession.loginBrowser() },
@@ -88,6 +93,7 @@ class OnboardingActivity : ComponentActivity(), CodexSession.Listener {
         val permitted = Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         vm.notifyGranted = permitted && NotificationManagerCompat.from(this).areNotificationsEnabled()
+        vm.batteryUnrestricted = BatteryOpt.isIgnoring(this)
     }
 
     private fun requestNotifications() {

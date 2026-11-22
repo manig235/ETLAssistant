@@ -12,7 +12,8 @@ class BriefWorker(context: Context, params: WorkerParameters) : Worker(context, 
         if (scheduledAt != null && !settings.briefEnabled) return Result.success()
 
         val outcome = try {
-            NotifyRunner.runBrief(applicationContext, scheduledAtMillis = scheduledAt)
+            // 마지막 시도에서만 받아 둔 정보로 보낸다(그 전에는 연결이 돌아오길 기다려 다시 시도).
+            NotifyRunner.runBrief(applicationContext, scheduledAtMillis = scheduledAt, allowFallback = runAttemptCount >= MAX_ATTEMPTS)
         } catch (_: Throwable) {
             NotifyRunner.Outcome.RETRY
         }

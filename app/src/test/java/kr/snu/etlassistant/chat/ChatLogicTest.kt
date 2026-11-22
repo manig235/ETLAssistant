@@ -123,4 +123,16 @@ class ChatLogicTest {
         // 꺼진 채널이 쓰지 않는 알림이면 괜찮다
         assertEquals(null, ChatLogic.notifyProblem(true, listOf("deadline"), setOf("brief")))
     }
+
+    @Test fun batteryOptimizedIsLowestPriority() {
+        assertEquals(NotifyProblem.BatteryOptimized, ChatLogic.notifyProblem(true, listOf("deadline"), emptySet(), batteryOptimized = true))
+        // 알림 자체가 꺼진 게 먼저
+        assertEquals(NotifyProblem.AppOff, ChatLogic.notifyProblem(false, listOf("deadline"), emptySet(), batteryOptimized = true))
+        assertEquals(NotifyProblem.ChannelOff("deadline"), ChatLogic.notifyProblem(true, listOf("deadline"), setOf("deadline"), batteryOptimized = true))
+        // 알림을 다 껐으면 배터리도 경고하지 않는다
+        assertEquals(null, ChatLogic.notifyProblem(true, emptyList(), emptySet(), batteryOptimized = true))
+        val b = ChatLogic.banner(true, kr.snu.etlassistant.codex.SessionState.READY, null, true, NotifyProblem.BatteryOptimized)
+        assertTrue(b!!.text.startsWith("배터리 최적화"))
+        assertTrue(b.dismissible)
+    }
 }

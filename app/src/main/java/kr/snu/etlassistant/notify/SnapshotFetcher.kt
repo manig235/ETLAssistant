@@ -29,7 +29,7 @@ object SnapshotFetcher {
 
         // ---- 과제 (강의별 병렬, 동시 요청 수는 EtlClient가 제한) ----
         val assignments = mutableListOf<AssignmentItem>()
-        for (r in CourseAssignments.fetch(client, courses)) {
+        for (r in retryFailed(client, CourseAssignments.fetch(client, courses))) {
             if (r.error != null) errors += "${r.courseName}: ${r.error}"
             else assignments += mapAssignments(r.courseId, r.courseName, r.assignments, now)
         }
@@ -52,6 +52,22 @@ object SnapshotFetcher {
 
         return Snapshot(now, sortAssignments(assignments), announcements, errors)
     }
+
+    /**
+     * 연결 끊김·시간 초과로 실패한 강의만 한 번 더(차례로) 받는다. 백그라운드에서는 동시에 보낸 요청 몇 개가
+     * 끊기는 일이 있다. 토큰 거부는 그대로 던진다.
+     */
+    private fun retryFailed(client: EtlClient, results: List<CourseAssignments.CourseResult>): List<CourseAssignments.CourseResult> =
+        results.map { r ->
+            if (r.error == null || !r.retryable) return@map r
+            try {
+                r.copy(assignments = client.getAll(CourseAssignments.assignmentsPath(r.courseId)), error = null, retryable = false)
+            } catch (e: EtlAuthException) {
+                throw e
+            } catch (e: EtlException) {
+                r.copy(error = e.message ?: r.error)
+            }
+        }
 
     /** 마감 오름차순(마감 없음은 마지막). 안정 정렬이라 같은 마감끼리는 강의 순서가 유지된다. */
     fun sortAssignments(items: List<AssignmentItem>): List<AssignmentItem> =

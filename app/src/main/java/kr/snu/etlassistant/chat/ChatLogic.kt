@@ -13,6 +13,8 @@ data class BannerSpec(val text: String, val action: BannerAction, val dismissibl
 sealed class NotifyProblem {
     object AppOff : NotifyProblem()
     data class ChannelOff(val channelId: String) : NotifyProblem()
+    /** 알림은 켜져 있지만 배터리 최적화 대상이라 앱을 닫으면 확인이 늦거나 안 될 수 있다. */
+    object BatteryOptimized : NotifyProblem()
 }
 
 /** 전송 버튼의 모습: 보내기 / 답변 중단 / 비활성. */
@@ -55,18 +57,29 @@ object ChatLogic {
         state != SessionState.READY -> BannerSpec("비서를 준비하는 중이에요…", BannerAction.NONE)
         !loggedIn -> BannerSpec("로그인이 필요해요. 눌러서 설정으로 이동", BannerAction.SETTINGS)
         notifyProblem != null && !(notifyDismissedAt > 0 && nowMs - notifyDismissedAt < NOTIFY_BANNER_SNOOZE_MS) ->
-            BannerSpec("알림이 꺼져 있어서 마감·공지 알림이 오지 않아요. 눌러서 켜기", BannerAction.NOTIFICATIONS, dismissible = true)
+            BannerSpec(
+                if (notifyProblem == NotifyProblem.BatteryOptimized) "배터리 최적화 때문에 앱을 닫아 두면 알림이 늦거나 안 올 수 있어요. 눌러서 해제"
+                else "알림이 꺼져 있어서 마감·공지 알림이 오지 않아요. 눌러서 켜기",
+                BannerAction.NOTIFICATIONS, dismissible = true,
+            )
         else -> null
     }
 
     /**
      * 켜 둔 알림(마감/공지/브리핑)이 실제로 올 수 있는지. 하나도 켜지 않았으면 null.
      * [usedChannels]는 켜 둔 알림의 채널 ID, [blockedChannels]는 중요도가 NONE인 채널 ID.
+     * 알림이 다 켜져 있어도 [batteryOptimized](배터리 최적화 예외가 아님)면 [NotifyProblem.BatteryOptimized].
      */
-    fun notifyProblem(appEnabled: Boolean, usedChannels: List<String>, blockedChannels: Set<String>): NotifyProblem? = when {
+    fun notifyProblem(
+        appEnabled: Boolean,
+        usedChannels: List<String>,
+        blockedChannels: Set<String>,
+        batteryOptimized: Boolean = false,
+    ): NotifyProblem? = when {
         usedChannels.isEmpty() -> null
         !appEnabled -> NotifyProblem.AppOff
         else -> usedChannels.firstOrNull { it in blockedChannels }?.let { NotifyProblem.ChannelOff(it) }
+            ?: if (batteryOptimized) NotifyProblem.BatteryOptimized else null
     }
 
     /** 글이 비어 있어도 첨부가 있으면 보낼 수 있다. 첨부를 준비하는 중이면 기다린다. */

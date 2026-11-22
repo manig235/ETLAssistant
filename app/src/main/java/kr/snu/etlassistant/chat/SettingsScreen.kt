@@ -76,6 +76,7 @@ import kr.snu.etlassistant.codex.ModelChoice
 import kr.snu.etlassistant.codex.ModelInfo
 import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
+import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.notify.NotifySettings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
@@ -109,6 +110,8 @@ class SettingsState {
 
     var notify by mutableStateOf(NotifySettings())
     var notifyPermitted by mutableStateOf(true)
+    /** 배터리 최적화 예외인가(아니면 앱을 닫았을 때 알림 확인이 늦거나 끊길 수 있다). */
+    var batteryUnrestricted by mutableStateOf(true)
     var lastCheckText by mutableStateOf("")
     var lastBriefText by mutableStateOf("")
 }
@@ -131,6 +134,7 @@ class SettingsActions(
     val updateNotify: ((NotifySettings) -> NotifySettings) -> Unit,
     val pickTime: (initialMinutes: Int, onPicked: (Int) -> Unit) -> Unit,
     val requestNotifyPermission: () -> Unit,
+    val requestBatteryExemption: () -> Unit,
     val checkNow: () -> Unit,
     val briefNow: () -> Unit,
     val setModelChoice: (ModelChoice) -> Unit,
@@ -701,6 +705,16 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                 Spacer(Modifier.height(10.dp))
                 SoftButton("권한 요청", onClick = a.requestNotifyPermission)
             }
+            Spacer(Modifier.height(10.dp))
+            if (s.batteryUnrestricted) {
+                StatusBanner("배터리: 제한 없음", StatusTone.POSITIVE)
+            } else {
+                StatusBanner("배터리 최적화가 켜져 있어 앱을 닫아 두면 알림이 늦거나 안 올 수 있어요", StatusTone.CAUTION)
+                Spacer(Modifier.height(10.dp))
+                SoftButton("배터리 제한 풀기", onClick = a.requestBatteryExemption)
+            }
+            Spacer(Modifier.height(6.dp))
+            Caption(BatteryOpt.SAMSUNG_HINT)
             Spacer(Modifier.height(16.dp))
             Caption(s.lastCheckText)
             Spacer(Modifier.height(2.dp))

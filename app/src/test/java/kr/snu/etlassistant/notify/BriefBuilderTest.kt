@@ -217,4 +217,11 @@ class BriefBuilderTest {
         build(Snapshot(now, emptyList(), emptyList()), look = 0)
         build(snap(listOf(asg(1, now), asg(2, now))))
     }
+
+    @Test fun staleSinceReplacesErrorLine() {
+        val b = BriefBuilder.build(snap(listOf(asg(1, h(5))), errors = listOf("eTL 연결 실패")), now, settings, seoul, 24, staleSince = now.minus(Duration.ofHours(3)))
+        assertTrue(b.bigText!!.endsWith("\n\n※ eTL에서 지금 받지 못한 과제는 3시간 전 받아 둔 정보예요"))
+        assertFalse(b.bigText!!.contains("일부 항목"))
+        assertEquals("마감 임박 1건 · 누락 0건 · 새 공지 0건", b.text)
+    }
 }

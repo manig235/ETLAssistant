@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 재부팅 뒤 마감·내 마감 알림 알람을 다시 건다(SystemEventReceiver). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 배터리 최적화 예외 요청(앱을 닫아도 알림 확인이 제때 돌도록). APK 직접 배포라 Play 정책과 무관. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".Phase0App"

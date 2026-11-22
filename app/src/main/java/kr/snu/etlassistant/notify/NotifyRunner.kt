@@ -41,18 +41,21 @@ object NotifyRunner {
                 stateStore.update { s -> reminders.forEach { n -> n.firedKeys.forEach { s.fired[it] = now.toEpochMilli() } } }
             }
             runCatching { DeadlineAlarm.scheduleEarlier(app, MyDeadlines.nextReminderAt(mine, now, stateStore.load().fired.keys)) }
-            val etlSnap = fetchOrEmpty(token, now, announcementDays = 2)
-            if (!token.isNullOrEmpty()) runCatching { SnapshotCache(app).save(etlSnap) } // "내 일정" 화면이 바로 보여 준다
-            val snapshot = MyDeadlines.merge(etlSnap, mine, now)
+            val fetched = fetchWithFallback(app, token, now, announcementDays = 2)
+            val failure = fetched.failure
+            // eTL을 실제로 조회했는가. 아니면(토큰 없음, 연결 실패) 공지 기준선·새 과제/변경 비교를 하지 않는다.
+            val etlOk = !token.isNullOrEmpty() && failure == null
+            val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
             // 토큰이 없을 때(내 마감만 확인) 공지 기준선을 잡으면, 나중에 토큰을 넣었을 때 기존 공지가 한꺼번에 알려진다.
             val plan = NotificationPlanner.plan(snapshot, stateStore.load(), now, settings)
-                .let { if (token.isNullOrEmpty()) it.copy(markBaselineDone = false) else it }
+                .let { if (!etlOk) it.copy(markBaselineDone = false) else it }
+                .let { p -> fetched.cachedAt?.let { at -> p.copy(notices = p.notices.map { staleMark(it, at, now) }) } ?: p }
             val zone = java.time.ZoneId.systemDefault()
             val local = now.atZone(zone)
             val quiet = Quiet.isQuiet(local.hour * 60 + local.minute, settings)
 
             // 새 과제·마감 변경·성적(ttokttok-pet watch.js). 방해 금지 중에는 비교하지 않아 끝난 뒤 알린다.
-            val changes = if (settings.changeAlerts && !token.isNullOrEmpty() && !quiet) {
+            val changes = if (settings.changeAlerts && etlOk && !quiet) {
                 val watchStore = WatchStore(app)
                 val (newState, notices) = AssignmentWatch.diff(watchStore.load(), snapshot, now)
                 watchStore.save(newState)
@@ -88,8 +91,14 @@ object NotifyRunner {
                 plan.silentKeys.forEach { s.fired[it] = nowMs }
                 if (plan.markBaselineDone) s.announcementBaselineDone = true
                 s.lastCheckAt = nowMs
-                s.lastResult = "성공 · 마감 ${deadlines}건, 공지 ${anns}건" +
+                val counts = "마감 ${deadlines}건, 공지 ${anns}건" +
                     (if (changes.isNotEmpty()) ", 과제·성적 ${changes.size}건" else "") + (if (classes.isNotEmpty()) ", 수업 ${classes.size}건" else "")
+                s.lastResult = when {
+                    failure != null -> "실패 · ${reasonOf(failure)}" +
+                        (fetched.cachedAt?.let { " · ${SnapshotFallback.ageLabel(it, now)} 받아 둔 과제로 마감 ${deadlines}건" } ?: "")
+                    fetched.cachedAt != null -> "성공 · $counts · 일부 과목은 ${SnapshotFallback.ageLabel(fetched.cachedAt, now)} 정보"
+                    else -> "성공 · $counts"
+                }
                 s.prune(nowMs)
             }
             // 다음 마감·수업 알림 시점에 맞춰 한 번 더 확인한다(주기 확인만으로는 확인 간격만큼 늦을 수 있다).
@@ -98,12 +107,18 @@ object NotifyRunner {
             val nextClass = if (settings.classAlerts) ClassNotices.nextAt(classDays, now, zone, settings.classLeadMinutes, after.fired.keys) else null
             val nextReminder = MyDeadlines.nextReminderAt(mine, now, after.fired.keys)
             runCatching { DeadlineAlarm.schedule(app, listOfNotNull(nextDeadline, nextClass, nextReminder).minOrNull()) }
+            logErrors(snapshot.errors, fetched.cachedAt)
             log("확인 완료: 마감 $deadlines, 공지 $anns, 조회 오류 ${snapshot.errors.size}")
-            Outcome.SUCCESS
+            // 연결 실패면 받아 둔 정보로 보낼 것은 보냈지만, 새 공지·변경을 보려고 다시 시도한다(중복은 fired 키가 막는다).
+            if (failure != null) Outcome.RETRY else Outcome.SUCCESS
         }
     }
 
-    fun runBrief(context: Context, now: Instant = Instant.now(), scheduledAtMillis: Long? = null): Outcome {
+    /**
+     * [allowFallback]: 마지막 시도면 true. eTL에 연결하지 못했을 때 그 전 시도는 [Outcome.RETRY]로 다시 시도하고,
+     * 마지막 시도에서는 받아 둔 과제 정보([SnapshotFallback])로 "N시간 전 정보" 표시를 붙여 보낸다(받아 둔 게 없으면 포기).
+     */
+    fun runBrief(context: Context, now: Instant = Instant.now(), scheduledAtMillis: Long? = null, allowFallback: Boolean = true): Outcome {
         val app = context.applicationContext
         val stateStore = NotifyStateStore(app)
         return guarded(app, stateStore, now) {
@@ -116,18 +131,19 @@ object NotifyRunner {
             val mine = MyDeadlineStore(app).load()
             if (token.isNullOrEmpty() && mine.isEmpty()) return@guarded skipped(stateStore, now, "건너뜀 · eTL 토큰 없음")
             if (!NotificationPoster.canPost(app)) return@guarded skipped(stateStore, now, "건너뜀 · 알림 권한 없음")
-            val etlSnap = fetchOrEmpty(token, now, announcementDays = 1)
-            if (!token.isNullOrEmpty()) runCatching { SnapshotCache(app).save(etlSnap) }
-            val snapshot = MyDeadlines.merge(etlSnap, mine, now)
+            val fetched = fetchWithFallback(app, token, now, announcementDays = 1)
+            fetched.failure?.let { if (!allowFallback || fetched.cachedAt == null) throw it }
+            val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
+            logErrors(snapshot.errors, fetched.cachedAt)
             val classes = if (token.isNullOrEmpty()) emptyList() else todayClassLines(app, token, now)
             // 브리핑은 방해 금지와 무관하게 정해진 시각에 보낸다.
-            NotificationPoster.post(app, BriefBuilder.build(snapshot, now, settings, todayClasses = classes), settings)
+            NotificationPoster.post(app, BriefBuilder.build(snapshot, now, settings, todayClasses = classes, staleSince = fetched.cachedAt), settings)
             val nowMs = now.toEpochMilli()
             stateStore.update { s ->
                 s.lastBriefAt = nowMs
-                s.lastResult = "브리핑 전송"
+                s.lastResult = if (fetched.cachedAt != null) "브리핑 전송 · ${SnapshotFallback.ageLabel(fetched.cachedAt, now)} 받아 둔 과제 정보" else "브리핑 전송"
             }
-            log("브리핑 전송")
+            log("브리핑 전송" + (fetched.cachedAt?.let { " (받아 둔 정보: ${SnapshotFallback.ageLabel(it, now)})" } ?: ""))
             Outcome.SUCCESS
         }
     }
@@ -149,10 +165,50 @@ object NotifyRunner {
         emptyList()
     }
 
-    /** 토큰이 없으면(내 마감만 있는 경우) eTL을 조회하지 않고 빈 결과를 쓴다. */
-    private fun fetchOrEmpty(token: String?, now: Instant, announcementDays: Int): Snapshot =
-        if (token.isNullOrEmpty()) Snapshot(now, emptyList(), emptyList(), listOf("eTL 토큰 없음"))
-        else SnapshotFetcher.fetch(EtlClient(token), now, announcementDays)
+    /**
+     * eTL 조회 결과. [snapshot]은 내 마감을 합치기 전이고, 실패한 부분은 받아 둔 과제로 메웠을 수 있다([cachedAt]).
+     * [failure]: 강의 목록부터 받지 못한 연결 실패(토큰 거부는 여기 오지 않고 그대로 던진다).
+     */
+    private class Fetched(val snapshot: Snapshot, val cachedAt: Instant?, val failure: EtlException?)
+
+    /**
+     * 토큰이 없으면(내 마감만 있는 경우) eTL을 조회하지 않고 빈 결과를 쓴다. 조회에 성공한 과목은 [SnapshotCache]에 저장하고
+     * ("내 일정" 화면과 다음 폴백이 쓴다), 실패한 과목·전체 실패는 저장해 둔 과제로 메운다.
+     */
+    private fun fetchWithFallback(app: Context, token: String?, now: Instant, announcementDays: Int): Fetched {
+        if (token.isNullOrEmpty()) return Fetched(Snapshot(now, emptyList(), emptyList(), listOf("eTL 토큰 없음")), null, null)
+        val cache = SnapshotCache(app)
+        val before = runCatching { cache.load() }.getOrNull()
+        val fresh = try {
+            SnapshotFetcher.fetch(EtlClient(token), now, announcementDays)
+        } catch (e: EtlAuthException) {
+            throw e
+        } catch (e: EtlException) {
+            log("eTL 조회 실패: ${reasonOf(e)}")
+            val empty = Snapshot(now, emptyList(), emptyList(), listOf("eTL 연결 실패"))
+            val r = SnapshotFallback.apply(empty, before, now, totalFailure = true)
+            return Fetched(r.snapshot, r.cachedAt, e)
+        }
+        runCatching { cache.save(fresh) }
+        val r = SnapshotFallback.apply(fresh, before, now, totalFailure = false)
+        return Fetched(r.snapshot, r.cachedAt, null)
+    }
+
+    /** 받아 둔 정보로 만든 마감 알림에 "N시간 전 정보" 줄을 붙인다. */
+    private fun staleMark(n: Notice, cachedAt: Instant, now: Instant): Notice =
+        if (n.channel != Channel.DEADLINE) n
+        else n.copy(bigText = (n.bigText ?: n.text) + "\n\n" + SnapshotFallback.staleLine(cachedAt, now))
+
+    /** 조회 오류를 앱 로그에 남긴다(강의명·경로·예외 클래스만. 토큰·서명 URL은 오류 문구에 들어가지 않는다). */
+    private fun logErrors(errors: List<String>, cachedAt: Instant?) {
+        if (errors.isEmpty()) return
+        log("조회 오류 ${errors.size}건" + (if (cachedAt != null) "(받아 둔 과제로 메움)" else "") + ": " + errors.joinToString(" | ").take(600))
+    }
+
+    private fun reasonOf(e: Throwable): String = when (e) {
+        is EtlException -> e.message?.take(80)?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+        else -> e.javaClass.simpleName
+    }
 
     /** 공통 예외 처리: 어떤 예외도 밖으로 새지 않는다. */
     private fun guarded(app: Context, stateStore: NotifyStateStore, now: Instant, block: () -> Outcome): Outcome {
@@ -162,10 +218,7 @@ object NotifyRunner {
             handleAuthFailure(app, stateStore, now)
         } catch (e: Throwable) {
             // 토큰·서명 URL·본문이 새지 않도록 EtlException의 message(가공된 문구)나 클래스명만 쓴다.
-            val reason = when (e) {
-                is EtlException -> e.message?.take(80)?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-                else -> e.javaClass.simpleName
-            }
+            val reason = reasonOf(e)
             runCatching {
                 stateStore.update { s ->
                     s.lastCheckAt = now.toEpochMilli()

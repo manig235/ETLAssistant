@@ -70,6 +70,7 @@ import kr.snu.etlassistant.chat.NotifyUiFormat
 import kr.snu.etlassistant.codex.AccountInfo
 import kr.snu.etlassistant.codex.LoginKind
 import kr.snu.etlassistant.codex.SessionState
+import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.phase0.R
 
 /** 화면이 바깥(액티비티, 세션, 시스템)에 부탁하는 일들. */
@@ -77,6 +78,8 @@ class OnboardingActions(
     val openEtlSettings: () -> Unit,
     val readClipboard: () -> String?,
     val requestNotifications: () -> Unit,
+    /** 배터리 최적화 예외를 요청한다(시스템 창). */
+    val requestBatteryExemption: () -> Unit,
     val ensureSession: () -> Unit,
     val retrySession: () -> Unit,
     val loginBrowser: () -> Unit,
@@ -548,6 +551,23 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 Text("허용하지 않으면 마감·공지 알림이 오지 않아요.", style = t.body2Regular, color = c.foregroundNeutralSecondary)
                 Spacer(Modifier.height(12.dp))
                 SecondaryButton("알림 허용하기") { a.requestNotifications() }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (vm.batteryUnrestricted) {
+            StatusCard("배터리 제한 없이 확인할 수 있어요")
+        } else {
+            Card {
+                Text("앱을 닫아도 알림이 오게 하기", style = t.body1Bold, color = c.foregroundNeutralPrimary)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "배터리 최적화가 켜져 있으면 앱을 닫아 둘 때 확인이 늦거나 끊길 수 있어요. 다음 창에서 '허용'을 눌러 주세요.",
+                    style = t.body2Regular, color = c.foregroundNeutralSecondary,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(BatteryOpt.SAMSUNG_HINT, style = t.caption1Regular, color = c.foregroundNeutralTertiary)
+                Spacer(Modifier.height(12.dp))
+                SecondaryButton("배터리 제한 풀기") { a.requestBatteryExemption() }
             }
         }
         Spacer(Modifier.height(20.dp))

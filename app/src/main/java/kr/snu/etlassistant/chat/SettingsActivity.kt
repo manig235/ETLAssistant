@@ -21,6 +21,7 @@ import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.etl.ApiKeyStore
 import kr.snu.etlassistant.etl.EtlService
+import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.notify.NotificationPoster
 import kr.snu.etlassistant.notify.NotifyScheduler
 import kr.snu.etlassistant.notify.NotifySettings
@@ -83,6 +84,10 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
             requestNotifyPermission = {
                 if (Build.VERSION.SDK_INT >= 33) notifyPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else openAppNotificationSettings()
+            },
+            requestBatteryExemption = {
+                BatteryOpt.request(this)
+                toast(BatteryOpt.SAMSUNG_HINT, long = true)
             },
             checkNow = { requestManualRun { NotifyScheduler.checkNow(this) } },
             briefNow = { requestManualRun { NotifyScheduler.briefNow(this) } },
@@ -257,6 +262,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
 
     private fun refreshNotifyPermission() {
         state.notifyPermitted = NotificationPoster.canPost(this)
+        state.batteryUnrestricted = BatteryOpt.isIgnoring(this)
     }
 
     private fun refreshNotifyStatusLines() {

@@ -20,6 +20,8 @@ object BriefBuilder {
         lookbackHours: Int = 24,
         /** 오늘 수업 줄(시간표). 비면 섹션을 넣지 않는다. */
         todayClasses: List<String> = emptyList(),
+        /** eTL 조회가 실패해 받아 둔 과제 정보를 썼으면 그 저장 시각. 맨 끝에 "N시간 전 정보" 줄을 붙인다. */
+        staleSince: Instant? = null,
     ): Notice {
         val today = now.atZone(zone).toLocalDate()
 
@@ -61,7 +63,8 @@ object BriefBuilder {
             sections += "■ 새 공지 (최근 ${lookbackHours}시간)\n" + NoticeText.joinLimited(recent.map { NoticeText.annLine(it) }, ANN_LINES)
         }
         if (allEmpty) sections += EMPTY
-        if (snapshot.errors.isNotEmpty()) sections += "※ 일부 항목을 조회하지 못했어요"
+        if (staleSince != null) sections += SnapshotFallback.staleLine(staleSince, now)
+        else if (snapshot.errors.isNotEmpty()) sections += "※ 일부 항목을 조회하지 못했어요"
 
         return Notice(
             channel = Channel.BRIEF,

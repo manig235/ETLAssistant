@@ -18,7 +18,13 @@ object CourseAssignments {
         "/api/v1/courses/$courseId/assignments?include[]=submission&order_by=due_at&per_page=100"
 
     /** 강의 하나의 결과. 조회에 실패하면 [assignments]는 비고 [error]에 짧은 이유가 들어간다. */
-    data class CourseResult(val course: JSONObject, val assignments: List<JSONObject>, val error: String?) {
+    data class CourseResult(
+        val course: JSONObject,
+        val assignments: List<JSONObject>,
+        val error: String?,
+        /** 연결 끊김·시간 초과처럼 다시 시도해 볼 만한 실패인가. */
+        val retryable: Boolean = false,
+    ) {
         val courseId: Long get() = course.optLong("id")
         val courseName: String get() = course.str("name").orEmpty()
     }
@@ -42,7 +48,10 @@ object CourseAssignments {
                 } catch (e: ExecutionException) {
                     when (val cause = e.cause) {
                         is EtlAuthException -> throw cause
-                        is EtlException -> CourseResult(course, emptyList(), cause.message ?: "과제 조회 실패")
+                        is EtlException -> CourseResult(
+                            course, emptyList(), cause.message ?: "과제 조회 실패",
+                            retryable = cause.kind == "timeout" || cause.kind == "network",
+                        )
                         // 다른 예외의 내용은 노출하지 않는다.
                         else -> CourseResult(course, emptyList(), "과제 조회 실패")
                     }
