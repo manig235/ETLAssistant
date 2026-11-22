@@ -86,3 +86,21 @@ AI 없이 앱 코드(WorkManager)만으로 마감·공지를 알린다. 코드�
   `deviceidle whitelist +pkg`(예외와 같은 상태)로 백그라운드 브리핑을 돌리면 정상 조회(뒤에 원래대로 되돌림).
 - 확인하는 몇 초 동안만 띄우는 포그라운드 서비스(`setForeground`)는 넣지 않았다. 이 기기에서는 예외 없이도 백그라운드 조회가 됐고, 예외 상태에서도
   실패한다는 증거가 없었다(사용자 결정: 예외 상태에서도 실패가 확인될 때만 넣는다). 설정 화면·안내 화면의 새 버튼은 기기 화면으로는 확인하지 못했다.
+
+### 실측: 증상이 나는 폰(SM-S938N, Android 17, release 0.1.7)에서 원인 확인 (2026-11-22)
+
+- **절전 모드가 켜져 있었다**: `settings global low_power=1`, `low_power_sticky=1`(사용자가 직접 켬), `low_power_back_data_off=1`(삼성 "백그라운드 데이터 제한").
+  netpolicy: `UID=10517 … blocked_state={blocked=BATTERY_SAVER|APP_BACKGROUND,allowed=NONE,effective=BATTERY_SAVER|APP_BACKGROUND}`.
+  connectivity: `BLOCKED 10517(…) on netId 121: c1`(= BATTERY_SAVER 0x1 | APP_BACKGROUND 0x40 | OEM_DENY 0x80).
+- **작업이 아예 시작되지 않는다**: WorkManager 작업(네트워크 제약 CONNECTED)이 `Unsatisfied constraints: CONNECTIVITY`로 남는다. 15분 주기 진단 빌드로
+  정해진 시각(12:44)을 7분 넘게 지나도(충전 중이라 절전 차단은 빠지고 `blocked=APP_BACKGROUND`만 남은 상태) 실행되지 않았다.
+  JobScheduler 기록에도 이 앱 작업은 `active-top`(앱이 화면에 있을 때)으로만 돌았다. 11:59 브리핑은 사용자가 앱을 연 순간 밀려 있던 작업이 돈 것.
+- **강제로 돌리면 네트워크가 막혀 실패**: `cmd jobscheduler run -f`로 브리핑을 돌리면 작업 중에는 APP_BACKGROUND만 풀리고(`41 → 1`) BATTERY_SAVER는 남아
+  즉시 RETRY. `deviceidle whitelist +pkg`(배터리 최적화 예외와 같은 상태)를 주면 `allowed=POWER_SAVE_ALLOWLIST…,effective=NONE`, `UNBLOCKED … 0`이 되고
+  강제 실행한 브리핑이 1.4초 만에 새 정보(과제 5건, "받아 둔 정보" 줄 없음)로 나갔다.
+- **삼성 Freecess·OEM 차단**: 앱이 백그라운드에서 얼려지면(`mFreezedPackages … Pkg kr.snu.etlassistant.phase0`) `MARs:ActiveTrafficFilter: filter : kr.snu.etlassistant.phase0`와 함께
+  OEM_DENY(0x80)가 걸린다. 이 상태에서는 화이트리스트를 줘도 `BLOCKED … 80`이 남아 네트워크 제약 작업이 시작되지 않았다(위 성공은 설치 직후 얼려지기 전이었다).
+  S908N(Android 14)에는 APP_BACKGROUND 차단이 없고 작업이 먼저 시작돼 Freecess가 풀어 줬기 때문에 재현되지 않은 것으로 본다.
+- 업데이트 설치(install -r) 뒤 앱을 열지 않아도 MY_PACKAGE_REPLACED로 작업·알람이 다시 예약되고 주기 확인이 한 번 돌았다(설치 직후 임시 허용 창에서 조회 성공).
+- 남은 일: 네트워크 제약(CONNECTED)을 빼서 작업이 시간만 되면 시작되게(시작되면 Freecess가 풀고 작업 중 APP_BACKGROUND가 풀린다) 하는 수정이 유력하나,
+  자연 실행으로 검증하지 못했다. 배터리 예외만으로 OEM_DENY가 풀리는지도 확인하지 못했다.
