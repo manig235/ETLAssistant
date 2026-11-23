@@ -9,6 +9,9 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URI
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -20,8 +23,21 @@ import java.util.concurrent.Executors
  *
  * 목적지는 포트 80/443만 허용하고, loopback/any-local 주소는 거부한다.
  * musl 정적 바이너리는 /etc/resolv.conf가 없어 DNS를 못 하므로, 이름 해석을 이 프록시가 대신한다.
+ *
+ * 127.0.0.1은 폰의 다른 앱도 접속할 수 있으므로, 프록시를 띄울 때마다 새로 만든 임의의 사용자 이름·비밀번호를
+ * `Proxy-Authorization: Basic`으로 요구한다(틀리면 407). Codex에는 [url](`http://user:pass@127.0.0.1:port`)을
+ * HTTPS_PROXY 등으로 넘긴다. 그러지 않으면 다른 앱이 이 앱의 네트워크(UID)로 우회할 수 있다.
  */
-class LocalConnectProxy(private val log: (String) -> Unit) {
+class LocalConnectProxy(
+    private val log: (String) -> Unit,
+    val user: String = randomHex(8),
+    val password: String = randomHex(24),
+) {
+    private val expectedAuth: ByteArray =
+        ("Basic " + Base64.getEncoder().encodeToString("$user:$password".toByteArray(Charsets.UTF_8))).toByteArray(Charsets.ISO_8859_1)
+
+    /** Codex에 넘기는 프록시 주소(자격 증명 포함). 로그에 그대로 남기지 않는다. */
+    val url: String get() = "http://$user:$password@127.0.0.1:$port"
 
     private val server = ServerSocket()
     private val pool: ExecutorService = Executors.newCachedThreadPool { r ->
@@ -70,6 +86,14 @@ class LocalConnectProxy(private val log: (String) -> Unit) {
                     reply(cout, 400, "Bad Request"); return
                 }
                 val method = parts[0].uppercase()
+                if (!authorized(lines.drop(1))) {
+                    log("[proxy] $method -> 407 (프록시 인증 없음/틀림)")
+                    try {
+                        cout.write("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"etl\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
+                        cout.flush()
+                    } catch (_: IOException) {}
+                    return
+                }
                 if (method == "CONNECT") {
                     handleConnect(c, parts[1])
                 } else {
@@ -130,6 +154,13 @@ class LocalConnectProxy(private val log: (String) -> Unit) {
             client.soTimeout = 0
             pipeBoth(client, up)
         }
+    }
+
+    /** `Proxy-Authorization` 헤더가 이번 실행의 자격 증명과 같은가(상수 시간 비교). */
+    private fun authorized(headers: List<String>): Boolean {
+        val value = headers.firstOrNull { it.substringBefore(':').trim().equals("proxy-authorization", ignoreCase = true) }
+            ?.substringAfter(':')?.trim() ?: return false
+        return MessageDigest.isEqual(value.toByteArray(Charsets.ISO_8859_1), expectedAuth)
     }
 
     /** 목적지 검사 + 안드로이드 리졸버로 이름 해석 + 연결. 실패 시 null. */
@@ -229,5 +260,15 @@ class LocalConnectProxy(private val log: (String) -> Unit) {
             out.write("HTTP/1.1 $code $reason\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
             out.flush()
         } catch (_: IOException) {}
+    }
+
+    companion object {
+        private val rng = SecureRandom()
+
+        /** 프록시 URL에 그대로 넣을 수 있는(퍼센트 인코딩이 필요 없는) 임의의 16진 문자열. */
+        fun randomHex(bytes: Int): String {
+            val b = ByteArray(bytes).also { rng.nextBytes(it) }
+            return b.joinToString("") { "%02x".format(it) }
+        }
     }
 }

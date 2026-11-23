@@ -163,7 +163,8 @@ object CodexRunner {
             if (p == null) {
                 log.line("[app] 프록시를 시작하지 못했습니다. 프록시 없이 진행합니다.")
             } else {
-                val url = "http://127.0.0.1:${p.port}"
+                // 프록시를 띄울 때(앱 프로세스마다) 새로 만든 자격 증명이 든 주소. 로그에는 사용자 정보를 가려 남긴다.
+                val url = p.url
                 set["HTTPS_PROXY"] = url
                 set["HTTP_PROXY"] = url
                 set["https_proxy"] = url
@@ -209,7 +210,7 @@ object CodexRunner {
 
         log.line("[app] cwd: ${workspace.path}")
         log.line("[app] cmd: ${(listOf(bin.path) + args).joinToString(" ") { shellQuote(it) }}")
-        set.forEach { (k, v) -> log.line("[app] env $k=${if (k in SECRET_ENVS) "***" else v}") }
+        set.forEach { (k, v) -> log.line("[app] env $k=${if (k in SECRET_ENVS) "***" else if (k in PROXY_VARS) v.replace(Regex("//[^@/]*@"), "//***@") else v}") }
         unset.forEach { log.line("[app] env unset $it") }
         return Prepared(pb, workspace, args)
     }
@@ -324,7 +325,7 @@ object CodexRunner {
     private fun ensureProxy(): LocalConnectProxy? {
         proxy?.let { return it }
         return try {
-            LocalConnectProxy { log.line(it) }.start().also { proxy = it }
+            LocalConnectProxy({ log.line(it) }).start().also { proxy = it }
         } catch (e: IOException) {
             log.line("[proxy] start 실패: ${e.message}")
             null
