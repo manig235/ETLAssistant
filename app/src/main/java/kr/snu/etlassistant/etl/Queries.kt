@@ -147,15 +147,45 @@ object Queries {
         return JSONArray(rows)
     }
 
-    /** 공지 본문으로 수업 변동 공지를 가린다(알림 제목에 쓴다). */
+    /**
+     * 공지 본문으로 수업 변동·시험 공지를 가린다(알림 제목에 쓴다).
+     * 제목에 시험 말이 있으면 "시험 공지"가 먼저고, 그다음 보강·휴강, 본문에만 시험 일정이 있으면 "시험 공지".
+     */
     fun announcementBadge(title: String?, text: String?): String {
         val s = "${title ?: ""} ${text ?: ""}"
+        val exam = examMention(title, text)
         return when {
+            exam == ExamMention.TITLE -> "시험 공지"
             "보강" in s -> "보강 공지"
             Regex("휴강|결강").containsMatchIn(s) -> "휴강 공지"
+            exam == ExamMention.BODY -> "시험 공지"
             else -> "새 공지"
         }
     }
+
+    enum class ExamMention { NONE, TITLE, BODY }
+
+    private val EXAM = Regex("시험|중간\\s*고사|기말\\s*고사|퀴즈|\\bquiz(zes)?\\b|\\bexam(s|ination)?\\b|\\bmid-?terms?\\b|\\bfinals\\b", RegexOption.IGNORE_CASE)
+    /** 시험 결과 공지("중간고사 성적 공개")를 가르는 말. */
+    private val EXAM_RESULT = Regex("성적|점수|채점|해설|이의\\s*신청|결과|답안|\\bgrades?\\b|\\bscores?\\b|\\bresults?\\b", RegexOption.IGNORE_CASE)
+    /** 일정을 알리는 말. "안내"·"공지"는 성적 안내에도 쓰여서 넣지 않는다. */
+    private val EXAM_SCHEDULE = Regex("일정|일시|날짜|장소|고사장|강의실|범위|시간|실시|시행|응시|\\bdate\\b|\\btime\\b|\\broom\\b|\\blocation\\b|\\bschedule\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * 시험 공지인가(키워드만 본다; 날짜는 뽑지 않는다). 제목에 시험 말이 있으면 시험 공지(제목이 성적·채점 같은 결과 공지이고
+     * 일정 말이 없으면 제외). 본문에만 있으면 본문에 일정 말(일시·장소·범위 등)도 있을 때만(과제 공지의 "시험에 반영" 같은 것을 거른다).
+     */
+    fun examMention(title: String?, text: String?): ExamMention {
+        val t = title.orEmpty()
+        val b = text.orEmpty()
+        if (EXAM.containsMatchIn(t)) {
+            return if (EXAM_RESULT.containsMatchIn(t) && !EXAM_SCHEDULE.containsMatchIn(t)) ExamMention.NONE else ExamMention.TITLE
+        }
+        if (EXAM.containsMatchIn(b) && EXAM_SCHEDULE.containsMatchIn(b) && !EXAM_RESULT.containsMatchIn(t)) return ExamMention.BODY
+        return ExamMention.NONE
+    }
+
+    fun isExamAnnouncement(title: String?, text: String?): Boolean = examMention(title, text) != ExamMention.NONE
 
     // ---- etl_get --------------------------------------------------------------
 

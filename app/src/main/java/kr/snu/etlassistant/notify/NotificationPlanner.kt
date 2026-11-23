@@ -285,7 +285,7 @@ object NotificationPlanner {
                     url = NoticeText.announcementUrl(a),
                     tag = "ann:${a.id}",
                     firedKeys = listOf("ann:${a.id}"),
-                )
+                ).withExamAction(listOf(a))
             }
         }
         val lines = fresh.map { a ->
@@ -301,7 +301,25 @@ object NotificationPlanner {
                 url = NoticeText.collectionUrl(fresh.map { it.courseId }) ?: NoticeText.ETL_PREFIX,
                 tag = "ann:summary",
                 firedKeys = fresh.map { "ann:${it.id}" },
-            ),
+            ).withExamAction(fresh),
         )
+    }
+
+    /**
+     * 시험 공지가 있으면 "일정 정리 부탁" 버튼을 단다. 누르면 채팅 입력창에 정리 요청이 채워진다(보내지 않음, 날짜는 앱이 뽑지 않고 비서가 공지를 읽는다).
+     */
+    private fun Notice.withExamAction(items: List<AnnouncementItem>): Notice {
+        val exams = items.filter { Queries.isExamAnnouncement(it.title, it.text) }
+        if (exams.isEmpty()) return this
+        return copy(prefill = examPrefill(exams), prefillAction = EXAM_ACTION)
+    }
+
+    const val EXAM_ACTION = "일정 정리 부탁"
+
+    /** `{과목} ‘{제목}’ 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘`. 공지가 여럿이면 두 개까지 적고 나머지는 "외 N개". */
+    fun examPrefill(exams: List<AnnouncementItem>): String {
+        val named = exams.take(2).joinToString(", ") { "${NoticeText.course(it.courseName)} ‘${NoticeText.safe(it.title, 60)}’" }
+        val more = if (exams.size > 2) " 외 ${exams.size - 2}개" else ""
+        return "$named$more 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘"
     }
 }
