@@ -270,6 +270,8 @@ object BoardSession {
     @Synchronized fun drop(owner: String) {
         if (this.owner == owner) { this.owner = null; token = null; until = 0L }
     }
+    /** eTL 연결 해제: 누구 것이든 지운다. */
+    @Synchronized fun clear() { owner = null; token = null; until = 0L }
 
     fun ownerOf(etlToken: String): String =
         MessageDigest.getInstance("SHA-256").digest(etlToken.toByteArray()).joinToString("") { "%02x".format(it) }

@@ -258,6 +258,14 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
 - 숨김 파일(`hidden_for_user`)은 받지 않는다. 게시판 첨부만 예외로, LearningX가 그 글의 첨부임을 확인한 경우에만 받는다.
 - MCP 서버는 127.0.0.1에만 바인딩하고, 실행마다 바뀌는 비밀값을 요구한다.
 - eTL 내용(공지, 과제 설명, 파일)은 신뢰하지 않는 데이터다. 그 안의 지시를 따르지 않도록 Codex 지침(AGENTS.md)에 명시한다.
+- **개인정보 보호(2026-11-23, `docs/privacy-policy.md`)**:
+  - 백업·기기 간 이전: `res/xml/data_extraction_rules.xml`(cloud-backup·device-transfer 모두 전부 제외)과 `backup_rules.xml`(API 30 이하). `allowBackup="false"`만으로는 targetSdk 31+의 D2D가 안 막힌다.
+  - Codex config에 `[analytics] enabled = false`, `[feedback] enabled = false`, `[otel] metrics_exporter = "none"`(rust-v0.170.0 스키마로 확인, `CodexConfig.toml`).
+  - 대화 삭제는 `thread/delete`(rollout + Codex 내부 DB) 후 남은 rollout 파일도 지운다(`codex/ThreadPurge`, codex-home의 sessions·archived_sessions만, 링크 안 따라감). 실패분은 `AppSettings.pendingThreadDeletes`로 다음 시작 때 재시도, 시작 때 목록에 없는 archived_sessions 정리.
+  - 로그(`phase0.log`)는 1MB에서 `.1`로 한 번 회전하고, 모든 줄을 `LogRedact`로 가린다(URL 쿼리·사용자 정보, 기기 코드, Bearer·JWT·sk- 키).
+  - 설정 "eTL 연결 해제"(`etl/EtlDisconnect`): 토큰 + eTL 캐시(etl_snapshot, notify_watch, timetable.weekly, 계획서 첨부, 게시판 세션). 대화·받은 파일·알림 기록·내 마감은 남긴다.
+  - 로컬 CONNECT 프록시는 프로세스마다 새 Basic 자격 증명을 요구하고 `http://user:pass@127.0.0.1:port`로 넘긴다. **기기에서 Codex가 자격 증명을 보내는지 아직 확인하지 못했다**(안 보내면 채팅 전체가 막힘).
+  - code-mode host의 gRPC(127.0.0.1)는 인증이 없다. 세션 ID가 UUIDv4라 다른 앱이 우리 세션을 가로챌 수는 없고, 자기 세션으로 JS 실행만 가능하다(고치지 않음).
 - 앱에는 분석 SDK나 외부 서버 전송을 넣지 않는다.
   **예외 하나(2026-11-22, 사용자 결정)**: 업데이트 확인용 `GET https://api.github.com/repos/manig235/ETLAssistant/releases/latest`(사용자 데이터·토큰·기기 정보 없음, 리다이렉트 안 따라감, 설정 "업데이트 알림"으로 끌 수 있음, `update/UpdateChecker.kt`).
 
