@@ -210,6 +210,7 @@ object MyDeadlines {
 
 /** 앱 내부 SharedPreferences에 JSON으로 저장한다. */
 class MyDeadlineStore(context: Context) {
+    private val app = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences("my_deadlines", Context.MODE_PRIVATE)
 
     @Synchronized
@@ -218,6 +219,7 @@ class MyDeadlineStore(context: Context) {
     @Synchronized
     fun save(list: List<MyDeadline>) {
         prefs.edit().putString("items", MyDeadlines.toJson(list)).apply()
+        kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
     }
 
     /** 같은 ID면 바꾸고, 없으면 더한다. */

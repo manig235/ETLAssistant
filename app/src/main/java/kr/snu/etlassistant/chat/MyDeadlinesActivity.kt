@@ -7,17 +7,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.CalendarViewWeek
 import com.wanted.android.wanted.design.actions.chip.WantedChip
 import com.wanted.android.wanted.design.loading.loading.WantedCircularProgressIndicator
 import kr.snu.etlassistant.etl.EtlAuthException
 import kr.snu.etlassistant.etl.EtlClient
 import kr.snu.etlassistant.etl.EtlException
 import kr.snu.etlassistant.etl.EtlService
-import kr.snu.etlassistant.etl.Timetable
-import kr.snu.etlassistant.etl.TimetableChangeStore
-import kr.snu.etlassistant.etl.TimetableLogic
-import kr.snu.etlassistant.etl.TimetableStore
 import kr.snu.etlassistant.notify.Agenda
 import kr.snu.etlassistant.notify.DeadlineAlarm
 import kr.snu.etlassistant.notify.NotifyStateStore
@@ -44,7 +40,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +58,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,7 +93,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 /**
- * "내 일정": eTL 과제 마감 + 내 마감 + 오늘·내일 수업을 날짜별로 한 목록에 모은다.
+ * "내 일정": 임박 요약 + 오늘 포함 7일 전체 마감 + 이후 마감. 수업은 시간표에서 보여 준다.
  * eTL 과제는 알림 확인 때 저장해 둔 결과([SnapshotCache])를 바로 보여 주고, 없거나 오래됐으면 뒤에서 새로 받는다.
  * 내 마감(eTL 밖의 마감)은 여기서 추가·수정·완료·삭제하며, eTL 과제처럼 마감 알림과 브리핑에 들어간다. 저장은 폰 안에만.
  */
@@ -100,7 +101,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
     private val store by lazy { MyDeadlineStore(this) }
     private var mine by mutableStateOf<List<MyDeadline>>(emptyList())
     private var cached by mutableStateOf<CachedSnapshot?>(null)
-    private var days by mutableStateOf<List<TimetableLogic.Day>>(emptyList())
+    private var now by mutableStateOf(Instant.now())
     private var loading by mutableStateOf(false)
     private var filter by mutableStateOf(Agenda.Filter.ALL)
     private var hideDone by mutableStateOf(true)
@@ -108,9 +109,18 @@ class MyDeadlinesActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    now = Instant.now()
+                    delay(30_000)
+                }
+            }
+        }
         setContent {
             AgendaScreen(
-                groups = Agenda.build(cached?.assignments.orEmpty(), mine, days, Instant.now(), ZoneId.systemDefault(), filter, hideDone),
+                schedule = Agenda.build(cached?.assignments.orEmpty(), mine, now, ZoneId.systemDefault(), filter, hideDone),
+                now = now,
                 takenAt = cached?.takenAt,
                 hasToken = remember { !EtlService.tokens(this).load().isNullOrEmpty() },
                 loading = loading,
@@ -118,9 +128,11 @@ class MyDeadlinesActivity : AppCompatActivity() {
                 hideDone = hideDone,
                 alertsOn = remember { NotifySettingsStore(this).load().deadlineAlerts },
                 mineTotal = mine.size,
+                initialDeadline = remember { store.load().firstOrNull { it.id == intent.getLongExtra(kr.snu.etlassistant.widget.HomeWidgets.EXTRA_DEADLINE_ID, Long.MIN_VALUE) } },
                 onFilter = { filter = it },
                 onHideDone = { hideDone = it },
                 onBack = { finish() },
+                onTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
                 onRefresh = ::refresh,
                 onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                 onSave = { old, new ->
@@ -147,17 +159,9 @@ class MyDeadlinesActivity : AppCompatActivity() {
     private fun reload() {
         mine = store.load()
         cached = SnapshotCache(this).load()
-        days = loadDays(TimetableStore(this).load())
     }
 
-    private fun loadDays(w: TimetableLogic.Weekly?): List<TimetableLogic.Day> {
-        if (w == null) return emptyList()
-        val ch = TimetableChangeStore(this).load()
-        val today = LocalDate.now(ZoneId.systemDefault())
-        return listOf(TimetableLogic.day(w, today, ch), TimetableLogic.day(w, today.plusDays(1), ch))
-    }
-
-    /** eTL 과제를 새로 받아 저장하고(알림 확인과 같은 캐시), 시간표 캐시가 없거나 오래됐으면 같이 받는다. */
+    /** eTL 과제를 새로 받아 저장한다(알림 확인과 같은 캐시). */
     private fun refresh() {
         if (loading) return
         val token = EtlService.tokens(this).load()
@@ -167,7 +171,6 @@ class MyDeadlinesActivity : AppCompatActivity() {
             val msg = try {
                 val etl = EtlClient(token)
                 SnapshotCache(this).save(SnapshotFetcher.fetch(etl, Instant.now(), announcementDays = 1))
-                runCatching { Timetable.cachedOrFetch(etl, TimetableStore(this)) }
                 null
             } catch (e: EtlAuthException) {
                 "eTL이 토큰을 거부했어요. 설정에서 토큰을 다시 저장하세요"
@@ -222,7 +225,8 @@ internal fun myDeadlineLabel(t: Instant, zone: ZoneId = ZoneId.systemDefault()):
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AgendaScreen(
-    groups: List<Agenda.Group>,
+    schedule: Agenda.Schedule,
+    now: Instant,
     takenAt: Long?,
     hasToken: Boolean,
     loading: Boolean,
@@ -230,9 +234,11 @@ private fun AgendaScreen(
     hideDone: Boolean,
     alertsOn: Boolean,
     mineTotal: Int,
+    initialDeadline: MyDeadline?,
     onFilter: (Agenda.Filter) -> Unit,
     onHideDone: (Boolean) -> Unit,
     onBack: () -> Unit,
+    onTimetable: () -> Unit,
     onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
     onSave: (old: MyDeadline?, new: MyDeadline) -> Unit,
@@ -244,15 +250,22 @@ private fun AgendaScreen(
     DesignSystemTheme {
         val c = DesignSystemTheme.colors
         val t = DesignSystemTheme.typography
-        var editing by remember { mutableStateOf<MyDeadline?>(null) }
+        var editing by remember { mutableStateOf(initialDeadline) }
         var adding by remember { mutableStateOf(false) }
         var deleting by remember { mutableStateOf<MyDeadline?>(null) }
-        val now = Instant.now()
+        var showOverdue by rememberSaveable { mutableStateOf(false) }
+        fun openRow(r: Agenda.Row) {
+            when {
+                r.mine != null -> editing = r.mine
+                r.url != null -> onOpen(r.url)
+            }
+        }
 
         Column(Modifier.fillMaxSize().background(c.backgroundNeutralPrimary).systemBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "뒤로", tint = c.foregroundNeutralPrimary) }
                 Text("내 일정", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.padding(start = 4.dp).weight(1f))
+                IconButton(onClick = onTimetable) { Icon(Icons.Outlined.CalendarViewWeek, contentDescription = "수업 시간표", tint = c.foregroundNeutralSecondary) }
                 if (loading) WantedCircularProgressIndicator()
                 else if (hasToken) IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, contentDescription = "eTL 과제 새로 받기", tint = c.foregroundNeutralSecondary) }
                 IconButton(onClick = { adding = true }) { Icon(Icons.Outlined.Add, contentDescription = "내 마감 추가", tint = c.foregroundBrandPrimary) }
@@ -270,34 +283,46 @@ private fun AgendaScreen(
             }
             Spacer(Modifier.height(8.dp))
 
-            if (groups.isEmpty()) {
-                Column(Modifier.fillMaxWidth().weight(1f).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Text(if (filter == Agenda.Filter.ALL) "남은 일정이 없어요" else "${filter.label} 일정이 없어요", style = t.body1Medium, color = c.foregroundNeutralSecondary)
-                    Spacer(Modifier.height(16.dp))
-                    WantedButton(text = "내 마감 추가", type = ButtonType.PRIMARY, size = ButtonSize.MEDIUM, variant = ButtonVariant.SOLID, onClick = { adding = true })
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item(key = "urgent-summary") {
+                    DeadlineSummary(schedule, now, showOverdue, onToggleOverdue = { showOverdue = !showOverdue }, onOpen = ::openRow)
                 }
-            } else {
-                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (g in groups) {
-                        item(key = "h-${g.label}") {
-                            Text(g.label, style = t.body2Medium,
-                                color = if (g.label == "마감 지남") c.foregroundNegativePrimary else c.foregroundBrandPrimary,
-                                modifier = Modifier.padding(start = 8.dp, top = 8.dp))
-                        }
-                        items(g.rows, key = { r -> "${g.label}-${r.kind}-${r.mine?.id ?: (r.title + r.at)}" }) { r ->
-                            AgendaRow(r, now,
-                                onClick = {
-                                    when {
-                                        r.mine != null -> editing = r.mine
-                                        r.url != null -> onOpen(r.url)
-                                    }
-                                },
-                                onToggleDone = { r.mine?.let(onToggleDone) },
-                                onDelete = { deleting = r.mine })
+                if (showOverdue && schedule.overdue.isNotEmpty()) {
+                    item(key = "overdue-header") {
+                        Text("마감 지남 · ${schedule.overdue.size}개", style = t.body2Medium, color = c.foregroundNegativePrimary,
+                            modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+                    }
+                    items(schedule.overdue, key = { "overdue-${it.id}" }) { r ->
+                        AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine })
+                    }
+                }
+                for ((isUpcoming, groups) in listOf(true to schedule.upcoming, false to schedule.later)) {
+                    val section = if (isUpcoming) "upcoming" else "later"
+                    item(key = "$section-header") {
+                        DeadlineSectionHeader(
+                            if (isUpcoming) "앞으로 7일" else "그 이후 마감",
+                            if (isUpcoming) schedule.upcomingCount else schedule.laterCount,
+                            if (isUpcoming) "오늘 포함 · ${Agenda.dateLabel(schedule.today)}~${Agenda.dateLabel(schedule.lastDay)}"
+                            else "${Agenda.dateLabel(schedule.lastDay.plusDays(1))}부터",
+                        )
+                    }
+                    if (groups.isEmpty()) {
+                        item(key = "$section-empty") {
+                            val period = if (isUpcoming) "앞으로 7일 동안" else "그 이후에"
+                            DeadlineEmptyText("$period ${if (hideDone) "남은 " else ""}마감이 없어요")
                         }
                     }
-                    item { Spacer(Modifier.height(24.dp)) }
+                    for (g in groups) {
+                        item(key = "date-${g.date}") {
+                            Text(Agenda.dayLabel(g.date, schedule.today), style = t.body2Medium, color = c.foregroundBrandPrimary,
+                                modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+                        }
+                        items(g.rows, key = { it.id }) { r ->
+                            AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine })
+                        }
+                    }
                 }
+                item { Spacer(Modifier.height(24.dp)) }
             }
         }
 
@@ -325,6 +350,68 @@ private fun AgendaScreen(
 }
 
 @Composable
+private fun DeadlineSummary(
+    schedule: Agenda.Schedule,
+    now: Instant,
+    showOverdue: Boolean,
+    onToggleOverdue: () -> Unit,
+    onOpen: (Agenda.Row) -> Unit,
+) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(if (schedule.urgent.isEmpty()) c.surfaceNeutralSecondary else c.surfaceCautionaryPrimary)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("임박한 마감 요약", style = t.body1Medium, color = c.foregroundNeutralPrimary)
+        Text(
+            if (schedule.urgent.isEmpty()) "24시간 내 남은 마감이 없어요" else "24시간 내 미완료 마감 ${schedule.urgent.size}개",
+            style = t.caption1Regular, color = c.foregroundNeutralSecondary,
+        )
+        for (r in schedule.urgent.take(3)) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .then(if (r.mine != null || r.url != null) Modifier.clickable(role = Role.Button, onClickLabel = if (r.mine != null) "고치기" else "eTL에서 열기") { onOpen(r) } else Modifier)
+                    .padding(vertical = 6.dp),
+            ) {
+                Text(r.title, style = t.body2Medium, color = c.foregroundNeutralPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${r.subtitle} · ${Agenda.whenLabel(r, now)}", style = t.caption1Regular,
+                    color = c.foregroundNeutralSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (schedule.urgent.isNotEmpty()) {
+            val extra = schedule.urgent.size - 3
+            Text((if (extra > 0) "외 ${extra}개 · " else "") + "아래 전체 목록에서도 볼 수 있어요",
+                style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+        }
+        if (schedule.overdue.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("마감 지남 ${schedule.overdue.size}개", style = t.body2Medium, color = c.foregroundNegativePrimary)
+                WantedTextButton(text = if (showOverdue) "접기" else "펼치기", onClick = onToggleOverdue)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeadlineSectionHeader(title: String, count: Int, subtitle: String) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Column(Modifier.padding(start = 8.dp, top = 16.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("$title · ${count}개", style = t.headline2Bold, color = c.foregroundNeutralPrimary)
+        Text(subtitle, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+    }
+}
+
+@Composable
+private fun DeadlineEmptyText(text: String) {
+    Text(text, style = DesignSystemTheme.typography.body2Regular, color = DesignSystemTheme.colors.foregroundNeutralSecondary,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp))
+}
+
+@Composable
 private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggleDone: () -> Unit, onDelete: () -> Unit) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
@@ -342,12 +429,11 @@ private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggle
             }
             Agenda.Kind.ASSIGNMENT -> Icon(if (r.done) Icons.Outlined.CheckCircle else Icons.Outlined.Assignment, contentDescription = null,
                 tint = if (r.done) c.foregroundPositivePrimary else c.foregroundBrandPrimary, modifier = Modifier.padding(12.dp).size(24.dp))
-            Agenda.Kind.CLASS -> Icon(Icons.Outlined.School, contentDescription = null, tint = c.foregroundNeutralSecondary, modifier = Modifier.padding(12.dp).size(24.dp))
         }
         Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
             Text(r.title, style = t.body1Medium,
-                color = if (r.done || r.cancelled) c.foregroundNeutralTertiary else c.foregroundNeutralPrimary,
-                textDecoration = if (r.done || r.cancelled) TextDecoration.LineThrough else null,
+                color = if (r.done) c.foregroundNeutralTertiary else c.foregroundNeutralPrimary,
+                textDecoration = if (r.done) TextDecoration.LineThrough else null,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
             val whenText = Agenda.whenLabel(r, now)

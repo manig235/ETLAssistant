@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="8dp" android:background="@drawable/widget_background">
+    <TextView android:id="@+id/widget_header" android:layout_width="match_parent" android:layout_height="26dp"
+        android:text="주간 시간표" android:textSize="13sp" android:textStyle="bold" android:gravity="center_vertical"
+        android:includeFontPadding="false" android:textColor="@color/widget_accent" android:maxLines="1" />
+    <ImageView android:id="@+id/widget_grid" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:scaleType="fitCenter" android:src="@drawable/widget_timetable_preview"
+        android:contentDescription="주간 수업 시간표" />
+    <TextView android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="눌러서 시간표 열기" android:textSize="11sp" android:gravity="center"
+        android:textColor="@color/widget_secondary" android:paddingVertical="8dp" />
+</LinearLayout>

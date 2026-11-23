@@ -19,6 +19,8 @@ class SystemEventReceiver : BroadcastReceiver() {
         runCatching { NotifyScheduler.apply(context, forceBriefs = timeChanged) }
         runCatching { DeadlineAlarm.rearm(context) }
         runCatching { kr.snu.etlassistant.update.UpdateScheduler.apply(context) }
+        runCatching { kr.snu.etlassistant.widget.HomeWidgets.schedule(context) }
+        runCatching { kr.snu.etlassistant.widget.HomeWidgets.dataChanged(context) }
         runCatching { kr.snu.etlassistant.phase0.CodexRunner.log.line("[notify] 예약 되살림: ${intent.action?.substringAfterLast('.')}") }
     }
 

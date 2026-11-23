@@ -481,11 +481,13 @@ object CatalogClient {
 
 /** 사용자가 넣은 보강·휴강(앱 내부 SharedPreferences). 30일 지난 항목은 저장할 때 정리한다. */
 class TimetableChangeStore(context: Context) {
+    private val app = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences("timetable_changes", Context.MODE_PRIVATE)
     @Synchronized fun load(): List<TimetableLogic.Change> = TimetableLogic.changesFromJson(prefs.getString("items", null))
     @Synchronized fun save(list: List<TimetableLogic.Change>) {
         val cutoff = LocalDate.now(EtlLogic.KST).minusDays(30)
         prefs.edit().putString("items", TimetableLogic.changesToJson(list.filter { !it.date.isBefore(cutoff) }.sortedWith(compareBy({ it.date }, { it.start ?: "" })))).apply()
+        kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
     }
     @Synchronized fun add(c: TimetableLogic.Change) = save(load().filter { it.id != c.id } + c)
     @Synchronized fun delete(id: Long) = save(load().filter { it.id != id })
@@ -493,6 +495,7 @@ class TimetableChangeStore(context: Context) {
 
 /** 주간 시간표 캐시(앱 내부 SharedPreferences). */
 class TimetableStore(context: Context) {
+    private val app = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences("timetable", Context.MODE_PRIVATE)
     @Synchronized fun loadCatalog(): TimetableLogic.Weekly? = TimetableLogic.fromJson(prefs.getString("weekly", null))
     @Synchronized fun customCourses(): List<TimetableLogic.CourseMeetings> =
@@ -501,6 +504,7 @@ class TimetableStore(context: Context) {
     @Synchronized fun load(): TimetableLogic.Weekly? = withCustom(loadCatalog())
     @Synchronized fun save(w: TimetableLogic.Weekly) {
         prefs.edit().putString("weekly", TimetableLogic.toJson(w.copy(courses = w.courses.filter { it.courseId >= 0 }))).apply()
+        kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
     }
     @Synchronized fun saveCustom(course: TimetableLogic.CourseMeetings) {
         val valid = requireNotNull(CustomTimetableLogic.normalize(course))
@@ -509,6 +513,7 @@ class TimetableStore(context: Context) {
     @Synchronized fun deleteCustom(id: Long) { saveCustomList(customCourses().filter { it.courseId != id }) }
     private fun saveCustomList(courses: List<TimetableLogic.CourseMeetings>) {
         prefs.edit().putString("custom", TimetableLogic.toJson(TimetableLogic.Weekly("", 0, courses, emptyList()))).apply()
+        kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
     }
 }
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_deadlines_name">영민이 · 마감</string>
+    <string name="widget_timetable_name">영민이 · 시간표</string>
+    <string name="widget_deadlines_description">가까운 과제와 내 마감을 보여줘요. 크기를 늘리면 더 많이 볼 수 있어요.</string>
+    <string name="widget_timetable_description">이번 주 수업과 등록한 휴강·보강을 한눈에 볼 수 있어요.</string>
+</resources>
