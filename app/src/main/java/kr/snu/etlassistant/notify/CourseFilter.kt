@@ -188,6 +188,7 @@ class CourseFilterStore(context: Context) {
         save(s.copy(filter = s.filter.with(course, mode)))
         // 숨긴 과목은 일정 위젯에서도 빠진다.
         kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
+        kr.snu.etlassistant.calendar.CalendarExport.requestSync(app) // 숨긴 과목은 캘린더에서도 뺀다
     }
 
     /** 최근에 받은 이번 학기 과목 목록(설정 화면을 바로 그리는 데 쓴다). 정해 둔 과목의 이름도 새 이름으로 맞춘다. */

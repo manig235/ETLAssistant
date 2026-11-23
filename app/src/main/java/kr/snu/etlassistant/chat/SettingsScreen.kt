@@ -118,6 +118,8 @@ class SettingsState {
     var lastBriefText by mutableStateOf("")
     /** 과목별 알림 요약(예: "알림 끈 과목 1개 · 숨긴 과목 2개"). */
     var courseAlertsSummary by mutableStateOf("")
+    /** 캘린더로 내보내기 요약(예: "꺼짐", "이 폰의 \"영민이\" 캘린더로 내보내는 중"). */
+    var calendarSummary by mutableStateOf("")
 
     /** 업데이트 알림(GitHub Release 확인) 켬/끔. */
     var updateAlerts by mutableStateOf(true)
@@ -154,6 +156,7 @@ class SettingsActions(
     val replayOnboarding: () -> Unit,
     val openHistory: () -> Unit = {},
     val openCourseAlerts: () -> Unit = {},
+    val openCalendarExport: () -> Unit = {},
     val openTimetable: () -> Unit = {},
     val openMyDeadlines: () -> Unit = {},
     val setCasualTone: (Boolean) -> Unit = {},
@@ -205,6 +208,8 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
                 EtlTokenSection(s, a)
                 Spacer(Modifier.height(32.dp))
                 NotifySection(s, a)
+                Spacer(Modifier.height(32.dp))
+                CalendarSection(s, a)
                 Spacer(Modifier.height(32.dp))
                 ToneSection(s, a)
                 Spacer(Modifier.height(32.dp))
@@ -744,6 +749,18 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                 SoftButton("지금 확인", onClick = a.checkNow)
                 SoftButton("브리핑 미리 보내기", onClick = a.briefNow)
             }
+        }
+    }
+}
+
+// ---- 캘린더로 내보내기 -------------------------------------------------------------
+
+@Composable
+private fun CalendarSection(s: SettingsState, a: SettingsActions) {
+    Section("캘린더") {
+        SettingsCard {
+            LinkRow("캘린더로 내보내기", onClick = a.openCalendarExport, desc = s.calendarSummary.ifBlank { "꺼짐" })
+            Caption("eTL 과제 마감과 내 마감을 삼성·구글 캘린더에 넣거나 .ics 파일로 내보내요.")
         }
     }
 }

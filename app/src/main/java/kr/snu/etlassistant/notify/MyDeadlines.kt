@@ -461,6 +461,7 @@ class MyDeadlineStore(context: Context) {
     fun save(list: List<MyDeadline>) {
         prefs.edit().putString("items", MyDeadlines.toJson(list)).apply()
         kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
+        kr.snu.etlassistant.calendar.CalendarExport.requestSync(app) // 캘린더로 내보내기가 켜져 있으면 뒤에서 맞춘다
     }
 
     /** 같은 ID면 바꾸고, 없으면 더한다. */

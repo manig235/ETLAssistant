@@ -1,0 +1,466 @@
+package kr.snu.etlassistant.calendar
+
+import kr.snu.etlassistant.etl.TimetableLogic
+import kr.snu.etlassistant.notify.AssignmentItem
+import kr.snu.etlassistant.notify.CourseFilter
+import kr.snu.etlassistant.notify.MyDeadline
+import kr.snu.etlassistant.notify.MyDeadlines
+import kr.snu.etlassistant.notify.MyRepeat
+import kr.snu.etlassistant.notify.NoticeText
+import org.json.JSONArray
+import org.json.JSONObject
+import java.security.MessageDigest
+import java.time.DayOfWeek
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+/*
+ * 캘린더로 내보내기(2026-11-23). eTL 과제 마감과 내 마감을 폰 캘린더(CalendarContract) 또는 .ics 파일로 보낸다.
+ * 네트워크는 쓰지 않는다: eTL 과제는 알림 확인 때 받아 둔 결과(SnapshotCache), 내 마감은 폰 안 저장값만 쓴다.
+ * 이 파일은 순수 함수만 둔다(단위 테스트 대상). ContentResolver를 쓰는 부분은 CalendarExport.kt.
+ */
+
+/** 내보낼 곳. LOCAL: 앱이 만든 "영민이" 로컬 캘린더(이 폰에만). GOOGLE: 사용자가 고른 구글 계정 캘린더. */
+enum class CalendarTarget(val key: String) {
+    LOCAL("local"), GOOGLE("google");
+
+    companion object {
+        fun of(key: String?): CalendarTarget = values().firstOrNull { it.key == key } ?: LOCAL
+    }
+}
+
+data class CalendarExportSettings(
+    val enabled: Boolean = false,
+    val target: CalendarTarget = CalendarTarget.LOCAL,
+    /** GOOGLE일 때 고른 캘린더의 `Calendars._ID`와 보일 이름. */
+    val googleCalendarId: Long? = null,
+    val googleCalendarName: String = "",
+    val includeEtl: Boolean = true,
+    val includeMine: Boolean = true,
+    /** 제출·완료한 항목도 보낸다(기본 끔: 제출·완료하면 캘린더에서 지운다). */
+    val includeDone: Boolean = false,
+) {
+    fun toJson(): String = JSONObject()
+        .put("version", 1)
+        .put("enabled", enabled)
+        .put("target", target.key)
+        .put("googleCalendarId", googleCalendarId ?: JSONObject.NULL)
+        .put("googleCalendarName", googleCalendarName)
+        .put("includeEtl", includeEtl)
+        .put("includeMine", includeMine)
+        .put("includeDone", includeDone)
+        .toString()
+
+    companion object {
+        fun fromJson(s: String?): CalendarExportSettings = try {
+            val o = JSONObject(s ?: throw IllegalArgumentException())
+            CalendarExportSettings(
+                enabled = o.optBoolean("enabled", false),
+                target = CalendarTarget.of(o.optString("target")),
+                googleCalendarId = if (o.isNull("googleCalendarId")) null else o.optLong("googleCalendarId").takeIf { it > 0 },
+                googleCalendarName = o.optString("googleCalendarName", ""),
+                includeEtl = o.optBoolean("includeEtl", true),
+                includeMine = o.optBoolean("includeMine", true),
+                includeDone = o.optBoolean("includeDone", false),
+            )
+        } catch (_: Exception) {
+            CalendarExportSettings()
+        }
+    }
+}
+
+/** 캘린더 일정 하나(마감 하나). [start] == [end]인 0분짜리 일정이다. */
+data class CalItem(
+    /** `etl:{courseId}:{assignmentId}`, `mine:{id}`, 반복 회차는 `mine:{id}:{epochDay}`. */
+    val key: String,
+    val title: String,
+    val start: Instant,
+    val end: Instant,
+    val description: String,
+    val url: String? = null,
+) {
+    /** 바뀌었는지 비교하는 값(일정 내용만). */
+    val hash: String get() = CalendarLogic.hash(listOf(title, start.toEpochMilli().toString(), end.toEpochMilli().toString(), description, url.orEmpty(), CalendarLogic.TZ_ID))
+}
+
+object CalendarLogic {
+    const val TZ_ID = "Asia/Seoul"
+    val ZONE: ZoneId = ZoneId.of(TZ_ID)
+    const val APP_URI_PREFIX = "youngmin://item/"
+
+    /** 지난 마감도 이 기간까지는 캘린더에 남겨 둔다(그보다 오래된 일정은 더 건드리지 않는다). */
+    val KEEP_PAST: Duration = Duration.ofDays(14)
+    /** 반복 내 마감은 앞으로 이만큼의 회차를 펼쳐 하나씩 넣는다. */
+    val REPEAT_AHEAD: Duration = Duration.ofDays(60)
+    /** 이보다 오래된 매핑은 잊는다(일정은 캘린더에 그대로 둔다). */
+    val FORGET_AFTER: Duration = Duration.ofDays(180)
+
+    fun etlKey(courseId: Long, assignmentId: Long) = "etl:$courseId:$assignmentId"
+    fun mineKey(d: MyDeadline): String = "mine:${d.id}" + (d.occurrence?.let { ":${it.toEpochDay()}" } ?: "")
+    fun prefixOf(key: String): String = key.substringBefore(':')
+
+    /** `youngmin://item/{key}`에서 내 마감 ID(없으면 null). 캘린더 앱의 "앱에서 열기"용. */
+    fun mineIdFromUri(uri: String?): Long? {
+        val key = uri?.removePrefix(APP_URI_PREFIX)?.takeIf { uri.startsWith(APP_URI_PREFIX) } ?: return null
+        if (prefixOf(key) != "mine") return null
+        return key.split(':').getOrNull(1)?.toLongOrNull()
+    }
+
+    fun hash(parts: List<String>): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        parts.forEach { md.update(it.toByteArray(Charsets.UTF_8)); md.update(0) }
+        return md.digest().take(12).joinToString("") { "%02x".format(it) }
+    }
+
+    // ---- 내보낼 항목 -------------------------------------------------------------
+
+    /** 캘린더에 쓸 eTL 링크: eTL 주소이고 쿼리·조각이 없는 것만(서명 링크·토큰이 붙을 여지를 없앤다). */
+    fun safeEtlUrl(url: String?): String? = NoticeText.safeUrl(url)?.takeIf { '?' !in it && '#' !in it }
+
+    fun etlTitle(a: AssignmentItem): String =
+        "[${NoticeText.clean(TimetableLogic.shortName(a.courseName)).ifEmpty { "eTL" }}] ${NoticeText.clean(a.name)}" +
+            (if (a.submitted) " (제출함)" else "")
+
+    fun etlDescription(a: AssignmentItem): String = listOfNotNull(
+        "eTL 과제 · ${NoticeText.clean(a.courseName)}",
+        if (a.submitted) "제출함" else if (!a.online) "오프라인 제출" else null,
+        safeEtlUrl(a.url),
+        FOOTER,
+    ).joinToString("\n")
+
+    fun mineTitle(d: MyDeadline): String = "[내 마감] ${NoticeText.clean(d.title)}" + (if (d.done) " (완료)" else "")
+
+    fun mineDescription(d: MyDeadline): String = listOfNotNull(
+        d.memo.trim().takeIf { it.isNotEmpty() }?.let { cleanMultiline(it) },
+        "내 마감" + (if (d.repeat != null) " · ${MyDeadlines.repeatLabel(d)}" else ""),
+        FOOTER,
+    ).joinToString("\n")
+
+    const val FOOTER = "영민이 앱이 넣은 일정이에요. 앱에서 바뀌면 여기도 바뀌어요."
+
+    /** 줄바꿈은 남기고 줄마다 제어·보이지 않는 문자를 정리한다. */
+    fun cleanMultiline(s: String): String = s.lines().joinToString("\n") { NoticeText.clean(it) }.trim()
+
+    fun etlItem(a: AssignmentItem): CalItem? {
+        val due = a.due ?: return null
+        return CalItem(etlKey(a.courseId, a.assignmentId), etlTitle(a), due, due, etlDescription(a), safeEtlUrl(a.url))
+    }
+
+    fun mineItem(d: MyDeadline): CalItem = CalItem(mineKey(d), mineTitle(d), d.due, d.due, mineDescription(d))
+
+    /**
+     * 캘린더에 있어야 할 일정. [assignments]가 null이면(받아 둔 eTL 과제가 없음) eTL 쪽은 비우되 [authoritative]에서 빼서
+     * 이미 넣은 eTL 일정을 지우지 않는다. 숨긴 과목은 넣지 않는다. 마감이 [KEEP_PAST]보다 오래된 것은 넣지 않는다.
+     * 반복 내 마감은 [now]−[KEEP_PAST] ~ [now]+[REPEAT_AHEAD]의 회차를 하나씩 펼친다(RRULE을 쓰지 않는다).
+     */
+    data class Desired(val items: List<CalItem>, val authoritative: Set<String>)
+
+    fun desired(
+        settings: CalendarExportSettings,
+        assignments: List<AssignmentItem>?,
+        mine: List<MyDeadline>,
+        courses: CourseFilter,
+        now: Instant,
+    ): Desired {
+        val from = now.minus(KEEP_PAST)
+        val out = mutableListOf<CalItem>()
+        if (settings.includeEtl && assignments != null) {
+            assignments.asSequence()
+                .filter { it.courseId > 0 && !courses.hidden(it.courseId) }
+                .filter { it.due != null && !it.due.isBefore(from) }
+                .filter { settings.includeDone || !it.submitted }
+                .mapNotNull(::etlItem)
+                .forEach { out += it }
+        }
+        if (settings.includeMine) {
+            for (d in mine) {
+                val list = if (d.repeat == null) listOf(d).filter { !it.due.isBefore(from) }
+                else MyDeadlines.occurrences(d, from, now.plus(REPEAT_AHEAD))
+                list.filter { settings.includeDone || !it.done }.forEach { out += mineItem(it) }
+            }
+        }
+        val authoritative = buildSet {
+            add("mine")
+            if (!settings.includeEtl || assignments != null) add("etl")
+        }
+        return Desired(out.distinctBy { it.key }, authoritative)
+    }
+
+    // ---- 맞추기(reconcile) -------------------------------------------------------
+
+    /** 매핑 한 줄. [eventId]가 [TOMBSTONE]이면 사용자가 캘린더에서 지운 일정(다시 만들지 않는다). */
+    data class Entry(val eventId: Long, val hash: String, val dueMillis: Long) {
+        val tombstone: Boolean get() = eventId == TOMBSTONE
+    }
+
+    const val TOMBSTONE = -1L
+
+    sealed class Op {
+        data class Insert(val item: CalItem) : Op()
+        data class Update(val eventId: Long, val item: CalItem) : Op()
+        data class Delete(val key: String, val eventId: Long) : Op()
+    }
+
+    data class Plan(
+        val ops: List<Op>,
+        /** 캘린더에서 없어진 일정 → 묘비로 바꿀 키. */
+        val tombstone: List<String>,
+        /** 매핑에서만 지울 키(일정은 건드리지 않음). */
+        val forget: List<String>,
+    ) {
+        val inserts get() = ops.count { it is Op.Insert }
+        val updates get() = ops.count { it is Op.Update }
+        val deletes get() = ops.count { it is Op.Delete }
+    }
+
+    /**
+     * [mapping]과 [desired]를 비교해 할 일을 정한다. [live]는 매핑된 일정 중 캘린더에 아직 있는(DELETED=0) 일정 ID.
+     * - 새 항목은 넣고, 내용이 바뀐 항목은 고친다.
+     * - 사용자가 캘린더에서 지운 일정(매핑은 있는데 [live]에 없음)은 묘비로 남기고 다시 만들지 않는다.
+     * - 원본이 사라졌거나 제출·완료된 항목은 지운다. 단 [Desired.authoritative]에 없는 종류는 건드리지 않고,
+     *   마감이 [KEEP_PAST]보다 오래된 일정은 지난 기록으로 남겨 둔다([FORGET_AFTER]가 지나면 매핑만 잊는다).
+     */
+    fun plan(desired: Desired, mapping: Map<String, Entry>, live: Set<Long>, now: Instant): Plan {
+        val ops = mutableListOf<Op>()
+        val tomb = mutableListOf<String>()
+        val forget = mutableListOf<String>()
+        val wanted = desired.items.associateBy { it.key }
+        for (item in desired.items) {
+            val e = mapping[item.key]
+            when {
+                e == null -> ops += Op.Insert(item)
+                e.tombstone -> Unit
+                e.eventId !in live -> tomb += item.key
+                e.hash != item.hash -> ops += Op.Update(e.eventId, item)
+            }
+        }
+        val keepFrom = now.minus(KEEP_PAST).toEpochMilli()
+        val forgetBefore = now.minus(FORGET_AFTER).toEpochMilli()
+        for ((key, e) in mapping) {
+            if (key in wanted) continue
+            when {
+                prefixOf(key) !in desired.authoritative -> Unit
+                e.tombstone || e.eventId !in live -> forget += key
+                e.dueMillis < forgetBefore -> forget += key
+                e.dueMillis < keepFrom -> Unit
+                else -> ops += Op.Delete(key, e.eventId)
+            }
+        }
+        return Plan(ops, tomb, forget)
+    }
+
+    fun mappingToJson(calendarId: Long, entries: Map<String, Entry>): String = JSONObject()
+        .put("version", 1)
+        .put("calendarId", calendarId)
+        .put("entries", JSONObject().also { o ->
+            entries.forEach { (k, e) -> o.put(k, JSONArray().put(e.eventId).put(e.hash).put(e.dueMillis)) }
+        }).toString()
+
+    data class Mapping(val calendarId: Long, val entries: Map<String, Entry>)
+
+    fun mappingFromJson(s: String?): Mapping? = try {
+        val o = JSONObject(s ?: throw IllegalArgumentException())
+        val entries = mutableMapOf<String, Entry>()
+        o.optJSONObject("entries")?.let { e ->
+            e.keys().forEach { k ->
+                val a = e.optJSONArray(k) ?: return@forEach
+                entries[k] = Entry(a.optLong(0, TOMBSTONE), a.optString(1, ""), a.optLong(2, 0L))
+            }
+        }
+        Mapping(o.optLong("calendarId", -1L), entries)
+    } catch (_: Exception) {
+        null
+    }
+
+    // ---- 반복 규칙(RRULE) ---------------------------------------------------------
+
+    private val BYDAY = listOf("MO", "TU", "WE", "TH", "FR", "SA", "SU")
+    private val UTC_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
+    private val LOCAL_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss").withZone(ZONE)
+
+    fun byDay(days: Collection<DayOfWeek>): String = days.sorted().joinToString(",") { BYDAY[it.value - 1] }
+
+    /**
+     * 내 마감 반복 규칙 → RFC 5545 RRULE(앞의 `RRULE:` 없이). 반복이 없으면 null.
+     * - 매월: 시작일이 28일 이하면 `BYMONTHDAY=d`, 31일이면 `BYMONTHDAY=-1`(앱처럼 그달 말일).
+     *   29·30일이면 `BYMONTHDAY=d`를 쓰므로 그날이 없는 2월 회차는 캘린더 앱에서 빠진다(앱은 2월 말일로 맞춘다. 알려진 차이).
+     * - 격주: `INTERVAL=2;WKST=MO`. 시작 시각([dtstartFor])이 규칙에 맞는 회차여야 앱과 같은 주에 맞춰진다.
+     * - 끝 날짜: 그날(KST) 23:59:59를 UTC로 바꾼 `UNTIL`(그날 회차 포함).
+     */
+    fun rrule(d: MyDeadline): String? {
+        val r = d.repeat ?: return null
+        val start = d.due.atZone(ZONE).toLocalDate()
+        val base = when (r.freq) {
+            MyRepeat.Freq.DAILY -> "FREQ=DAILY"
+            MyRepeat.Freq.WEEKLY -> "FREQ=WEEKLY;BYDAY=${byDay(MyDeadlines.weekdaysOf(d))}"
+            MyRepeat.Freq.BIWEEKLY -> "FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=${byDay(MyDeadlines.weekdaysOf(d))}"
+            MyRepeat.Freq.MONTHLY -> "FREQ=MONTHLY;BYMONTHDAY=" + (if (start.dayOfMonth == 31) "-1" else start.dayOfMonth.toString())
+        }
+        return base + (r.until?.let { ";UNTIL=" + UTC_FMT.format(it.atTime(23, 59, 59).atZone(ZONE)) } ?: "")
+    }
+
+    /** 이 날짜가 [rrule]이 만드는 회차인가(29·30일 매월 반복의 2월 말일처럼 앱과 다른 날을 거른다). */
+    private fun rruleHas(d: MyDeadline, date: LocalDate): Boolean {
+        val r = d.repeat ?: return true
+        if (r.freq != MyRepeat.Freq.MONTHLY) return true
+        val day = d.due.atZone(ZONE).dayOfMonth
+        return day == 31 || date.dayOfMonth == day
+    }
+
+    /**
+     * 반복 마감을 RRULE로 넣을 때 시작 회차: [from] 회차(없으면 첫 회차)부터 규칙에 맞는 첫 회차. [d]는 저장된 원래 항목.
+     * 없으면 null.
+     */
+    fun dtstartFor(d: MyDeadline, from: MyDeadline? = null): MyDeadline? {
+        if (d.repeat == null) return d
+        val begin = (from?.due ?: d.due).minusSeconds(1)
+        return MyDeadlines.occurrences(d, begin, begin.plus(Duration.ofDays(400)))
+            .firstOrNull { rruleHas(d, it.occurrence ?: return@firstOrNull false) }
+    }
+
+    fun utc(t: Instant): String = UTC_FMT.format(t)
+    fun local(t: Instant): String = LOCAL_FMT.format(t)
+
+    // ---- .ics(RFC 5545) ---------------------------------------------------------
+
+    /** TEXT 값 이스케이프: `\` `;` `,` 줄바꿈. 그 밖의 제어문자는 지운다. */
+    fun escapeText(s: String): String {
+        val sb = StringBuilder(s.length + 8)
+        var i = 0
+        while (i < s.length) {
+            val ch = s[i]
+            when {
+                ch == '\\' -> sb.append("\\\\")
+                ch == ';' -> sb.append("\\;")
+                ch == ',' -> sb.append("\\,")
+                ch == '\r' -> { sb.append("\\n"); if (i + 1 < s.length && s[i + 1] == '\n') i++ }
+                ch == '\n' -> sb.append("\\n")
+                Character.isISOControl(ch) -> Unit
+                else -> sb.append(ch)
+            }
+            i++
+        }
+        return sb.toString()
+    }
+
+    /** 한 줄을 75옥텟(UTF-8)씩 접는다. 이어지는 줄은 공백 하나로 시작한다. 글자(코드 포인트)를 가운데서 자르지 않는다. */
+    fun fold(line: String): String {
+        val sb = StringBuilder(line.length + 8)
+        var bytes = 0
+        var limit = 75
+        var i = 0
+        while (i < line.length) {
+            val cp = line.codePointAt(i)
+            val n = Character.charCount(cp)
+            val b = when {
+                cp < 0x80 -> 1
+                cp < 0x800 -> 2
+                cp < 0x10000 -> 3
+                else -> 4
+            }
+            if (bytes + b > limit) {
+                sb.append("\r\n ")
+                bytes = 1
+                limit = 75
+            }
+            sb.appendCodePoint(cp)
+            bytes += b
+            i += n
+        }
+        return sb.toString()
+    }
+
+    /**
+     * eTL 과제와 내 마감을 VCALENDAR로. 반복 내 마감은 펼치지 않고 RRULE 하나로 넣고, 건너뛴 회차(와 [CalendarExportSettings.includeDone]이
+     * 꺼져 있으면 완료한 회차)는 EXDATE로 뺀다. 0분짜리 일정이라 DTEND는 넣지 않는다(RFC 5545: DTEND는 DTSTART보다 뒤여야 함).
+     */
+    fun ics(
+        settings: CalendarExportSettings,
+        assignments: List<AssignmentItem>,
+        mine: List<MyDeadline>,
+        courses: CourseFilter,
+        now: Instant,
+    ): String {
+        val from = now.minus(KEEP_PAST)
+        val lines = mutableListOf(
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//etl-android//Youngmin//KO",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH",
+            "X-WR-CALNAME:${escapeText("영민이")}",
+            "X-WR-TIMEZONE:$TZ_ID",
+            "BEGIN:VTIMEZONE",
+            "TZID:$TZ_ID",
+            "BEGIN:STANDARD",
+            "DTSTART:19700101T000000",
+            "TZOFFSETFROM:+0900",
+            "TZOFFSETTO:+0900",
+            "TZNAME:KST",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+        )
+        val stamp = utc(now)
+        fun event(uidKey: String, title: String, start: Instant, desc: String, url: String?, extra: List<String> = emptyList()) {
+            lines += "BEGIN:VEVENT"
+            lines += "UID:${uidKey.replace(':', '-')}@youngmin.etl-android"
+            lines += "DTSTAMP:$stamp"
+            lines += "DTSTART;TZID=$TZ_ID:${local(start)}"
+            lines += extra
+            lines += "SUMMARY:${escapeText(title)}"
+            lines += "DESCRIPTION:${escapeText(desc)}"
+            if (url != null) lines += "URL:$url"
+            lines += "TRANSP:TRANSPARENT"
+            lines += "END:VEVENT"
+        }
+        if (settings.includeEtl) {
+            assignments.asSequence()
+                .filter { it.courseId > 0 && !courses.hidden(it.courseId) }
+                .filter { it.due != null && !it.due.isBefore(from) }
+                .filter { settings.includeDone || !it.submitted }
+                .sortedBy { it.due }
+                .forEach { a -> etlItem(a)?.let { event(it.key, it.title, it.start, it.description, it.url) } }
+        }
+        if (settings.includeMine) {
+            for (d in mine.sortedBy { it.due }) {
+                val r = d.repeat
+                if (r == null) {
+                    if (d.due.isBefore(from) || (!settings.includeDone && d.done)) continue
+                    event(mineKey(d), mineTitle(d), d.due, mineDescription(d), null)
+                    continue
+                }
+                if (r.until != null && r.until.isBefore(from.atZone(ZONE).toLocalDate())) continue
+                val first = dtstartFor(d) ?: continue
+                val time = d.due.atZone(ZONE).toLocalTime()
+                val ex = (d.skipDates + if (settings.includeDone) emptySet() else d.doneDates)
+                    .filter { !it.isBefore(first.occurrence ?: it) }.sorted()
+                    .map { local(it.atTime(time).atZone(ZONE).toInstant()) }
+                val extra = listOfNotNull(
+                    "RRULE:${rrule(d)}",
+                    ex.takeIf { it.isNotEmpty() }?.let { "EXDATE;TZID=$TZ_ID:${it.joinToString(",")}" },
+                )
+                event("mine:${d.id}", mineTitle(d.copy(done = false)), first.due, mineDescription(d), null, extra)
+            }
+        }
+        lines += "END:VCALENDAR"
+        return lines.joinToString("") { fold(it) + "\r\n" }
+    }
+
+    fun icsFileName(now: Instant): String = "youngmin-" + DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZONE).format(now) + ".ics"
+
+    // ---- 상태 문구 ---------------------------------------------------------------
+
+    fun resultLabel(plan: Plan, at: Instant): String {
+        val z = at.atZone(ZONE)
+        val parts = listOfNotNull(
+            plan.inserts.takeIf { it > 0 }?.let { "추가 $it" },
+            plan.updates.takeIf { it > 0 }?.let { "바뀜 $it" },
+            plan.deletes.takeIf { it > 0 }?.let { "지움 $it" },
+        )
+        return "%d/%d %02d:%02d 내보냄 · ".format(z.monthValue, z.dayOfMonth, z.hour, z.minute) + (parts.joinToString(" · ").ifEmpty { "바뀐 것 없음" })
+    }
+}

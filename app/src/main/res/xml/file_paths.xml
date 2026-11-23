@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   다른 앱(뷰어, 공유)에 잠깐 열어 줄 수 있는 폴더. 비서 작업 폴더의 etl-files/(받은 파일, 쪽 이미지, 사용자 첨부)와
-  카메라 촬영 임시 폴더만. 토큰이나 설정이 있는 다른 폴더는 넣지 않는다.
+  카메라 촬영 임시 폴더, .ics 공유 임시 폴더만. 토큰이나 설정이 있는 다른 폴더는 넣지 않는다.
 -->
 <paths>
     <files-path name="etl" path="workspace/etl-files/" />
     <cache-path name="camera" path="camera/" />
+    <!-- 캘린더 .ics 공유용 임시 파일(마감 제목·시각만 들어 있다). -->
+    <cache-path name="ics" path="ics/" />
     <external-files-path name="downloads" path="Download/etl/" />
 </paths>
