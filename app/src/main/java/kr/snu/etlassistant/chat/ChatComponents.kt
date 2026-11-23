@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +48,8 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role as SemRole
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
@@ -101,9 +105,23 @@ fun ChatTopBar(onMenu: () -> Unit, onNewChat: () -> Unit, onSettings: () -> Unit
         IconButton(onClick = onNewChat) {
             Icon(Icons.Outlined.AddComment, contentDescription = "새 대화", tint = c.foregroundNeutralPrimary)
         }
+        ThemeToggleButton()
         IconButton(onClick = onSettings) {
             Icon(Icons.Outlined.Settings, contentDescription = "설정", tint = c.foregroundNeutralPrimary)
         }
+    }
+}
+
+@Composable
+internal fun ThemeToggleButton() {
+    val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    IconButton(onClick = { AppAppearance.save(context, if (dark) ThemeMode.LIGHT else ThemeMode.DARK) }) {
+        Icon(
+            if (dark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
+            contentDescription = if (dark) "라이트 모드로 전환" else "다크 모드로 전환",
+            tint = DesignSystemTheme.colors.foregroundNeutralPrimary,
+        )
     }
 }
 

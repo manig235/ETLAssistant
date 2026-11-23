@@ -865,15 +865,14 @@ private fun AboutSection(s: SettingsState, a: SettingsActions) {
             val newVersion = s.updateVersion
             if (newVersion != null && s.updateUrl != null) {
                 HyperLink(UpdateLogic.availableText(newVersion), onClickLabel = "업데이트 APK 받기", onClick = a.openUpdate)
-            } else {
-                HyperLink(
-                    if (s.updateChecking) "확인하는 중…" else "업데이트 확인",
-                    onClickLabel = "새 버전 확인",
-                    enabled = !s.updateChecking,
-                    onClick = a.checkUpdate,
-                )
-                s.updateResult?.let { Caption(it) }
             }
+            HyperLink(
+                if (s.updateChecking) "확인하는 중…" else "업데이트 확인",
+                onClickLabel = "새 버전 확인",
+                enabled = !s.updateChecking,
+                onClick = a.checkUpdate,
+            )
+            s.updateResult?.let { Caption(it) }
         }
     }
 

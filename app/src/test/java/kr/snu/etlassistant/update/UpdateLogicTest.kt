@@ -43,6 +43,19 @@ class UpdateLogicTest {
         assertFalse(UpdateLogic.isNewer("v0.1.8", "?"))
     }
 
+    @Test fun published024And025AreDetectedByPreviousVersions() {
+        val published = UpdateLogic.parseRelease(release(
+            tag = "v0.2.4", url = "https://github.com/manig235/ETLAssistant/releases/tag/v0.2.4",
+            assets = """[{"name":"youngmin-v0.2.4.apk","size":164788245},{"name":"youngmin.apk","size":164788245}]""",
+        ))!!
+        assertTrue(UpdateLogic.isNewer(published.tag, "0.2.2"))
+        assertTrue(UpdateLogic.isNewer(published.tag, "0.2.3"))
+        assertFalse(UpdateLogic.isNewer(published.tag, "0.2.4"))
+        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.2.4/youngmin-v0.2.4.apk", published.downloadUrl)
+        assertTrue(UpdateLogic.shouldNotify(published, "0.2.3", "v0.2.3"))
+        assertTrue(UpdateLogic.isNewer("v0.2.5", "0.2.4"))
+    }
+
     @Test fun parseRelease() {
         val r = UpdateLogic.parseRelease(release())
         assertNotNull(r)

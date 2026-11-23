@@ -88,8 +88,8 @@ object UpdateChecker {
     sealed class Outcome {
         /** 새 버전이 있다. */
         data class Available(val info: ReleaseInfo) : Outcome()
-        /** 지금 버전이 최신이다(또는 Release가 아직 없다). */
-        data object UpToDate : Outcome()
+        /** 설치된 버전 이상으로 새로운 Release가 없다. 실제 확인한 공개 버전을 함께 돌려준다. */
+        data class UpToDate(val latestVersion: String) : Outcome()
         data class Failed(val reason: String) : Outcome()
     }
 
@@ -138,7 +138,7 @@ object UpdateChecker {
                         if (post(app, outcome.info)) store.notifiedTag = outcome.info.tag
                     }
                 }
-                Outcome.UpToDate -> store.latest = null
+                is Outcome.UpToDate -> store.latest = null
                 is Outcome.Failed -> {}
             }
             main.post { checkedTick.value++ }
@@ -156,16 +156,18 @@ object UpdateChecker {
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
                 useCaches = false
+                setRequestProperty("Cache-Control", "no-cache")
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("User-Agent", USER_AGENT)
             }
             when (val code = conn.responseCode) {
                 200 -> {
                     val body = readCapped(conn) ?: return Outcome.Failed("응답이 너무 커요")
-                    val info = UpdateLogic.parseRelease(body) ?: return Outcome.UpToDate
-                    if (UpdateLogic.isNewer(info.tag, current)) Outcome.Available(info) else Outcome.UpToDate
+                    val info = UpdateLogic.parseRelease(body) ?: return Outcome.Failed("설치 파일이 있는 정식 릴리스를 확인하지 못했어요")
+                    if (UpdateLogic.parseVersion(current) == null) return Outcome.Failed("설치된 앱의 버전을 읽지 못했어요")
+                    if (UpdateLogic.isNewer(info.tag, current)) Outcome.Available(info) else Outcome.UpToDate(info.version)
                 }
-                404 -> Outcome.UpToDate // 아직 Release가 없다.
+                404 -> Outcome.Failed("공개된 릴리스를 찾지 못했어요")
                 else -> Outcome.Failed("HTTP $code")
             }
         } catch (e: Exception) {

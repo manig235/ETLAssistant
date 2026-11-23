@@ -129,7 +129,7 @@ internal fun WeeklyTimetable(weekly: TimetableLogic.Weekly, modifier: Modifier =
                                 .clip(RoundedCornerShape(6.dp)).background(background)
                                 .clickable(onClickLabel = "수업 상세 보기", role = Role.Button) { selectedId = block.course.courseId }
                                 .semantics(mergeDescendants = true) {
-                                    contentDescription = "$name, ${block.meeting.day}요일, ${block.meeting.start}~${block.meeting.end}"
+                                    contentDescription = "$name, ${block.meeting.day}요일, ${block.meeting.start}~${block.meeting.end}, ${TimetableGridLogic.roomLabel(block.meeting.room)}"
                                 }.padding(horizontal = 5.dp, vertical = if (block.duration < 60) 3.dp else 5.dp),
                         ) {
                             Text(name, color = foreground, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium,
@@ -137,9 +137,9 @@ internal fun WeeklyTimetable(weekly: TimetableLogic.Weekly, modifier: Modifier =
                                 maxLines = if (block.duration < 60 || narrow) 1 else if (block.duration <= 90) 2 else 4,
                                 overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.height(if (block.duration < 60) 2.dp else 3.dp))
-                            Text(if (narrow) "${block.meeting.start}\n${block.meeting.end}" else "${block.meeting.start}–${block.meeting.end}",
+                            Text(block.meeting.room?.trim().orEmpty().ifBlank { "강의실 미정" },
                                 color = foreground.copy(alpha = .85f), fontSize = 9.sp, lineHeight = 11.sp,
-                                maxLines = if (narrow) 2 else 1, softWrap = narrow)
+                                maxLines = if (narrow) 2 else 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }

@@ -216,7 +216,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
                 state.updateChecking = false
                 state.updateResult = when (outcome) {
                     is UpdateChecker.Outcome.Available -> null
-                    UpdateChecker.Outcome.UpToDate -> "지금 최신 버전이에요"
+                    is UpdateChecker.Outcome.UpToDate -> "설치된 버전 ${UpdateChecker.currentVersion(app) ?: "?"} · 최신 공개 버전 ${outcome.latestVersion}"
                     is UpdateChecker.Outcome.Failed -> "확인하지 못했어요(${outcome.reason}). 인터넷 연결을 확인해 주세요"
                 }
                 refreshUpdate()
