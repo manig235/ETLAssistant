@@ -148,22 +148,33 @@ class BoardTimetableTest {
     }
 
     @Test fun professorComesFromSyllabusAndFallsBackToCourseDetails() {
-        assertEquals("홍교수", TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":"<b>홍교수</b>"},"LISTTAB01":{"profNm":"김교수"}}""")))
-        assertEquals("김교수", TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":" "},"LISTTAB01":{"profNm":"김교수"}}""")))
+        assertEquals("홍교수", TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":"<b>홍교수 (대표교수)</b>"},"LISTTAB01":{"profNm":"김교수（담당교수）"}}""")))
+        assertEquals("김교수", TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":" "},"LISTTAB01":{"profNm":"김교수（담당교수）"}}""")))
         assertNull(TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":null}}""")))
         assertNull(TimetableLogic.professor(null))
     }
 
+    @Test fun creditsComeOnlyFromExplicitCatalogMetadata() {
+        assertEquals(3.0, TimetableLogic.credits(JSONObject("""{"LISTTAB01":{"openPnt":"3"}}""")))
+        assertEquals(4.0, TimetableLogic.credits(JSONObject("""{"LISTTAB01":{"openPnt":4}}""")))
+        assertNull(TimetableLogic.credits(JSONObject("""{"LISTTAB01":{"openPnt":"미정"}}""")))
+        assertNull(TimetableLogic.credits(JSONObject("""{"LISTTAB01":{"openPnt":-1}}""")))
+        assertNull(TimetableLogic.credits(JSONObject()))
+    }
+
     @Test fun professorSurvivesCacheAndOldCacheStillShowsMeetings() {
-        val course = TimetableLogic.CourseMeetings(1,"과목",listOf(TimetableLogic.Meeting("월","09:00","10:00","301-302")),"홍교수")
+        val course = TimetableLogic.CourseMeetings(1,"과목",listOf(TimetableLogic.Meeting("월","09:00","10:00","301-302")),"홍교수(대표교수)", credits = 3.0)
         val current = TimetableLogic.Weekly("1",1000,listOf(course),emptyList())
-        assertEquals(current, TimetableLogic.fromJson(TimetableLogic.toJson(current)))
+        assertEquals(current.copy(courses = listOf(course.copy(professor = "홍교수"))),
+            TimetableLogic.fromJson(TimetableLogic.toJson(current)))
         val old = JSONObject(TimetableLogic.toJson(current)).put("version",1)
         old.getJSONArray("courses").getJSONObject(0).remove("professor")
+        old.getJSONArray("courses").getJSONObject(0).remove("credits")
         val restored = TimetableLogic.fromJson(old.toString())!!
         assertEquals(1, restored.metadataVersion)
         assertEquals(course.meetings, restored.courses.single().meetings)
         assertNull(restored.courses.single().professor)
+        assertNull(restored.courses.single().credits)
     }
 
     @Test fun partialMetadataFailurePreservesKnownMeetingsAndProfessor() {

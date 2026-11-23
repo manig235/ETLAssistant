@@ -132,11 +132,12 @@ class NotificationPlannerTest {
         assertTrue(n.bigText!!.startsWith("• 11/20(금) 18:00 · 자료구조 — HW1 (1일 6시간 남음)"))
     }
 
-    @Test fun singleWithForeignUrlHasNoUrl() {
-        val n = plan(snap(listOf(asg(5, hours(30), url = "https://evil.example.com/x")))).notices.single()
-        assertNull(n.url)
-        assertNull(plan(snap(listOf(asg(5, hours(30), url = "http://myetl.snu.ac.kr/x")))).notices.single().url)
-        assertNull(plan(snap(listOf(asg(5, hours(30), url = null)))).notices.single().url)
+    @Test fun singleRestoresMissingOrUnsafeAssignmentLinksFromIds() {
+        for (url in listOf(null, "", "https://evil.example.com/x", "http://myetl.snu.ac.kr/x",
+            "https://myetl.snu.ac.kr.evil.example/x", "https://myetl.snu.ac.kr/x\n" + "bad")) {
+            val n = plan(snap(listOf(asg(5, hours(30), url = url)))).notices.single()
+            assertEquals("https://myetl.snu.ac.kr/courses/1/assignments/5", n.url)
+        }
     }
 
     @Test fun sameWindowGroupedInto1Notice() {
@@ -145,7 +146,7 @@ class NotificationPlannerTest {
         val g = n[0]
         assertEquals("마감 임박 3건 · 24시간 이내", g.title)
         assertEquals("deadline:wm1440", g.tag)
-        assertNull(g.url)
+        assertEquals("https://myetl.snu.ac.kr/courses/1", g.url)
         val lines = g.bigText!!.lines()
         assertEquals(3, lines.size)
         // 마감 오름차순: 10h(2), 15h(3), 20h(1)
@@ -302,7 +303,7 @@ class NotificationPlannerTest {
         val n = plan(snap(n = list)).notices.single()
         assertEquals("새 공지 4건", n.title)
         assertEquals("ann:summary", n.tag)
-        assertNull(n.url)
+        assertEquals("https://myetl.snu.ac.kr/courses/1", n.url)
         assertEquals(setOf("ann:1", "ann:2", "ann:3", "ann:4"), n.firedKeys.toSet())
         assertEquals(4, n.bigText!!.lines().size)
         assertEquals("• [C1] 제목1", n.bigText!!.lines()[0])
@@ -328,9 +329,21 @@ class NotificationPlannerTest {
         assertTrue(n.bigText!!.endsWith("…"))
     }
 
-    @Test fun announcementForeignUrlRejected() {
-        val n = plan(snap(n = listOf(ann(1, url = "https://myetl.snu.ac.kr.evil.com/x")))).notices.single()
-        assertNull(n.url)
+    @Test fun announcementForeignOrMissingUrlRestoredFromIds() {
+        for (url in listOf(null, "https://myetl.snu.ac.kr.evil.com/x")) {
+            val n = plan(snap(n = listOf(ann(1, url = url)))).notices.single()
+            assertEquals("https://myetl.snu.ac.kr/courses/1/discussion_topics/1", n.url)
+        }
+    }
+
+    @Test fun summaryLinksUseCourseOrHomeButNeverSendPersonalDeadlinesToEtl() {
+        val acrossCourses = plan(snap(listOf(asg(1, hours(20)), asg(2, hours(20), cid = 2)))).notices.single()
+        assertEquals("https://myetl.snu.ac.kr/", acrossCourses.url)
+        val personal = listOf(asg(1, hours(20), cid = -1, url = null), asg(2, hours(20), cid = -1, url = null))
+        assertNull(plan(snap(personal)).notices.single().url)
+        assertNull(plan(snap(personal.take(1))).notices.single().url)
+        val announcements = (1L..4L).map { ann(it).copy(courseId = it) }
+        assertEquals("https://myetl.snu.ac.kr/", plan(snap(n = announcements)).notices.single().url)
     }
 
     @Test fun duplicateAnnouncementIdsCountOnce() {

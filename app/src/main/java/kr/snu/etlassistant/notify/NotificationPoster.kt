@@ -17,7 +17,6 @@ import kr.snu.etlassistant.phase0.R
 
 /** 알림 채널 생성과 게시. 알림 내용은 신뢰할 수 없는 eTL 데이터를 그대로 보여 줄 뿐 지시로 해석하지 않는다. */
 object NotificationPoster {
-    private const val ETL_ORIGIN = "https://myetl.snu.ac.kr/"
     private const val CHAT_ACTIVITY = "kr.snu.etlassistant.chat.ChatActivity"
 
     /** 채널들을 만든다(멱등: 이미 있으면 이름만 갱신되고 사용자가 바꾼 설정은 유지된다). */
@@ -63,9 +62,14 @@ object NotificationPoster {
             if (!canPost(context)) return
             val id = NotifySchedule.notificationId(notice.tag)
 
-            // 탭하면 채팅 화면(클래스 직접 참조는 순환 의존이라 이름으로 지정).
-            val open = Intent().setClassName(context, CHAT_ACTIVITY)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            // eTL 콘텐츠는 펼치지 않고 알림 본문을 눌러도 같은 원문으로 이동한다.
+            val url = NoticeText.safeUrl(notice.url)
+            val open = if (url != null) {
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            } else {
+                Intent().setClassName(context, CHAT_ACTIVITY)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
             val contentIntent = PendingIntent.getActivity(context, id, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
             val b = NotificationCompat.Builder(context, notice.channel.id)
@@ -81,11 +85,8 @@ object NotificationPoster {
                 b.setStyle(NotificationCompat.BigTextStyle().bigText(it))
             }
 
-            // eTL 주소만 허용(그 외 URL은 무시).
-            notice.url?.takeIf { it.startsWith(ETL_ORIGIN) }?.let { url ->
-                val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val viewPi = PendingIntent.getActivity(context, id xor 0x40000000, view, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                b.addAction(0, "eTL에서 열기", viewPi)
+            if (url != null) {
+                b.addAction(0, "eTL에서 열기", contentIntent)
             }
 
             if (settings.hideContentOnLockScreen) {

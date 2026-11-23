@@ -74,7 +74,7 @@ data class Notice(
     val text: String,
     /** 펼쳤을 때 보이는 긴 본문. null이면 [text]만. */
     val bigText: String? = null,
-    /** "eTL에서 열기" 액션이 여는 주소(https://myetl.snu.ac.kr/… 만). null이면 액션 없음. */
+    /** 본문 터치와 "eTL에서 열기"가 여는 주소(https://myetl.snu.ac.kr/… 만). null이면 앱으로 이동. */
     val url: String? = null,
     /** 같은 키의 알림은 갱신(교체)된다. 정수 알림 ID는 이 키의 해시로 만든다. */
     val tag: String,

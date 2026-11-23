@@ -250,6 +250,7 @@ object NotifyRunner {
                         title = "eTL 토큰을 확인해 주세요",
                         text = "토큰이 만료됐거나 올바르지 않아요. 설정에서 다시 저장해 주세요.",
                         tag = "auth",
+                        url = "${NoticeText.ETL_PREFIX}profile/settings",
                         firedKeys = listOf(AUTH_KEY),
                     ),
                     NotifySettingsStore(app).load(),

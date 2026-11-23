@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center"
+    android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingVertical="4dp"
+    android:background="@drawable/widget_background">
+    <TextView android:id="@+id/widget_item_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="다음 수업" android:textStyle="bold" android:textSize="14sp" android:gravity="center" android:letterSpacing="0.025" android:textColor="@color/widget_foreground"
+        android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false" />
+    <TextView android:id="@+id/widget_item_due" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="09:00 · 강의실" android:textSize="11sp" android:gravity="center" android:letterSpacing="0.025" android:layout_marginTop="2dp" android:textColor="@color/widget_accent"
+        android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false" />
+</LinearLayout>

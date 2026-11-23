@@ -173,11 +173,6 @@ internal fun TimetableScreen(
             }
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("주간 수업", style = t.body2Medium, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
-                    weekly?.let { Text("${it.courses.size}과목", style = t.caption1Regular, color = c.foregroundNeutralSecondary) }
-                }
-                Spacer(Modifier.height(8.dp))
                 val w = weekly
                 if (w == null) {
                     Text(if (loading) "가져오는 중…" else "오른쪽 위 + 버튼으로 수업을 추가해 보세요. eTL을 연결하면 수강 중인 수업도 자동으로 가져와요.",
@@ -199,7 +194,6 @@ internal fun TimetableScreen(
                         Text("보강 · 휴강", style = t.headline1Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
                         IconButton(onClick = { adding = true }) { Icon(Icons.Outlined.Add, contentDescription = "보강·휴강 추가", tint = c.foregroundBrandPrimary) }
                     }
-                    Text("공지로 바뀐 수업을 넣으면 AI 답변, 오늘 수업 브리핑, 수업 알림에 반영돼요. 시간이 바뀐 수업은 원래 날짜에 휴강, 새 시간에 보강을 넣으세요.", style = t.caption1Regular, color = c.foregroundNeutralSecondary)
                     Spacer(Modifier.height(8.dp))
                     if (changes.isEmpty()) Text("예정된 보강·휴강이 없어요", style = t.body2Regular, color = c.foregroundNeutralSecondary)
                     for (ch in changes) {

@@ -9,6 +9,7 @@ import java.time.DayOfWeek
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 
@@ -37,12 +38,12 @@ object DeadlineWidgetLogic {
             (uri.port == -1 || uri.port == 443)) uri.toString() else fallback
     }
 
-    /** 런처마다 2×2의 dp가 달라도 기본 두 항목을 유지하고, 세로로 늘리면 더 넣는다. */
-    fun capacity(heightDp: Int, fontScale: Float): Int {
+    /** 별도의 개수 상한 없이 실제 높이와 글자 크기에 들어가는 만큼 채운다. */
+    fun capacity(heightDp: Int, fontScale: Float, compact: Boolean = false): Int {
         val scale = fontScale.coerceAtLeast(1f)
-        val fitting = ((heightDp - 22 * scale - 12) / (38 * scale)).toInt().coerceAtLeast(1)
-        val desired = 2 + (heightDp - 180).coerceAtLeast(0) / 50
-        return minOf(fitting, desired).coerceIn(1, 16)
+        val available = heightDp - if (compact) 12f else 14f + 22f * scale
+        val row = (if (compact) 32f else 48f) * scale
+        return ((available + 1f) / (row + 1f)).toInt().coerceAtLeast(1)
     }
 
     fun dueLabel(due: Instant, now: Instant): String {
@@ -78,6 +79,25 @@ object TimetableWidgetLogic {
         val monday: LocalDate, val entries: List<Entry>, val grid: TimetableGridLogic.Grid,
         val byGridId: Map<Long, Entry>,
     )
+
+    data class NextClass(val entry: Entry, val startsAt: Instant, val switchesAt: Instant)
+
+    /** 시작 30분 뒤(더 짧은 수업은 종료 때) 다음 수업으로 넘긴다. 휴강은 제외한다. */
+    fun nextClass(weekly: TimetableLogic.Weekly?, changes: List<TimetableLogic.Change>, now: Instant): NextClass? {
+        val today = now.atZone(EtlLogic.KST).toLocalDate()
+        return (0L..7L).asSequence().flatMap { offset ->
+            val date = today.plusDays(offset)
+            TimetableLogic.day(weekly, date, changes).classes.asSequence().mapNotNull { row ->
+                val start = runCatching { date.atTime(LocalTime.parse(row.start)).atZone(EtlLogic.KST).toInstant() }.getOrNull()
+                    ?: return@mapNotNull null
+                val end = runCatching { date.atTime(LocalTime.parse(row.end)).atZone(EtlLogic.KST).toInstant() }.getOrNull()
+                    ?: return@mapNotNull null
+                if (!end.isAfter(start)) return@mapNotNull null
+                val cutoff = minOf(end, start.plusSeconds(30 * 60))
+                if (cutoff.isAfter(now)) NextClass(Entry(date, row, false), start, cutoff) else null
+            }
+        }.minByOrNull { it.startsAt }
+    }
 
     fun week(weekly: TimetableLogic.Weekly?, changes: List<TimetableLogic.Change>, today: LocalDate): Week {
         val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))

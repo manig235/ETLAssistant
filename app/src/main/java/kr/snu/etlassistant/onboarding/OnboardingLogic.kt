@@ -1,6 +1,8 @@
 package kr.snu.etlassistant.onboarding
 
 import android.content.Context
+import kr.snu.etlassistant.etl.TimetableLogic
+import kotlin.random.Random
 
 /** 첫 실행 안내의 단계. */
 enum class Step { WELCOME, TOKEN, LOGIN, NOTIFY, DONE }
@@ -41,9 +43,42 @@ object OnboardingLogic {
 
     val suggestions: List<String> = listOf(
         "이번 주 마감 과제 알려줘",
-        "새 공지 있어?",
-        "제출 안 한 과제 확인해줘",
+        "새 공지 중 중요한 내용만 정리해줘",
+        "오늘 수업 시간과 강의실 알려줘",
+        "최근 강의자료 핵심 내용 요약해줘",
+        "최근 강의자료 파일 받아줘",
+        "최근 과제가 제대로 제출됐는지 확인해줘",
     )
+
+    data class CourseOption(
+        val course: TimetableLogic.CourseMeetings,
+        val hasMaterials: Boolean = false,
+        val hasRecentAssignment: Boolean = false,
+    )
+
+    fun eligibleCourse(course: TimetableLogic.CourseMeetings): Boolean =
+        course.courseId > 0 && course.credits?.let { it in 3.0..4.0 } == true
+
+    /** 질문별로 실제 콘텐츠가 확인된 3~4학점 과목을 고른다. 가능하면 과목을 겹치지 않는다. */
+    fun personalizedSuggestions(courses: List<CourseOption>, random: Random = Random.Default): List<String> {
+        val eligible = courses.filter { eligibleCourse(it.course) }.map { option ->
+            val name = TimetableLogic.shortName(option.course.name)
+                .replace(Regex("[\\p{Cc}\\p{Cf}\\s]+"), " ").trim()
+            name to option
+        }.filter { it.first.isNotEmpty() }
+        val materials = eligible.filter { it.second.hasMaterials }.map { it.first }.distinct().sorted().shuffled(random)
+        val assignments = eligible.filter { it.second.hasRecentAssignment }.map { it.first }.distinct().sorted()
+        val assignment = assignments.filterNot { it in materials }.randomOrNull(random) ?: assignments.randomOrNull(random)
+        val separate = materials.filterNot { it == assignment }
+        val summary = separate.firstOrNull() ?: materials.firstOrNull()
+        val download = separate.firstOrNull { it != summary } ?: materials.firstOrNull { it != summary }
+            ?: materials.randomOrNull(random)
+        val picked = listOf(summary, download, assignment)
+        return suggestions.mapIndexed { index, question ->
+            val course = if (index >= 3) picked[index - 3] else null
+            if (course == null) question else "$course $question"
+        }
+    }
 }
 
 /** 안내를 끝냈는지 기록한다(앱 내부 SharedPreferences). */

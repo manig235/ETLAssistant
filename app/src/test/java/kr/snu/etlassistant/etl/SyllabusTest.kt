@@ -33,6 +33,7 @@ class SyllabusTest {
     @Test fun syllabusJsonSummarizesCatalog() {
         val o = TimetableLogic.syllabusJson(cc103)
         assertEquals("전기에너지변환 (001)", o.getString("course"))
+        assertEquals("한승용", o.getString("professor"))
         assertEquals("Understand machines", o.getString("goals")) // 한국어가 없으면 영어
         val grading = o.getJSONArray("grading")
         assertEquals(listOf("출석", "과제", "중간고사", "기말고사", "퀴즈"), (0 until grading.length()).map { grading.getJSONObject(it).getString("item") })

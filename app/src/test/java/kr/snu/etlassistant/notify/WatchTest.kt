@@ -36,6 +36,27 @@ class WatchTest {
         assertTrue(AssignmentWatch.diff(s1, snap(item(1, h(29)), item(2, h(30), score = 9.5), item(3, h(48))), now).second.isEmpty())
     }
 
+    @Test fun gradeRestoresMissingBlankOrForeignUrlAndKeepsValidDeepLinks() {
+        val (before, _) = AssignmentWatch.diff(WatchState(), snap(item(7, h(5))), now)
+        for (url in listOf(null, "", "https://other.example/grades", "http://myetl.snu.ac.kr/x")) {
+            val notice = AssignmentWatch.diff(before, snap(item(7, h(5), score = 9.0).copy(url = url)), now).second.single()
+            assertEquals("https://myetl.snu.ac.kr/courses/1/assignments/7", notice.url)
+        }
+        val original = "https://myetl.snu.ac.kr/courses/1/assignments/7?module_item_id=3"
+        val notice = AssignmentWatch.diff(before, snap(item(7, h(5), score = 9.0).copy(url = original)), now).second.single()
+        assertEquals(original, notice.url)
+    }
+
+    @Test fun gradeSummaryLinksToTheSharedCourseOrEtlHome() {
+        val beforeItems = (1L..4L).map { item(it, h(5)) }
+        val (before, _) = AssignmentWatch.diff(WatchState(), snap(*beforeItems.toTypedArray()), now)
+        val grades = beforeItems.map { it.copy(score = 8.0, url = null) }
+        val notice = AssignmentWatch.diff(before, snap(*grades.toTypedArray()), now).second.single()
+        assertEquals("https://myetl.snu.ac.kr/courses/1", notice.url)
+        val (_, across) = AssignmentWatch.diff(WatchState(true), snap(*(1L..4L).map { item(it, h(5), cid = it) }.toTypedArray()), now)
+        assertEquals("https://myetl.snu.ac.kr/", across.single().url)
+    }
+
     @Test fun manyChangesAreSummarisedAndMyDeadlinesIgnored() {
         val (s0, _) = AssignmentWatch.diff(WatchState(), snap(item(1, h(5))), now)
         val mine = item(99, h(3), cid = MyDeadlines.COURSE_ID)

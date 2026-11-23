@@ -79,6 +79,30 @@ internal object NoticeText {
         return u
     }
 
+    /** 내 일정은 eTL로 보내지 않는다. eTL 과제 링크가 없거나 부적절하면 ID로 복원한다. */
+    fun assignmentUrl(a: AssignmentItem): String? {
+        if (a.courseId <= 0) return null
+        return safeUrl(a.url) ?: if (a.assignmentId > 0)
+            "${ETL_PREFIX}courses/${a.courseId}/assignments/${a.assignmentId}"
+        else "${ETL_PREFIX}courses/${a.courseId}"
+    }
+
+    fun announcementUrl(a: AnnouncementItem): String = safeUrl(a.url) ?: when {
+        a.courseId > 0 && a.id > 0 -> "${ETL_PREFIX}courses/${a.courseId}/discussion_topics/${a.id}"
+        a.courseId > 0 -> "${ETL_PREFIX}courses/${a.courseId}"
+        else -> ETL_PREFIX
+    }
+
+    /** 한 강의의 묶음은 강의 화면으로, 여러 강의는 eTL 홈으로 연결한다. 내 일정만 있으면 앱을 연다. */
+    fun collectionUrl(courseIds: List<Long>): String? {
+        val etl = courseIds.filter { it > 0 }.distinct()
+        return when (etl.size) {
+            0 -> null
+            1 -> "${ETL_PREFIX}courses/${etl.single()}"
+            else -> ETL_PREFIX
+        }
+    }
+
     /** KST 고정 `11/23(월) 15:00`. */
     fun dateLabel(t: Instant?): String {
         if (t == null) return "마감일 없음"
@@ -217,7 +241,7 @@ object NotificationPlanner {
             title = title,
             text = text,
             bigText = NoticeText.dueLine(a, now),
-            url = NoticeText.safeUrl(a.url),
+            url = NoticeText.assignmentUrl(a),
             tag = "deadline:${a.courseId}:${a.assignmentId}",
             firedKeys = fired,
         )
@@ -232,7 +256,7 @@ object NotificationPlanner {
             title = NoticeText.cut("마감 임박 ${items.size}건 · ${windowLabel(w)} 이내", NoticeText.TITLE_MAX),
             text = text,
             bigText = NoticeText.joinLimited(items.map { NoticeText.dueLine(it, now) }, DEADLINE_BIG_LINES),
-            url = null,
+            url = NoticeText.collectionUrl(items.map { it.courseId }),
             tag = "deadline:wm$w",
             firedKeys = fired,
         )
@@ -258,7 +282,7 @@ object NotificationPlanner {
                     title = NoticeText.cut(NoticeText.clean(a.courseName) + " · " + Queries.announcementBadge(a.title, a.text), NoticeText.TITLE_MAX),
                     text = NoticeText.safe(a.title, NoticeText.LINE_MAX),
                     bigText = if (body.isEmpty()) null else NoticeText.cut(body, ANN_BODY_MAX),
-                    url = NoticeText.safeUrl(a.url),
+                    url = NoticeText.announcementUrl(a),
                     tag = "ann:${a.id}",
                     firedKeys = listOf("ann:${a.id}"),
                 )
@@ -274,7 +298,7 @@ object NotificationPlanner {
                 title = "새 공지 ${fresh.size}건",
                 text = NoticeText.cut(lines[0].removePrefix("• ") + " 외 ${fresh.size - 1}건", NoticeText.LINE_MAX),
                 bigText = NoticeText.joinLimited(lines, ANN_BIG_LINES),
-                url = null,
+                url = NoticeText.collectionUrl(fresh.map { it.courseId }) ?: NoticeText.ETL_PREFIX,
                 tag = "ann:summary",
                 firedKeys = fresh.map { "ann:${it.id}" },
             ),

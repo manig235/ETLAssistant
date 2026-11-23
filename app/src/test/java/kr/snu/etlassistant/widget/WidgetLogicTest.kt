@@ -19,7 +19,6 @@ class WidgetLogicTest {
         val mine = listOf(MyDeadline(2, "내 마감", now.plusSeconds(3600)))
         val items = DeadlineWidgetLogic.items(assignments, mine, now)
         assertEquals(listOf("mine-2", "etl-10-2", "etl-10-1"), items.map { it.key })
-        assertEquals(3, items.size)
         assertEquals("수업", items[1].source)
     }
 
@@ -40,12 +39,20 @@ class WidgetLogicTest {
         assertEquals(link, DeadlineWidgetLogic.items(listOf(assignment(9, now.plusSeconds(60), url = link)), emptyList(), now).single().url)
     }
 
-    @Test fun compactSizeHoldsTwoAndGrowingHeightAddsRowsWhileLargeFontsReduceCapacity() {
-        assertEquals(2, DeadlineWidgetLogic.capacity(110, 1f))
+    @Test fun fillsAvailableHeightWithoutAnItemCapAndRespectsLargerFonts() {
+        assertEquals(1, DeadlineWidgetLogic.capacity(110, 1f))
         assertEquals(2, DeadlineWidgetLogic.capacity(160, 1f))
-        assertTrue(DeadlineWidgetLogic.capacity(250, 1f) > 2)
-        assertTrue(DeadlineWidgetLogic.capacity(110, 1.5f) < DeadlineWidgetLogic.capacity(110, 1f))
+        assertEquals(4, DeadlineWidgetLogic.capacity(250, 1f))
+        assertTrue(DeadlineWidgetLogic.capacity(1000, 1f) > 16)
+        assertTrue(DeadlineWidgetLogic.capacity(250, 1.5f) < DeadlineWidgetLogic.capacity(250, 1f))
         assertEquals(1, DeadlineWidgetLogic.capacity(40, 2f))
+    }
+
+    @Test fun compactRowsUseTwoLinesAndGrowWithAvailableSpace() {
+        assertEquals(1, DeadlineWidgetLogic.capacity(40, 1f, compact = true))
+        assertEquals(3, DeadlineWidgetLogic.capacity(110, 1f, compact = true))
+        assertTrue(DeadlineWidgetLogic.capacity(250, 1f, compact = true) >
+            DeadlineWidgetLogic.capacity(250, 1f))
     }
 
     @Test fun labelsFollowKstDatesAndBoundaryDropsExpiredItems() {
@@ -64,6 +71,43 @@ class WidgetLogicTest {
         TimetableLogic.CourseMeetings(10, "정규 수업", listOf(TimetableLogic.Meeting("월", "09:00", "10:00", "301-101"))),
         TimetableLogic.CourseMeetings(-100, "직접 등록", listOf(TimetableLogic.Meeting("수", "10:00", "11:00", "동아리방"))),
     ), emptyList())
+
+    private fun at(time: String, days: Long = 0): Instant =
+        monday.plusDays(days).atTime(java.time.LocalTime.parse(time)).atZone(EtlLogic.KST).toInstant()
+
+    @Test fun nextClassStaysUntilThirtyMinutesAfterStartThenAdvances() {
+        for (time in listOf("08:59", "09:00", "09:29")) {
+            val next = TimetableWidgetLogic.nextClass(weekly(), emptyList(), at(time))!!
+            assertEquals(10L, next.entry.row.courseId)
+            assertEquals(at("09:30"), next.switchesAt)
+        }
+        val next = TimetableWidgetLogic.nextClass(weekly(), emptyList(), at("09:30"))!!
+        assertEquals(-100L, next.entry.row.courseId)
+        assertEquals(monday.plusDays(2), next.entry.date)
+    }
+
+    @Test fun nextClassSkipsCancellationIncludesMakeupAndSwitchesAtEarlyEnd() {
+        val changes = listOf(
+            TimetableLogic.Change(1, monday, "휴강", "정규 수업", 10),
+            TimetableLogic.Change(2, monday, "보강", "짧은 보강", null, "09:00", "09:20", "연습실"),
+        )
+        val next = TimetableWidgetLogic.nextClass(weekly(), changes, at("09:19"))!!
+        assertEquals("짧은 보강", next.entry.row.course)
+        assertEquals(at("09:20"), next.switchesAt)
+        assertEquals(-100L, TimetableWidgetLogic.nextClass(weekly(), changes, at("09:20"))!!.entry.row.courseId)
+    }
+
+    @Test fun nextClassLooksAcrossWeekBoundaryAndRejectsInvalidTimes() {
+        val next = TimetableWidgetLogic.nextClass(weekly(), emptyList(), at("23:59", 6))!!
+        assertEquals(monday.plusDays(7), next.entry.date)
+        assertEquals(at("09:00", 7), next.startsAt)
+        val bad = TimetableLogic.Weekly("bad", 1, listOf(TimetableLogic.CourseMeetings(1, "잘못된 수업", listOf(
+            TimetableLogic.Meeting("월", "bad", "10:00", null),
+            TimetableLogic.Meeting("월", "10:00", "09:00", null),
+        ))), emptyList())
+        assertNull(TimetableWidgetLogic.nextClass(bad, emptyList(), at("08:00")))
+        assertNull(TimetableWidgetLogic.nextClass(null, emptyList(), now))
+    }
 
     @Test fun currentWeekKeepsCancelledBlockAddsMakeupAndIncludesCustomClasses() {
         val changes = listOf(

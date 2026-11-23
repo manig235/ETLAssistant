@@ -22,7 +22,7 @@ object CustomTimetableLogic {
     fun normalize(course: TimetableLogic.CourseMeetings): TimetableLogic.CourseMeetings? {
         if (validationError(course) != null) return null
         return course.copy(
-            name = course.name.trim(), professor = course.professor?.trim()?.take(80)?.ifBlank { null },
+            name = course.name.trim(), professor = TimetableLogic.cleanProfessor(course.professor)?.take(80),
             meetings = course.meetings.map { it.copy(
                 start = LocalTime.parse(it.start).toString(), end = LocalTime.parse(it.end).toString(),
                 room = it.room?.trim()?.take(80)?.ifBlank { null },

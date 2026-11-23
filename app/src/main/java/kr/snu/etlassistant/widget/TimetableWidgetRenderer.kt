@@ -30,7 +30,6 @@ object TimetableWidgetRenderer {
             (heightDp * pixelScale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.scale(pixelScale, pixelScale)
-        val foreground = context.getColor(R.color.widget_foreground)
         val secondary = context.getColor(R.color.widget_secondary)
         val accent = context.getColor(R.color.widget_accent)
         val line = context.getColor(R.color.widget_separator)
@@ -39,7 +38,7 @@ object TimetableWidgetRenderer {
         val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
         val grid = week.grid
         val axis = 23f * fontScale
-        val header = 28f * fontScale
+        val header = 18f * fontScale
         val top = header + 5f
         val bottom = heightDp - 7f
         val column = (widthDp - axis) / grid.days.size
@@ -52,10 +51,8 @@ object TimetableWidgetRenderer {
             text.textAlign = Paint.Align.CENTER
             text.color = if (date == local.toLocalDate()) accent else secondary
             text.typeface = Typeface.create("sans-serif", if (date == local.toLocalDate()) Typeface.BOLD else Typeface.NORMAL)
-            text.textSize = 10f * fontScale
-            canvas.drawText(grid.days[i], center, 11f * fontScale, text)
-            text.textSize = 8f * fontScale
-            canvas.drawText("${date.monthValue}/${date.dayOfMonth}", center, 23f * fontScale, text)
+            text.textSize = 11f * fontScale
+            canvas.drawText(grid.days[i], center, 13f * fontScale, text)
         }
         text.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         for (h in grid.startHour..grid.endHour) {
@@ -65,7 +62,7 @@ object TimetableWidgetRenderer {
             canvas.drawLine(axis, y, widthDp.toFloat(), y, paint)
             text.color = secondary
             text.textAlign = Paint.Align.RIGHT
-            text.textSize = 8f * fontScale
+            text.textSize = 9f * fontScale
             canvas.drawText("%02d".format(h), axis - 4f, y + 3f, text)
         }
         for (i in 0..grid.days.size) {
@@ -91,19 +88,24 @@ object TimetableWidgetRenderer {
             if (contentWidth > 2) {
                 text.textAlign = Paint.Align.LEFT
                 text.color = if (entry.cancelled) secondary else Color.rgb(29, 42, 62)
-                text.textSize = 9f * fontScale
+                text.textSize = 11f * fontScale
+                text.letterSpacing = .025f
                 text.typeface = Typeface.create("sans-serif", Typeface.BOLD)
                 val lineHeight = text.fontMetrics.let { it.descent - it.ascent }
-                val maxLines = floor((bounds.height() - 4f) / lineHeight).toInt().coerceIn(1, 6)
+                val lineExtra = 1f * fontScale
+                val maxLines = floor((bounds.height() - 4f + lineExtra) / (lineHeight * 1.12f + lineExtra))
+                    .toInt().coerceIn(1, 6)
                 val title = (if (entry.cancelled) "휴강 · " else if (entry.row.kind == "보강") "보강 · " else "") + entry.row.course
                 val room = entry.row.room?.takeUnless { it.isBlank() || it == "미정" || it == "강의실 미정" }
                 val content = title + if (room != null && maxLines >= 3) "\n$room" else ""
                 val layout = StaticLayout.Builder.obtain(content, 0, content.length, text, contentWidth)
-                    .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false)
+                    .setLineSpacing(lineExtra, 1.12f)
                     .setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END).build()
-                canvas.translate(bounds.left + 3f, bounds.top + 2f)
+                canvas.translate(bounds.left + 3f, bounds.top + ((bounds.height() - layout.height) / 2f).coerceAtLeast(2f))
                 layout.draw(canvas)
             }
+            text.letterSpacing = 0f
             canvas.restoreToCount(save)
         }
 

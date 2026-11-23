@@ -2,6 +2,8 @@ package kr.snu.etlassistant.chat
 
 import android.Manifest
 import android.app.TimePickerDialog
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -104,6 +106,11 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             openHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
             openTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
             openMyDeadlines = { startActivity(Intent(this, MyDeadlinesActivity::class.java)) },
+            addDeadlineWidget = { pinWidget(kr.snu.etlassistant.widget.DeadlineWidgetProvider::class.java) },
+            addTimetableWidget = { pinWidget(kr.snu.etlassistant.widget.TimetableWidgetProvider::class.java) },
+            addNextClassWidget = { pinWidget(kr.snu.etlassistant.widget.NextClassWidgetProvider::class.java) },
+            addTallTimetableWidget = { pinWidget(kr.snu.etlassistant.widget.TallTimetableWidgetProvider::class.java) },
+            addCompactDeadlineWidget = { pinWidget(kr.snu.etlassistant.widget.CompactDeadlineWidgetProvider::class.java) },
             setCasualTone = { v ->
                 AppSettings.casualTone = v
                 state.casualTone = v
@@ -144,6 +151,17 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         refreshUpdate()
         state.modelChoice = CodexSession.modelChoice
         maybeLoadModels()
+    }
+
+    private fun pinWidget(provider: Class<out android.appwidget.AppWidgetProvider>) {
+        val manager = AppWidgetManager.getInstance(this)
+        val requested = runCatching {
+            manager.isRequestPinAppWidgetSupported &&
+                manager.requestPinAppWidget(ComponentName(this, provider), null, null)
+        }.getOrDefault(false)
+        if (!requested) {
+            toast("홈 화면을 길게 누르고 위젯 목록에서 영민이를 선택해 주세요.", long = true)
+        }
     }
 
     override fun onStop() {

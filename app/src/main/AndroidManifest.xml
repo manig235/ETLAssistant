@@ -48,6 +48,28 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/timetable_widget" />
         </receiver>
 
+        <receiver android:name="kr.snu.etlassistant.widget.CompactDeadlineWidgetProvider"
+            android:label="@string/widget_deadlines_compact_name" android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/deadline_compact_widget" />
+        </receiver>
+        <receiver android:name="kr.snu.etlassistant.widget.TallTimetableWidgetProvider"
+            android:label="@string/widget_timetable_tall_name" android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/timetable_tall_widget" />
+        </receiver>
+        <receiver android:name="kr.snu.etlassistant.widget.NextClassWidgetProvider"
+            android:label="@string/widget_next_class_name" android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/next_class_widget" />
+        </receiver>
+
         <receiver
             android:name="kr.snu.etlassistant.notify.DeadlineAlarmReceiver"
             android:exported="false" />

@@ -184,10 +184,8 @@ class UpdateLogicTest {
     @Test fun texts() {
         val r = UpdateLogic.parseRelease(release())!!
         assertEquals("새 버전 0.1.8이 나왔어요", UpdateLogic.notificationTitle(r))
+        assertEquals("새 버전 0.1.9가 나왔어요", UpdateLogic.notificationTitle(r.copy(version = "0.1.9")))
         assertEquals("눌러서 받아요 · 약 164MB", UpdateLogic.notificationText(r))
-        assertEquals("새 버전 0.1.9가 있어요", UpdateLogic.availableText("0.1.9"))
-        assertEquals("새 버전 0.2가 있어요", UpdateLogic.availableText("0.2"))
-        assertEquals("새 버전 0.1.10이 있어요", UpdateLogic.availableText("0.1.10"))
         assertNull(UpdateLogic.sizeText(999_999L))
         assertNull(UpdateLogic.sizeText(null))
         assertEquals("약 2MB", UpdateLogic.sizeText(1_600_000L))

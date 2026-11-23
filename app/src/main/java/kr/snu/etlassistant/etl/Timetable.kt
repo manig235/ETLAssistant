@@ -31,9 +31,9 @@ object TimetableLogic {
     private val MEETING = Regex("^\\s*([일월화수목금토])\\((\\d{1,2}:\\d{2})~(\\d{1,2}:\\d{2})\\)")
 
     data class Meeting(val day: String, val start: String, val end: String, val room: String?)
-    data class CourseMeetings(val courseId: Long, val name: String, val meetings: List<Meeting>, val professor: String? = null)
+    data class CourseMeetings(val courseId: Long, val name: String, val meetings: List<Meeting>, val professor: String? = null, val credits: Double? = null)
     data class Weekly(val ids: String, val fetchedAt: Long, val courses: List<CourseMeetings>, val errors: List<String>, val metadataVersion: Int = 2)
-    data class CatalogCourse(val meetings: List<Meeting>, val professor: String?, val metadataError: String? = null, val meetingError: String? = null)
+    data class CatalogCourse(val meetings: List<Meeting>, val professor: String?, val metadataError: String? = null, val meetingError: String? = null, val credits: Double? = null)
     data class ClassRow(val start: String, val end: String, val course: String, val courseId: Long?, val room: String?, val kind: String, val note: String? = null)
 
     /** 사용자가 넣은 보강·휴강(ttokttok-pet의 timetable.md 한 줄). 휴강은 [start]가 있으면 그 시각 수업만 뺀다. */
@@ -147,17 +147,30 @@ object TimetableLogic {
     /** "301-103(무선랜제공)" → "301-103". */
     fun cleanRoom(s: String?): String? = s?.replace(Regex("\\([^)]*\\)"), "")?.trim()?.ifEmpty { null }
 
+    private val PROFESSOR_ROLE = Regex(
+        "\\s*[（(][^()（）]*(?:교수|강사|교원|대표|담당|책임|instructor|professor)[^()（）]*[)）]",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** 이름은 유지하고 `(대표교수)` 같은 괄호 속 역할 표기만 뺀다. */
+    fun cleanProfessor(name: String?): String? = name?.let { EtlLogic.htmlToText(it, 200) }
+        ?.replace(PROFESSOR_ROLE, "")?.trim()?.ifBlank { null }
+
     /** 수강편람 강의계획서의 교수명. 비어 있는 필드는 상세 정보의 교수명으로 보완한다. */
     fun professor(detail: JSONObject?): String? = sequenceOf("LISTTAB03", "LISTTAB01")
         .mapNotNull { detail?.optJSONObject(it)?.str("profNm") }
-        .map { EtlLogic.htmlToText(it, 200).trim() }
-        .firstOrNull { it.isNotBlank() }
+        .mapNotNull(::cleanProfessor)
+        .firstOrNull()
+
+    /** 수강편람이 명시한 학점만 사용한다. 수업 시간이나 과목명으로 추측하지 않는다. */
+    fun credits(detail: JSONObject?): Double? = detail?.optJSONObject("LISTTAB01")?.str("openPnt")
+        ?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..30.0 }
 
     /** 일부 조회만 실패하면 이미 알던 시간을 보존하고, 새로 확인한 교수 정보는 반영한다. */
     fun refreshedCourse(id: Long, name: String, details: CatalogCourse?, previous: CourseMeetings?): CourseMeetings =
         CourseMeetings(id, name,
             if (details != null && details.meetingError == null) details.meetings else previous?.meetings.orEmpty(),
-            details?.professor ?: previous?.professor)
+            details?.professor ?: previous?.professor, details?.credits ?: previous?.credits)
 
     /** cc101ajax 응답의 수업들. */
     fun parseMeetings(detail: JSONObject?): List<Meeting> {
@@ -323,7 +336,7 @@ object TimetableLogic {
         .put("errors", JSONArray(w.errors))
         .put("courses", JSONArray().also { arr ->
             w.courses.forEach { c ->
-                arr.put(JSONObject().put("course_id", c.courseId).put("name", c.name).put("professor", c.professor ?: JSONObject.NULL).put("meetings", JSONArray().also { ms ->
+                arr.put(JSONObject().put("course_id", c.courseId).put("name", c.name).put("professor", c.professor ?: JSONObject.NULL).put("credits", c.credits ?: JSONObject.NULL).put("meetings", JSONArray().also { ms ->
                     c.meetings.forEach { m -> ms.put(JSONObject().put("day", m.day).put("start", m.start).put("end", m.end).put("room", m.room ?: JSONObject.NULL)) }
                 }))
             }
@@ -341,7 +354,7 @@ object TimetableLogic {
                 CourseMeetings(c.optLong("course_id"), c.optString("name"), (0 until ms.length()).mapNotNull { j ->
                     val m = ms.optJSONObject(j) ?: return@mapNotNull null
                     Meeting(m.optString("day"), m.optString("start"), m.optString("end"), m.str("room"))
-                }, c.str("professor"))
+                }, cleanProfessor(c.str("professor")), c.optDouble("credits", Double.NaN).takeIf { it.isFinite() && it in 0.0..30.0 })
             },
             metadataVersion = o.optInt("version"),
         )
@@ -385,8 +398,9 @@ object CatalogClient {
                     }
                 }
                 val professor = TimetableLogic.professor(syllabus.getOrNull()) ?: TimetableLogic.professor(detail)
+                val credits = TimetableLogic.credits(syllabus.getOrNull()) ?: TimetableLogic.credits(detail)
                 Result.success(TimetableLogic.CatalogCourse(meetings, professor,
-                    if (syllabus.isFailure && professor == null) "교수 정보를 가져오지 못했어요" else null, meetingError))
+                    if (syllabus.isFailure && professor == null) "교수 정보를 가져오지 못했어요" else null, meetingError, credits))
             } catch (e: IOException) {
                 Result.failure(Exception(netError(e)))
             } catch (e: Exception) {

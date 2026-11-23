@@ -83,7 +83,7 @@ import com.wanted.android.wanted.design.actions.button.textbutton.WantedTextButt
 import com.wanted.android.wanted.design.theme.DesignSystemTheme
 import kr.snu.etlassistant.codex.ModelChoice
 import kr.snu.etlassistant.codex.ModelInfo
-import kr.snu.etlassistant.onboarding.OnboardingLogic
+import kr.snu.etlassistant.onboarding.rememberSuggestionQuestions
 
 // ---- 상단 바 / 모델 칩 --------------------------------------------------------
 
@@ -176,10 +176,12 @@ fun StatusBanner(spec: BannerSpec, onClick: () -> Unit, modifier: Modifier = Mod
 
 // ---- 빈 화면 ------------------------------------------------------------------
 
-private val SuggestionIcons = listOf(Icons.Outlined.Event, Icons.Outlined.Campaign, Icons.Outlined.TaskAlt)
+private val SuggestionIcons = listOf(Icons.Outlined.Event, Icons.Outlined.Campaign, Icons.Outlined.Event,
+    Icons.Outlined.ChatBubbleOutline, Icons.Outlined.AttachFile, Icons.Outlined.TaskAlt)
 
 @Composable
 fun EmptyState(onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
+    val suggestions = rememberSuggestionQuestions()
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     Column(
@@ -210,7 +212,7 @@ fun EmptyState(onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(28.dp))
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OnboardingLogic.suggestions.forEachIndexed { i, s ->
+            suggestions.forEachIndexed { i, s ->
                 SuggestionCard(SuggestionIcons[i % SuggestionIcons.size], s) { onSuggestion(s) }
             }
         }

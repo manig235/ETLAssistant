@@ -26,6 +26,7 @@ import kr.snu.etlassistant.etl.EtlClient
 import kr.snu.etlassistant.etl.EtlLogic
 import kr.snu.etlassistant.etl.EtlService
 import kr.snu.etlassistant.etl.Timetable
+import kr.snu.etlassistant.etl.TimetableLogic
 import kr.snu.etlassistant.etl.TimetableChangeStore
 import kr.snu.etlassistant.etl.TimetableStore
 import kr.snu.etlassistant.notify.DeadlineAlarm
@@ -36,7 +37,6 @@ import kr.snu.etlassistant.notify.SnapshotFetcher
 import kr.snu.etlassistant.phase0.R
 import java.time.Duration
 import java.time.Instant
-import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 /** Codex와 알림 권한 없이 앱과 같은 로컬 데이터를 읽는 홈 화면 위젯. */
@@ -50,12 +50,13 @@ object HomeWidgets {
     private fun ids(context: Context, provider: Class<out AppWidgetProvider>): IntArray =
         AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, provider))
 
-    fun hasWidgets(context: Context): Boolean =
-        ids(context, DeadlineWidgetProvider::class.java).isNotEmpty() ||
-            ids(context, TimetableWidgetProvider::class.java).isNotEmpty()
+    private val deadlineProviders = listOf(DeadlineWidgetProvider::class.java, CompactDeadlineWidgetProvider::class.java)
+    private val weekProviders = listOf(TimetableWidgetProvider::class.java, TallTimetableWidgetProvider::class.java)
+    private val timetableProviders = weekProviders + NextClassWidgetProvider::class.java
 
-    internal fun hasDeadlines(context: Context) = ids(context, DeadlineWidgetProvider::class.java).isNotEmpty()
-    internal fun hasTimetable(context: Context) = ids(context, TimetableWidgetProvider::class.java).isNotEmpty()
+    fun hasWidgets(context: Context): Boolean = hasDeadlines(context) || hasTimetable(context)
+    internal fun hasDeadlines(context: Context) = deadlineProviders.any { ids(context, it).isNotEmpty() }
+    internal fun hasTimetable(context: Context) = timetableProviders.any { ids(context, it).isNotEmpty() }
 
     /** 저장하는 모든 경로(UI·AI·알림 조회)에서 호출한다. 렌더링 중에는 데이터를 쓰지 않는다. */
     fun dataChanged(context: Context) {
@@ -87,19 +88,29 @@ object HomeWidgets {
         val now = Instant.now()
         val snapshot = SnapshotCache(context).load()
         val items = DeadlineWidgetLogic.items(snapshot?.assignments.orEmpty(), MyDeadlineStore(context).load(), now)
-        ids(context, DeadlineWidgetProvider::class.java).forEach { id ->
-            val size = size(context, manager.getAppWidgetOptions(id), 110, 110)
-            manager.updateAppWidget(id, deadlines(context, items, snapshot?.takenAt, size, now))
+        for (provider in deadlineProviders) ids(context, provider).forEach { id ->
+            val compact = provider == CompactDeadlineWidgetProvider::class.java
+            val size = size(context, manager.getAppWidgetOptions(id), 110, if (compact) 40 else 110)
+            manager.updateAppWidget(id, deadlines(context, items, snapshot?.takenAt, size, now, compact))
         }
-        val week = TimetableWidgetLogic.week(TimetableStore(context).load(), TimetableChangeStore(context).load(),
-            LocalDate.now(EtlLogic.KST))
-        ids(context, TimetableWidgetProvider::class.java).forEach { id ->
-            val size = size(context, manager.getAppWidgetOptions(id), 250, 250)
+        val weekly = TimetableStore(context).load()
+        val changes = TimetableChangeStore(context).load()
+        val week = TimetableWidgetLogic.week(weekly, changes, now.atZone(EtlLogic.KST).toLocalDate())
+        for (provider in weekProviders) ids(context, provider).forEach { id ->
+            val height = if (provider == TallTimetableWidgetProvider::class.java) 390 else 250
+            val size = size(context, manager.getAppWidgetOptions(id), 250, height)
             manager.updateAppWidget(id, timetable(context, week, size, now))
         }
-        // 다음 마감은 조회를 기다리지 않고 목록에서 빼고, 월요일/자정에는 주간 범위를 다시 계산한다.
-        // 시각별 고유 작업이라 실행 중인 작업을 취소하지 않으며, 오래된 경계 작업도 최신 자료만 그린다.
-        val boundary = DeadlineWidgetLogic.nextBoundary(items, now)
+        val next = TimetableWidgetLogic.nextClass(weekly, changes, now)
+        val nextIds = ids(context, NextClassWidgetProvider::class.java)
+        nextIds.forEach { id ->
+            val size = size(context, manager.getAppWidgetOptions(id), 110, 40)
+            manager.updateAppWidget(id, nextClass(context, next, size, now))
+        }
+        // 마감·자정·다음 수업 전환 경계에서는 네트워크 없이 다시 그린다.
+        // WorkManager는 절전 중 지연될 수 있으며, 시각별 작업은 최신 저장 정보로 렌더링한다.
+        val boundary = minOf(DeadlineWidgetLogic.nextBoundary(items, now),
+            if (nextIds.isNotEmpty()) next?.switchesAt ?: Instant.MAX else Instant.MAX)
         WorkManager.getInstance(context).enqueueUniqueWork("home-widgets-boundary-${boundary.epochSecond}",
             ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<WidgetRenderWorker>()
                 .setInitialDelay(Duration.between(now, boundary).toMillis().coerceAtLeast(1000), TimeUnit.MILLISECONDS)
@@ -113,7 +124,7 @@ object HomeWidgets {
         val widthKey = if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH
         val heightKey = if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT
         return Size(options.getInt(widthKey, defaultWidth).coerceIn(80, 1200),
-            options.getInt(heightKey, defaultHeight).coerceIn(80, 1200))
+            options.getInt(heightKey, defaultHeight).coerceIn(40, 1200))
     }
 
     private fun activity(context: Context, intent: Intent): PendingIntent = PendingIntent.getActivity(context, 0,
@@ -126,28 +137,32 @@ object HomeWidgets {
             if (mineId != null) putExtra(EXTRA_DEADLINE_ID, mineId)
         })
 
-    private fun deadlines(context: Context, items: List<DeadlineWidgetLogic.Item>, takenAt: Long?, size: Size, now: Instant): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_deadlines)
+    private fun deadlines(context: Context, items: List<DeadlineWidgetLogic.Item>, takenAt: Long?, size: Size,
+        now: Instant, compact: Boolean): RemoteViews {
+        val views = RemoteViews(context.packageName,
+            if (compact) R.layout.widget_deadlines_compact else R.layout.widget_deadlines)
+        views.setOnClickPendingIntent(R.id.widget_root, agenda(context))
         views.setOnClickPendingIntent(R.id.widget_header, agenda(context))
-        views.setContentDescription(R.id.widget_header, "내 일정 열기, 남은 마감 ${items.size}개")
-        views.setTextViewText(R.id.widget_header, "마감 · ${items.size}")
+        views.setContentDescription(R.id.widget_header, "내 일정 열기")
+        views.setTextViewText(R.id.widget_header, "일정")
         views.removeAllViews(R.id.widget_items)
         views.setViewVisibility(R.id.widget_empty, if (items.isEmpty()) View.VISIBLE else View.GONE)
         views.setTextViewText(R.id.widget_empty, if (takenAt == null) "저장된 과제 정보가 없어요\n눌러서 내 일정 확인" else "남은 마감이 없어요")
         views.setOnClickPendingIntent(R.id.widget_empty, agenda(context))
-        val capacity = DeadlineWidgetLogic.capacity(size.height, context.resources.configuration.fontScale)
+        val capacity = DeadlineWidgetLogic.capacity(size.height, context.resources.configuration.fontScale, compact)
         val fontScale = context.resources.configuration.fontScale.coerceAtLeast(1f)
-        val rowSpace = (size.height - 34f) / capacity
-        val titleSp = (rowSpace / (3.8f * fontScale)).coerceIn(8f, 13f)
+        val rowSpace = (size.height - if (compact) 12f else 14f + 22f * fontScale) / capacity
+        val titleSp = (rowSpace / ((if (compact) 2.7f else 4.2f) * fontScale)).coerceIn(8f, 15f)
         for (item in items.take(capacity)) {
-            val row = RemoteViews(context.packageName, R.layout.widget_deadline_row)
+            val row = RemoteViews(context.packageName,
+                if (compact) R.layout.widget_deadline_compact_row else R.layout.widget_deadline_row)
             val due = DeadlineWidgetLogic.dueLabel(item.due, now)
             val remaining = DeadlineWidgetLogic.remaining(item.due, now)
             row.setTextViewText(R.id.widget_item_title, item.title)
             row.setTextViewTextSize(R.id.widget_item_title, TypedValue.COMPLEX_UNIT_SP, titleSp)
-            row.setTextViewTextSize(R.id.widget_item_due, TypedValue.COMPLEX_UNIT_SP, titleSp * .82f)
-            row.setTextViewTextSize(R.id.widget_item_remaining, TypedValue.COMPLEX_UNIT_SP, titleSp * .82f)
-            row.setTextViewText(R.id.widget_item_due, due)
+            row.setTextViewTextSize(R.id.widget_item_due, TypedValue.COMPLEX_UNIT_SP, titleSp * .84f)
+            row.setTextViewTextSize(R.id.widget_item_remaining, TypedValue.COMPLEX_UNIT_SP, titleSp * .84f)
+            row.setTextViewText(R.id.widget_item_due, if (compact) "$due · $remaining" else due)
             row.setTextViewText(R.id.widget_item_remaining, remaining + if (size.width >= 240) " · ${item.source}" else "")
             row.setContentDescription(R.id.widget_item_body, "${item.source}, ${item.title}, 마감 $due, $remaining")
             val open = if (item.mineId != null) agenda(context, item.mineId) else
@@ -169,8 +184,7 @@ object HomeWidgets {
 
     private fun timetable(context: Context, week: TimetableWidgetLogic.Week, size: Size, now: Instant): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_timetable)
-        val end = week.monday.plusDays(6)
-        views.setTextViewText(R.id.widget_header, "시간표 · ${week.monday.monthValue}/${week.monday.dayOfMonth}–${end.monthValue}/${end.dayOfMonth}")
+        views.setTextViewText(R.id.widget_header, "시간표")
         views.setOnClickPendingIntent(R.id.widget_root, activity(context, Intent(context, TimetableActivity::class.java)))
         views.setViewVisibility(R.id.widget_empty, if (week.entries.isEmpty()) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_grid, if (week.entries.isEmpty()) View.GONE else View.VISIBLE)
@@ -186,9 +200,38 @@ object HomeWidgets {
         }
         return views
     }
+
+    private fun nextClass(context: Context, next: TimetableWidgetLogic.NextClass?, size: Size, now: Instant): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_next_class)
+        views.setOnClickPendingIntent(R.id.widget_root, activity(context, Intent(context, TimetableActivity::class.java)))
+        val scale = context.resources.configuration.fontScale.coerceAtLeast(1f)
+        val titleSp = ((size.height - 10f) / (2.5f * scale)).coerceIn(8f, 15f)
+        views.setTextViewTextSize(R.id.widget_item_title, TypedValue.COMPLEX_UNIT_SP, titleSp)
+        views.setTextViewTextSize(R.id.widget_item_due, TypedValue.COMPLEX_UNIT_SP, titleSp * .84f)
+        if (next == null) {
+            views.setTextViewText(R.id.widget_item_title, "다음 수업이 없어요")
+            views.setTextViewText(R.id.widget_item_due, "눌러서 시간표 열기")
+            views.setContentDescription(R.id.widget_root, "다음 수업이 없어요. 시간표 열기")
+        } else {
+            val entry = next.entry
+            val row = entry.row
+            val today = now.atZone(EtlLogic.KST).toLocalDate()
+            val day = when (entry.date) {
+                today -> "오늘"
+                today.plusDays(1) -> "내일"
+                else -> TimetableLogic.weekdayOf(entry.date) + "요일"
+            }
+            val room = row.room?.takeUnless { it.isBlank() || it == "미정" || it == "강의실 미정" }
+            val detail = "$day ${row.start}" + (room?.let { " · $it" } ?: "")
+            views.setTextViewText(R.id.widget_item_title, row.course)
+            views.setTextViewText(R.id.widget_item_due, detail)
+            views.setContentDescription(R.id.widget_root, "${row.course}, $detail, ${row.end} 종료. 시간표 열기")
+        }
+        return views
+    }
 }
 
-class DeadlineWidgetProvider : AppWidgetProvider() {
+open class HomeWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         HomeWidgets.dataChanged(context)
         HomeWidgets.schedule(context, syncNow = true)
@@ -196,7 +239,9 @@ class DeadlineWidgetProvider : AppWidgetProvider() {
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) =
         HomeWidgets.dataChanged(context)
     override fun onDisabled(context: Context) = HomeWidgets.schedule(context)
+}
 
+class DeadlineWidgetProvider : HomeWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == HomeWidgets.ACTION_COMPLETE) {
             val store = MyDeadlineStore(context)
@@ -212,15 +257,10 @@ class DeadlineWidgetProvider : AppWidgetProvider() {
     }
 }
 
-class TimetableWidgetProvider : AppWidgetProvider() {
-    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        HomeWidgets.dataChanged(context)
-        HomeWidgets.schedule(context, syncNow = true)
-    }
-    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) =
-        HomeWidgets.dataChanged(context)
-    override fun onDisabled(context: Context) = HomeWidgets.schedule(context)
-}
+class CompactDeadlineWidgetProvider : HomeWidgetProvider()
+class TimetableWidgetProvider : HomeWidgetProvider()
+class TallTimetableWidgetProvider : HomeWidgetProvider()
+class NextClassWidgetProvider : HomeWidgetProvider()
 
 class WidgetRenderWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {

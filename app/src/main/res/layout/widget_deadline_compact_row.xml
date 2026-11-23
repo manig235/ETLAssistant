@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="horizontal" android:gravity="center_vertical" android:paddingVertical="0.5dp">
+    <LinearLayout android:id="@+id/widget_item_body" android:layout_width="0dp" android:layout_height="wrap_content"
+        android:layout_weight="1" android:orientation="vertical" android:paddingEnd="2dp">
+        <TextView android:id="@+id/widget_item_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="12sp" android:textStyle="bold" android:textColor="@color/widget_foreground"
+            android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false" />
+        <TextView android:id="@+id/widget_item_due" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="10sp" android:textColor="@color/widget_secondary"
+            android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false" />
+        <TextView android:visibility="gone" android:id="@+id/widget_item_remaining" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="10sp" android:textColor="@color/widget_accent"
+            android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false" />
+    </LinearLayout>
+    <TextView android:id="@+id/widget_item_complete" android:layout_width="28dp" android:layout_height="26dp"
+        android:gravity="center" android:text="○" android:textSize="22sp" android:textColor="@color/widget_accent"
+        android:visibility="gone" android:background="?android:attr/selectableItemBackgroundBorderless" />
+</LinearLayout>

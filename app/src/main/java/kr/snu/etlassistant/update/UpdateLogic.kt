@@ -211,6 +211,4 @@ object UpdateLogic {
     fun promptBody(info: ReleaseInfo, summary: List<String>): String =
         (summary.map { "· $it" } + listOfNotNull(sizeText(info.apkSize)?.let { "크기 $it" })).joinToString("\n")
 
-    /** 설정 "앱 정보"에 보일 문구. */
-    fun availableText(version: String): String = "새 버전 $version${subjectParticle(version)} 있어요"
 }

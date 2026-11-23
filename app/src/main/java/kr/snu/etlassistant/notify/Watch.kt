@@ -104,7 +104,7 @@ object AssignmentWatch {
                     channel = Channel.CHANGE,
                     title = NoticeText.cut("${e.kind} · ${NoticeText.clean(e.item.courseName)}", NoticeText.TITLE_MAX),
                     text = NoticeText.cut(e.line, NoticeText.LINE_MAX),
-                    url = NoticeText.safeUrl(e.item.url),
+                    url = NoticeText.assignmentUrl(e.item),
                     tag = e.tag,
                 )
             }
@@ -117,6 +117,7 @@ object AssignmentWatch {
                 title = "eTL 변경 ${sorted.size}건",
                 text = NoticeText.cut(counts, NoticeText.LINE_MAX),
                 bigText = NoticeText.joinLimited(lines, 8),
+                url = NoticeText.collectionUrl(sorted.map { it.item.courseId }) ?: NoticeText.ETL_PREFIX,
                 tag = "change:summary",
             )
         )

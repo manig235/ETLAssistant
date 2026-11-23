@@ -78,7 +78,6 @@ import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.notify.NotifySettings
-import kr.snu.etlassistant.update.UpdateLogic
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextDecoration
@@ -159,6 +158,11 @@ class SettingsActions(
     val checkUpdate: () -> Unit = {},
     val openUpdate: () -> Unit = {},
     val setThemeMode: (ThemeMode) -> Unit = {},
+    val addDeadlineWidget: () -> Unit = {},
+    val addTimetableWidget: () -> Unit = {},
+    val addNextClassWidget: () -> Unit = {},
+    val addTallTimetableWidget: () -> Unit = {},
+    val addCompactDeadlineWidget: () -> Unit = {},
 )
 
 @Composable
@@ -475,14 +479,6 @@ private fun AccountSection(s: SettingsState, a: SettingsActions) {
                 )
                 SoftButton("로그아웃", enabled = ready && s.account?.kind == AccountInfo.Kind.CHATGPT, onClick = a.logout)
             }
-            if (loggedIn && !loggingIn) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "다른 ChatGPT 계정으로 바꿀 수 있어요. 브라우저에 이미 로그인된 계정이 있으면 그 계정이 먼저 선택될 수 있으니, 원하는 계정이 아니면 로그인 화면에서 계정을 바꿔 주세요.",
-                    style = DesignSystemTheme.typography.caption1Regular,
-                    color = DesignSystemTheme.colors.foregroundNeutralSecondary,
-                )
-            }
         }
     }
 }
@@ -650,9 +646,9 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                     )
                 }
             }
-            SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려요(보강·휴강 공지는 따로 표시)", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
-            SwitchRow("새 과제·마감 변경·성적 알림", "과제가 새로 올라오거나, 마감이 바뀌거나, 점수가 등록되면 알려요", n.changeAlerts) { v -> a.updateNotify { it.copy(changeAlerts = v) } }
-            SwitchRow("수업 알림", "시간표(수강편람 + 보강·휴강)의 수업 시작 ${n.classLeadMinutes}분 전에 알려요", n.classAlerts) { v -> a.updateNotify { it.copy(classAlerts = v) } }
+            SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려줘요(보강·휴강 공지는 따로 표시)", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
+            SwitchRow("새 과제·마감 변경·성적 알림", "과제가 새로 올라오거나, 마감이 바뀌거나, 점수가 등록되면 알려줘요", n.changeAlerts) { v -> a.updateNotify { it.copy(changeAlerts = v) } }
+            SwitchRow("수업 알림", "시간표(수강편람 + 보강·휴강)의 수업 시작 ${n.classLeadMinutes}분 전에 알려줘요", n.classAlerts) { v -> a.updateNotify { it.copy(classAlerts = v) } }
             if (n.classAlerts) {
                 Spacer(Modifier.height(4.dp))
                 FlowRow(Modifier.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -661,7 +657,7 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                     }
                 }
             }
-            SwitchRow("정기 브리핑", "마감·누락·새 공지를 정해진 시각에 요약해서 보내요", n.briefEnabled) { v -> a.updateNotify { it.copy(briefEnabled = v) } }
+            SwitchRow("정기 브리핑", "마감·누락·새 공지를 정해진 시각에 요약해서 보내줘요", n.briefEnabled) { v -> a.updateNotify { it.copy(briefEnabled = v) } }
             if (n.briefEnabled) {
                 Spacer(Modifier.height(4.dp))
                 Text("브리핑 시각", style = DesignSystemTheme.typography.body2Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
@@ -821,18 +817,36 @@ private fun ApiKeySection(s: SettingsState, a: SettingsActions) {
 
 @Composable
 private fun MiscSection(s: SettingsState, a: SettingsActions) {
+    var showWidgetPicker by remember { mutableStateOf(false) }
     Section("기타") {
         SettingsCard {
             Text("화면 모드", style = DesignSystemTheme.typography.body2Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
             Spacer(Modifier.height(10.dp))
             ThemeModePicker(s.themeMode, a.setThemeMode)
             Spacer(Modifier.height(20.dp))
-            SwitchRow("업데이트 알림", "새 버전이 나오면 알려 줘요(GitHub에 최신 버전만 물어봐요)", s.updateAlerts, onChange = a.setUpdateAlerts)
+            SwitchRow("업데이트 알림", "새 버전이 나오면 알려줘요(GitHub에 최신 버전만 물어봐요)", s.updateAlerts, onChange = a.setUpdateAlerts)
             LinkRow("알림 기록", onClick = a.openHistory)
             LinkRow("시간표 · 보강/휴강", onClick = a.openTimetable)
             LinkRow("내 일정", onClick = a.openMyDeadlines)
+            LinkRow("홈 화면에 위젯 추가하기", onClick = { showWidgetPicker = true })
             LinkRow("처음 안내 다시 보기", onClick = a.replayOnboarding)
         }
+    }
+    if (showWidgetPicker) {
+        AlertDialog(
+            onDismissRequest = { showWidgetPicker = false },
+            title = { Text("홈 화면에 위젯 추가하기") },
+            text = {
+                Column {
+                    LinkRow("일정 · 2×2", onClick = { showWidgetPicker = false; a.addDeadlineWidget() })
+                    LinkRow("일정 · 2×1", onClick = { showWidgetPicker = false; a.addCompactDeadlineWidget() })
+                    LinkRow("시간표 · 4×4", onClick = { showWidgetPicker = false; a.addTimetableWidget() })
+                    LinkRow("시간표 · 4×6", onClick = { showWidgetPicker = false; a.addTallTimetableWidget() })
+                    LinkRow("다음 수업 · 2×1", onClick = { showWidgetPicker = false; a.addNextClassWidget() })
+                }
+            },
+            confirmButton = { WantedTextButton(text = "닫기", onClick = { showWidgetPicker = false }) },
+        )
     }
 }
 
@@ -863,14 +877,16 @@ private fun AboutSection(s: SettingsState, a: SettingsActions) {
             Spacer(Modifier.height(4.dp))
             HyperLink("건의사항 · 오류 제보", onClickLabel = "제보 안내 열기") { feedbackOpen = true }
             val newVersion = s.updateVersion
-            if (newVersion != null && s.updateUrl != null) {
-                HyperLink(UpdateLogic.availableText(newVersion), onClickLabel = "업데이트 APK 받기", onClick = a.openUpdate)
-            }
+            val canDownload = newVersion != null && s.updateUrl != null
             HyperLink(
-                if (s.updateChecking) "확인하는 중…" else "업데이트 확인",
-                onClickLabel = "새 버전 확인",
+                text = when {
+                    s.updateChecking -> "확인하는 중…"
+                    canDownload -> "새 버전 $newVersion 받기"
+                    else -> "업데이트 확인"
+                },
+                onClickLabel = if (canDownload) "업데이트 APK 받기" else "새 버전 확인",
                 enabled = !s.updateChecking,
-                onClick = a.checkUpdate,
+                onClick = if (canDownload) a.openUpdate else a.checkUpdate,
             )
             s.updateResult?.let { Caption(it) }
         }

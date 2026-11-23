@@ -381,9 +381,9 @@ private fun DeadlineSummary(
                     color = c.foregroundNeutralSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (schedule.urgent.isNotEmpty()) {
+        if (schedule.urgent.size > 3) {
             val extra = schedule.urgent.size - 3
-            Text((if (extra > 0) "외 ${extra}개 · " else "") + "아래 전체 목록에서도 볼 수 있어요",
+            Text("외 ${extra}개",
                 style = t.caption1Regular, color = c.foregroundNeutralSecondary)
         }
         if (schedule.overdue.isNotEmpty()) {

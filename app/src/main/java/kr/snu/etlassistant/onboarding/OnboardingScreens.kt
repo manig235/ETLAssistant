@@ -294,7 +294,7 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "서울대학교 공식 앱이 아니에요. 학생이 직접 만든 앱이에요.",
+            "서울대학교 공식 앱이 아니에요.",
             style = DesignSystemTheme.typography.caption1Regular,
             color = DesignSystemTheme.colors.foregroundNeutralTertiary,
             modifier = Modifier.fillMaxWidth(),
@@ -601,7 +601,7 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 )
             }
         }
-        SwitchRow("방해 금지 시간", "이 시간에는 마감·공지 알림을 미뤘다가 끝나면 보내요(브리핑과 직접 정한 알림은 그대로)", vm.quietEnabled) { vm.quietEnabled = it }
+        SwitchRow("방해 금지 시간", "이 시간에는 마감·공지 알림을 미뤘다가 끝나면 보내줘요(브리핑과 직접 정한 알림은 그대로)", vm.quietEnabled) { vm.quietEnabled = it }
         if (vm.quietEnabled) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -642,6 +642,7 @@ private fun SwitchRow(title: String, desc: String, checked: Boolean, onChange: (
 
 @Composable
 private fun DoneStep(a: OnboardingActions) {
+    val suggestions = rememberSuggestionQuestions()
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     StepFrame(
@@ -650,7 +651,7 @@ private fun DoneStep(a: OnboardingActions) {
         bottom = { PrimaryButton("비서 시작하기") { a.finish(null) } },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            for (s in OnboardingLogic.suggestions) {
+            for (s in suggestions) {
                 Row(
                     Modifier
                         .fillMaxWidth()
