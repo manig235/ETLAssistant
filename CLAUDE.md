@@ -152,6 +152,18 @@ eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussi
   `timetable_change_add|delete`. 폰 안의 데이터만 바꾸고 eTL에는 아무것도 보내지 않는다. 프롬프트 인젝션 대책: 바꿀 때마다 채팅에
   `Role.NOTICE` 한 줄을 남겨(`EtlEvents.notice`) 사용자가 바로 보고 서랍에서 되돌릴 수 있게 하고, 지침(AGENTS.md)에 "사용자가 직접
   요청했을 때만, eTL 내용만 보고 스스로 쓰지 않는다"를 적었다. 도구 annotation은 readOnlyHint=false.
+**캘린더로 내보내기(2026-11-23)**: 설정 → 캘린더 → "캘린더로 내보내기"(`calendar/CalendarExportActivity`, 기본 꺼짐, 켤 때 READ/WRITE_CALENDAR 요청).
+OAuth·Google API·Play 서비스 없이 `CalendarContract`만 쓴다. 대상은 (1) 앱이 만든 로컬 캘린더 "영민이"(ACCOUNT_TYPE_LOCAL, sync adapter로 씀, 폰 밖으로 안 나감)
+또는 (2) 사용자가 고른 구글 계정 캘린더(기여자 이상, 일반 앱으로 써서 DIRTY → 구글 동기화; 앱은 구글 캘린더를 못 만들어 웹에서 "영민이" 캘린더를 먼저 만들라고 안내).
+항목: eTL 과제 마감(기본 켬)·내 마감(기본 켬)·제출·완료 포함(기본 끔 → 제출·완료하면 지움), 숨긴 과목 제외. 네트워크 없이 `SnapshotCache`+`MyDeadlineStore`로
+한 방향 맞추기(`CalendarLogic.plan`, 순수): 키 `etl:{cid}:{aid}`·`mine:{id}`·반복 회차 `mine:{id}:{epochDay}` → 일정 `_ID`+내용 해시(SharedPreferences `calendar_export`).
+바뀌면 고치고, 원본이 사라지면 지우고, 사용자가 캘린더에서 지운 일정은 묘비로 남겨 다시 만들지 않는다. 마감 14일 지난 일정은 건드리지 않는다. 받아 둔 eTL 과제가 없으면 eTL 일정은 안 지운다.
+반복 내 마감은 RRULE 대신 앞으로 60일 회차를 하나씩 넣는다. 일정은 0분짜리(DTEND=DTSTART), Asia/Seoul, 알림 없음, 바쁨 아님, `CUSTOM_APP_URI` `youngmin://item/{key}`(캘린더 앱의 "앱에서 열기" → `CalendarOpenActivity` → 내 일정).
+도는 때: 알림 확인 끝(`NotifyRunner` 한 줄, 같은 스레드), 내 마감 저장·삭제(`MyDeadlineStore.save`), 과목 숨기기, "지금 내보내기". 권한이 꺼지면(SecurityException) 내보내기를 끄고 이유를 보인다.
+끄면 로컬 캘린더는 통째로 지우고, 구글은 앱이 넣은 일정만 지운다. 앱을 그냥 지우면 정리할 수 없다(화면에 안내).
+내 일정 각 줄의 "캘린더에 추가"는 권한 없이 `ACTION_INSERT`(반복 내 마감은 RRULE: 매월 31일은 `BYMONTHDAY=-1`, 29·30일은 `BYMONTHDAY=d`라 2월 회차가 캘린더 앱에서 빠짐 — 알려진 차이, 건너뛴 회차는 못 넘김).
+".ics 파일로 내보내기"(공유 `ACTION_SEND`+FileProvider `cache/ics/`, 또는 `CreateDocument` 저장): RFC 5545, VTIMEZONE Asia/Seoul, 반복은 RRULE+EXDATE(건너뛴 회차, 완료 회차), 0분이라 DTEND 없음.
+기기 미확인: 삼성 캘린더에 로컬 캘린더가 보이는지, 구글 캘린더 앱에 보이는지, 구글 캘린더 동기화(기본 알림이 붙는지 포함), ACTION_INSERT를 받는 앱, 네이버 캘린더 .ics 가져오기.
 
 **Phase 4: 첫 실행 안내 — 구현됨.** Montage(Compose) 기반. 환영 → eTL 토큰(실제로 접속해 확인한 뒤 저장) → ChatGPT 로그인
 (브라우저 기본, 코드 방식은 브라우저가 안 될 때만 예비로 노출, 로그인된 상태에서 계정 전환 가능) → 알림 → 완료(추천 질문).
@@ -268,6 +280,8 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   - code-mode host의 gRPC(127.0.0.1)는 인증이 없다. 세션 ID가 UUIDv4라 다른 앱이 우리 세션을 가로챌 수는 없고, 자기 세션으로 JS 실행만 가능하다(고치지 않음).
 - 앱에는 분석 SDK나 외부 서버 전송을 넣지 않는다.
   **예외 하나(2026-11-22, 사용자 결정)**: 업데이트 확인용 `GET https://api.github.com/repos/manig235/ETLAssistant/releases/latest`(사용자 데이터·토큰·기기 정보 없음, 리다이렉트 안 따라감, 설정 "업데이트 알림"으로 끌 수 있음, `update/UpdateChecker.kt`).
+- 캘린더로 내보내기(사용자가 켰을 때만): 과목명·과제명·마감 시각·eTL 과제 링크(쿼리 없는 eTL 주소만)·내 마감 메모를 사용자가 고른 캘린더에 쓴다.
+  앱이 직접 보내지는 않지만, 고른 캘린더 계정(구글 등)이 동기화하면 그 내용이 구글·삼성 서버로 간다. 토큰·서명 링크는 넣지 않는다. 기본 대상인 앱 로컬 캘린더는 폰 밖으로 나가지 않는다.
 
 ## 미해결 질문
 

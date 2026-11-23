@@ -107,6 +107,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             replayOnboarding = { startActivity(Intent(this, OnboardingActivity::class.java)) },
             openHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
             openCourseAlerts = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
+            openCalendarExport = { startActivity(Intent(this, kr.snu.etlassistant.calendar.CalendarExportActivity::class.java)) },
             openTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
             openMyDeadlines = { startActivity(Intent(this, MyDeadlinesActivity::class.java)) },
             addDeadlineWidget = { pinWidget(kr.snu.etlassistant.widget.DeadlineWidgetProvider::class.java) },
@@ -150,6 +151,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         refreshSecrets()
         refreshNotifySettings()
         state.courseAlertsSummary = CourseFilterLogic.summary(CourseFilterStore(this).load())
+        state.calendarSummary = kr.snu.etlassistant.calendar.CalendarExport.summary(this)
         refreshNotifyPermission()
         refreshNotifyStatusLines()
         refreshUpdate()

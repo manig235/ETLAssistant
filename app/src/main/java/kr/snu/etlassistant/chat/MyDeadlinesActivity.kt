@@ -53,6 +53,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -158,6 +159,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
                     toast("지웠어요")
                 },
                 seriesOf = ::seriesOf,
+                onAddToCalendar = ::addToCalendar,
                 pickDate = ::pickDate,
                 pickTime = ::pickTime,
             )
@@ -219,6 +221,17 @@ class MyDeadlinesActivity : AppCompatActivity() {
         }
     }
 
+    /** 캘린더 앱의 일정 추가 화면을 연다(권한 없음, 사용자가 저장). 반복 내 마감은 반복 규칙을 함께 넘긴다. */
+    private fun addToCalendar(r: Agenda.Row) {
+        val intent = when (r.kind) {
+            Agenda.Kind.MINE -> r.mine?.let { occ -> seriesOf(occ)?.let { kr.snu.etlassistant.calendar.CalendarExport.insertIntentFor(it, occ.takeIf { occ.occurrence != null }) } }
+            Agenda.Kind.ASSIGNMENT -> cached?.assignments?.firstOrNull { "assignment-${it.courseId}-${it.assignmentId}" == r.id }
+                ?.let { kr.snu.etlassistant.calendar.CalendarExport.insertIntentFor(it) }
+        }
+        if (intent == null) toast("캘린더에 넣을 수 없어요")
+        else if (runCatching { startActivity(intent) }.isFailure) toast("일정을 넣을 캘린더 앱이 없어요")
+    }
+
     private fun pickDate(initial: LocalDate, onPicked: (LocalDate) -> Unit) {
         DatePickerDialog(this, { _, y, m, d -> onPicked(LocalDate.of(y, m + 1, d)) }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
     }
@@ -267,6 +280,7 @@ private fun AgendaScreen(
     onToggleDone: (MyDeadline) -> Unit,
     onDelete: (MyDeadline, onlyThis: Boolean) -> Unit,
     seriesOf: (MyDeadline) -> MyDeadline?,
+    onAddToCalendar: (Agenda.Row) -> Unit,
     pickDate: (LocalDate, (LocalDate) -> Unit) -> Unit,
     pickTime: (LocalTime, (LocalTime) -> Unit) -> Unit,
 ) {
@@ -319,7 +333,7 @@ private fun AgendaScreen(
                             modifier = Modifier.padding(start = 8.dp, top = 8.dp))
                     }
                     items(schedule.overdue, key = { "overdue-${it.id}" }) { r ->
-                        AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine })
+                        AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine }, onAddToCalendar = { onAddToCalendar(r) })
                     }
                 }
                 for ((isUpcoming, groups) in listOf(true to schedule.upcoming, false to schedule.later)) {
@@ -344,7 +358,7 @@ private fun AgendaScreen(
                                 modifier = Modifier.padding(start = 8.dp, top = 8.dp))
                         }
                         items(g.rows, key = { it.id }) { r ->
-                            AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine })
+                            AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine }, onAddToCalendar = { onAddToCalendar(r) })
                         }
                     }
                 }
@@ -450,7 +464,7 @@ private fun DeadlineEmptyText(text: String) {
 }
 
 @Composable
-private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggleDone: () -> Unit, onDelete: () -> Unit) {
+private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggleDone: () -> Unit, onDelete: () -> Unit, onAddToCalendar: () -> Unit = {}) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     val clickable = r.mine != null || r.url != null
@@ -477,6 +491,9 @@ private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggle
             val whenText = Agenda.whenLabel(r, now)
             Text(listOf(whenText, r.subtitle).filter { it.isNotEmpty() }.joinToString(" · "), style = t.caption1Regular,
                 color = if (r.overdue) c.foregroundNegativePrimary else c.foregroundNeutralSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton(onClick = onAddToCalendar, modifier = Modifier.semantics { contentDescription = "'${r.title}' 캘린더에 추가" }) {
+            Icon(Icons.Outlined.EventAvailable, contentDescription = null, tint = c.foregroundNeutralSecondary, modifier = Modifier.size(20.dp))
         }
         if (r.mine != null) {
             IconButton(onClick = onDelete, modifier = Modifier.semantics { contentDescription = "'${r.title}' 지우기" }) {

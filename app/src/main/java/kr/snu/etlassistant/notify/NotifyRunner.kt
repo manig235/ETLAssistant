@@ -111,6 +111,7 @@ object NotifyRunner {
             runCatching { DeadlineAlarm.schedule(app, listOfNotNull(nextDeadline, nextClass, nextReminder).minOrNull()) }
             logErrors(snapshot.errors, fetched.cachedAt)
             log("확인 완료: 마감 $deadlines, 공지 $anns, 조회 오류 ${snapshot.errors.size}")
+            kr.snu.etlassistant.calendar.CalendarExport.syncIfEnabled(app) // 캘린더로 내보내기(켜져 있을 때만, 네트워크 없음, 예외를 던지지 않음)
             // 연결 실패면 받아 둔 정보로 보낼 것은 보냈지만, 새 공지·변경을 보려고 다시 시도한다(중복은 fired 키가 막는다).
             if (failure != null) Outcome.RETRY else Outcome.SUCCESS
         }

@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 배터리 최적화 예외 요청(앱을 닫아도 알림 확인이 제때 돌도록). APK 직접 배포라 Play 정책과 무관. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 캘린더로 내보내기(설정에서 켤 때만 요청). 고른 캘린더에 마감 일정을 넣고 고치고 지운다. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
     <application
         android:name=".Phase0App"
@@ -131,5 +134,28 @@
             android:name="kr.snu.etlassistant.chat.MyDeadlinesActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name="kr.snu.etlassistant.calendar.CalendarExportActivity"
+            android:exported="false" />
+
+        <!-- 캘린더 앱의 "앱에서 열기"(CUSTOM_APP_URI). 내 일정 화면을 여는 것 말고는 하지 않는다. -->
+        <activity
+            android:name="kr.snu.etlassistant.calendar.CalendarOpenActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.provider.calendar.action.HANDLE_CUSTOM_EVENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- 캘린더 앱에 따라 CUSTOM_APP_URI를 intent data로도 넣는다. -->
+            <intent-filter>
+                <action android:name="android.provider.calendar.action.HANDLE_CUSTOM_EVENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="youngmin" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
