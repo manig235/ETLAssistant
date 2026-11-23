@@ -12,7 +12,8 @@
 - 알림 채널 `update_v2`("앱 업데이트", HIGH), 버전마다 한 번. 0.2.3부터 알림·채팅 팝업의 "받기"·설정의 새 버전 링크를 누르면
   확인한 태그의 APK 직접 다운로드 주소(`https://github.com/manig235/ETLAssistant/releases/download/<태그>/<파일>.apk`)를 연다.
   Release 페이지를 거치지 않고 브라우저가 APK를 다운로드하며, 설치는 사용자가 받은 파일을 열어 진행한다.
-- APK 파일 이름을 확인 결과에 함께 저장한다. 이전 버전의 저장값에 파일 이름이 없으면 배포 규칙(`youngmin-v<버전>.apk`)으로 복원한다.
+- APK 파일 이름을 확인 결과에 함께 저장한다. 앱은 `youngmin-v<버전>.apk`를 선택하며, 버전 없는 별칭이 먼저 나와도 고르지 않는다.
+  이전 저장값의 파일 이름이 없거나 `youngmin.apk`이면 배포 규칙(`youngmin-v<버전>.apk`)으로 복원한다.
   APK가 없는 릴리스는 업데이트로 안내하지 않고, 다른 저장소·APK가 아닌 파일·경로 이동이 들어간 링크는 열지 않는다.
 - 설정: "기타 → 업데이트 알림"(기본 켬, 끄면 워커 취소·앱 시작 확인 안 함), "앱 정보 → 업데이트 확인"(직접 누르면 꺼져 있어도 확인)과
   새 버전이 있으면 "새 버전 0.1.8이 있어요" 링크.
@@ -26,9 +27,10 @@
 - 태그: `v<versionName>` (예: `v0.1.8`). 버전 올림 커밋을 main에 push한 뒤 그 커밋에 태그를 단다.
 - 제목: `영민이 <버전>`.
 - asset: `youngmin-v<버전>.apk`와 `youngmin-v<버전>.apk.sha256`(`sha256sum` 출력 형식). `~/shared/`에 만든 것과 같은 파일.
-- 같은 APK를 버전 없는 이름 `youngmin.apk`로도 올린다(`~/shared/youngmin.apk`, sha256 같음). 그러면
-  `https://github.com/manig235/ETLAssistant/releases/latest/download/youngmin.apk`가 항상 최신 APK를 가리키는 고정 링크가 된다.
-  릴리스 본문에는 이 고정 링크와 그 버전 링크(`…/releases/download/v<버전>/youngmin-v<버전>.apk`)를 둘 다 넣는다.
+- **사용자 요청(2026-11-23): 앞으로 다운로드 파일명은 반드시 버전을 포함한다.** 릴리스 본문·채팅 안내·앱 내 업데이트의 다운로드 링크는
+  `…/releases/download/v<버전>/youngmin-v<버전>.apk`를 쓴다. `scripts/github-release.sh`도 이 링크를 본문에 자동으로 넣는다.
+- 버전 없는 `youngmin.apk`는 이미 공유된 고정 링크를 위한 호환용으로만 올린다(`~/shared/youngmin.apk`, sha256 같음).
+  새 다운로드 안내에는 버전 없는 고정 링크를 쓰지 않는다.
 - 초안(draft)이나 사전 배포(prerelease)로 올리면 앱이 알리지 않는다. 시험할 때만 그렇게 쓴다.
 - 반드시 전용 키(`~/.android/youngmin-release.jks`)로 서명한 release APK만 올린다. 다른 키면 기존 설치본 위에 업데이트되지 않는다.
 
@@ -54,8 +56,7 @@ gh release create v0.1.8 ~/shared/youngmin-v0.1.8.apk ~/shared/youngmin-v0.1.8.a
 - …
 
 ## 설치
-- 항상 최신: https://github.com/manig235/ETLAssistant/releases/latest/download/youngmin.apk
-- 이 버전: https://github.com/manig235/ETLAssistant/releases/download/v0.1.8/youngmin-v0.1.8.apk
+- [youngmin-v0.1.8.apk 다운로드](https://github.com/manig235/ETLAssistant/releases/download/v0.1.8/youngmin-v0.1.8.apk)
 
 받아서 설치하세요. 브라우저나 파일 앱에서 "출처를 알 수 없는 앱 설치"를 한 번 허용해야 할 수 있어요.
 

@@ -75,7 +75,7 @@ object UpdateLogic {
     fun downloadUrl(tag: String, apkName: String?): String? {
         if (tag != tag.trim() || parseVersion(tag) == null) return null
         val version = tag.removePrefix("v").removePrefix("V")
-        val name = apkName ?: "youngmin-v$version.apk"
+        val name = if (apkName == null || apkName == "youngmin.apk") "youngmin-v$version.apk" else apkName
         if (!isApkName(name)) return null
         return "${REPO_PAGE}releases/download/$tag/$name"
     }
@@ -89,12 +89,13 @@ object UpdateLogic {
         val path = uri.rawPath ?: return false
         if (!path.startsWith(prefix)) return false
         val parts = path.removePrefix(prefix).split('/')
-        return parts.size == 2 && downloadUrl(parts[0], parts[1]) == url
+        return parts.size == 2 && parts[0] == parts[0].trim() && parseVersion(parts[0]) != null &&
+            isApkName(parts[1]) && "${REPO_PAGE}releases/download/${parts[0]}/${parts[1]}" == url
     }
 
     /**
      * `releases/latest` 응답을 읽는다. 초안·사전 배포, 읽을 수 없는 태그, 허용되지 않은 주소면 null.
-     * apk는 안전한 파일 이름의 첫 asset을 쓴다. APK가 없으면 업데이트로 안내하지 않는다.
+     * 버전이 붙은 배포 규칙의 asset만 쓴다. 버전 없는 별칭이 먼저 와도 선택하지 않는다.
      */
     fun parseRelease(json: String): ReleaseInfo? {
         val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
@@ -105,11 +106,12 @@ object UpdateLogic {
         if (!isAllowedUrl(url)) return null
         var apkName: String? = null
         var apkSize: Long? = null
+        val expectedApk = "youngmin-v${tag.removePrefix("v").removePrefix("V")}.apk"
         o.optJSONArray("assets")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val a = arr.optJSONObject(i) ?: continue
                 val n = a.optString("name", "")
-                if (isApkName(n)) {
+                if (n == expectedApk) {
                     apkName = n
                     apkSize = a.optLong("size", -1L).takeIf { it > 0 }
                     break

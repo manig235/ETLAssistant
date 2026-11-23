@@ -43,6 +43,7 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
   이때 폰 안의 eTL 토큰·ChatGPT 로그인·내 마감·대화가 모두 지워진다(키 순환은 쓰지 않기로 했다).
 - 배포본은 `./gradlew testDebugUnitTest assembleRelease` 뒤 `~/shared/youngmin-v<버전>.apk`와 `.sha256`으로 둔다. 버전 올림은 따로 커밋한다.
 - **GitHub Release로 배포한다(2026-11-22)**: 태그 `v<버전>`, asset `youngmin-v<버전>.apk`·`.sha256`, 정식 릴리스(초안·사전 배포는 앱이 무시). `scripts/github-release.sh`(GITHUB_TOKEN) 또는 웹. 앱은 하루 한 번·채팅 화면 열 때(6시간 간격) `releases/latest`를 확인해 새 버전을 알린다. 0.2.3부터 누르면 확인한 버전의 APK 직접 링크를 열어 브라우저에서 다운로드한다(Release 페이지를 거치지 않으며 설치는 사용자가 진행). 상세는 `docs/release.md`.
+- **다운로드 파일명(2026-11-23 사용자 요청)**: 앞으로 릴리스 본문·채팅 안내·앱 내 업데이트는 `youngmin-v<버전>.apk`를 사용한다. 버전 없는 `youngmin.apk`는 기존 고정 링크 호환용으로만 남기고 새 다운로드 안내에는 쓰지 않는다. 앱은 자산 순서와 무관하게 해당 버전의 APK를 고르며 이전에 저장한 `youngmin.apk`도 버전이 붙은 링크로 복원한다.
   새 버전 알림은 팝업(채널 `update_v2`, HIGH; 옛 `update`는 지우고 꺼 둔 채널이면 새 채널도 끈 채로, 방해 금지 시간엔 미룸)이고, 채팅 화면을 열면 앱 안 팝업(`update/UpdatePrompt`, 바뀐 점 요약·크기, "받기"/"나중에", 같은 버전은 하루 한 번까지)도 뜬다.
 
 **백그라운드에서 네트워크가 막힌다 (중요)**

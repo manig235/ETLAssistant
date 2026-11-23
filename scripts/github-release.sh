@@ -24,6 +24,11 @@ auth_cfg() { printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN"; }
 api() { auth_cfg | curl -sS --fail-with-body -K - -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@"; }
 
 if [[ -n "$NOTES_FILE" ]]; then BODY="$(cat "$NOTES_FILE")"; else BODY="영민이 ${VERSION}"; fi
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/youngmin-v${VERSION}.apk"
+if [[ "$BODY" != *"$DOWNLOAD_URL"* ]]; then
+  BODY+=$'\n\n## 다운로드\n'
+  BODY+="[youngmin-v${VERSION}.apk](${DOWNLOAD_URL})"
+fi
 TARGET="$(git rev-parse HEAD)"
 
 payload="$(jq -n --arg tag "$TAG" --arg name "영민이 ${VERSION}" --arg body "$BODY" --arg target "$TARGET" \

@@ -127,6 +127,7 @@ internal fun WeeklyTimetable(
                         val narrow = width < 56.dp * scale
                         val top = hourHeight * ((block.startMinute - grid.startHour * 60) / 60f) + 10.dp
                         val name = TimetableLogic.shortName(block.course.name)
+                        val room = block.meeting.room?.trim()?.takeUnless { it.isEmpty() || it == "미정" || it == "강의실 미정" }
                         Column(
                             Modifier.offset(x = dayWidth * grid.days.indexOf(block.meeting.day) + dayWidth / block.lanes * block.lane + 2.dp, y = top)
                                 .width(width).height(hourHeight * (block.duration / 60f) - 4.dp)
@@ -140,10 +141,11 @@ internal fun WeeklyTimetable(
                                 style = TextStyle(lineBreak = LineBreak.Paragraph),
                                 maxLines = if (block.duration < 60 || narrow) 1 else if (block.duration <= 90) 2 else 4,
                                 overflow = TextOverflow.Ellipsis)
-                            Spacer(Modifier.height(if (block.duration < 60) 2.dp else 3.dp))
-                            Text(block.meeting.room?.trim().orEmpty().ifBlank { "강의실 미정" },
-                                color = foreground.copy(alpha = .85f), fontSize = 9.sp, lineHeight = 11.sp,
-                                maxLines = if (narrow) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            if (room != null) {
+                                Spacer(Modifier.height(if (block.duration < 60) 2.dp else 3.dp))
+                                Text(room, color = foreground.copy(alpha = .85f), fontSize = 9.sp, lineHeight = 11.sp,
+                                    maxLines = if (narrow) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }

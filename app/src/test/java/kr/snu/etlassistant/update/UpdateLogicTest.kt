@@ -85,12 +85,31 @@ class UpdateLogicTest {
     }
 
     @Test fun downloadUsesConfirmedTagAndActualAssetName() {
-        val assets = """[{"name":"../evil.apk","size":1},{"name":"youngmin.apk","size":164057719,"browser_download_url":"https://evil.example/app.apk"}]"""
+        val assets = """[{"name":"../evil.apk","size":1},{"name":"youngmin-v0.1.8.apk","size":164057719,"browser_download_url":"https://evil.example/app.apk"}]"""
         val r = UpdateLogic.parseRelease(release(assets = assets))!!
-        assertEquals("youngmin.apk", r.apkName)
-        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.1.8/youngmin.apk", r.downloadUrl)
+        assertEquals("youngmin-v0.1.8.apk", r.apkName)
+        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.1.8/youngmin-v0.1.8.apk", r.downloadUrl)
         assertTrue(UpdateLogic.isAllowedDownloadUrl(r.downloadUrl))
         assertNull(UpdateLogic.parseRelease(release(assets = """[{"name":"../evil.apk"},{"name":"bad%2Fname.apk"},{"name":"notes.txt"}]""")))
+    }
+
+    @Test fun versionedApkIsSelectedRegardlessOfAssetOrder() {
+        val alias = """{"name":"youngmin.apk","size":1}"""
+        val old = """{"name":"youngmin-v0.1.7.apk","size":2}"""
+        val versioned = """{"name":"youngmin-v0.1.8.apk","size":164057719}"""
+        for (assets in listOf("[$alias,$old,$versioned]", "[$versioned,$alias,$old]")) {
+            val result = UpdateLogic.parseRelease(release(assets = assets))!!
+            assertEquals("youngmin-v0.1.8.apk", result.apkName)
+            assertEquals(164057719L, result.apkSize)
+            assertTrue(result.downloadUrl!!.endsWith("/youngmin-v0.1.8.apk"))
+        }
+        assertNull(UpdateLogic.parseRelease(release(assets = "[$alias,$old]")))
+    }
+
+    @Test fun previouslyCachedAliasUsesVersionedDownload() {
+        val cached = info("v0.2.5").copy(apkName = "youngmin.apk")
+        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.2.5/youngmin-v0.2.5.apk", cached.downloadUrl)
+        assertTrue(UpdateLogic.isAllowedDownloadUrl(cached.downloadUrl))
     }
 
     @Test fun oldCachedReleaseWithoutAssetNameStillDownloads() {
