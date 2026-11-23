@@ -43,11 +43,30 @@ object CodexConfig {
 
     /** [mcpPort]가 null이면 MCP 서버 항목 없이 쓴다. */
     fun write(codexHome: File, mcpPort: Int?) {
-        val toml = buildString {
+        File(codexHome, "config.toml").writeText(toml(mcpPort))
+        File(codexHome, "AGENTS.md").writeText(AGENTS)
+    }
+
+    /** config.toml 본문. 키는 고정한 Codex(rust-v0.170.0)의 config 스키마에서 확인했다. */
+    fun toml(mcpPort: Int?): String =
+        buildString {
             // ChatGPT 계정에 연결된 커넥터(codex_apps: Gmail 등 140여 개 도구)가 자동으로 붙는다.
             // eTL 비서에는 필요 없고, 신뢰할 수 없는 eTL 본문이 그 도구를 건드릴 위험만 키우므로 끈다.
             appendLine("[features]")
             appendLine("apps = false")
+            appendLine()
+            // OpenAI 사용 통계(analytics 이벤트, 기본 Statsig 지표)를 끈다. app-server는 원래 기본이 꺼짐이지만
+            // (`--analytics-default-enabled`를 주지 않음) 버전이 바뀌어도 꺼진 채로 있게 명시한다.
+            appendLine("[analytics]")
+            appendLine("enabled = false")
+            appendLine()
+            // 피드백(로그 업로드) 수집도 끈다. 앱은 피드백 업로드를 부르지 않는다.
+            appendLine("[feedback]")
+            appendLine("enabled = false")
+            appendLine()
+            // 지표 내보내기 기본값(Statsig)도 명시적으로 끈다(로그·추적 내보내기는 원래 기본이 none).
+            appendLine("[otel]")
+            appendLine("metrics_exporter = \"none\"")
             appendLine()
             if (mcpPort != null) {
                 appendLine("[mcp_servers.etl]")
@@ -58,9 +77,6 @@ object CodexConfig {
                 appendLine("default_tools_approval_mode = \"approve\"") // eTL 도구는 읽기 전용, 쓰기 도구는 폰 안 데이터만 바꾸고 채팅에 표시된다
             }
         }
-        File(codexHome, "config.toml").writeText(toml)
-        File(codexHome, "AGENTS.md").writeText(AGENTS)
-    }
 
     private val AGENTS = """
         # eTL 비서
