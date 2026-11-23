@@ -4,7 +4,7 @@
     <style name="Theme.ETL.Starting" parent="Theme.Phase0">
         <item name="android:windowBackground">@drawable/etl_launch_background</item>
         <item name="android:statusBarColor">@color/etl_launch_background</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/etl_launch_background</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

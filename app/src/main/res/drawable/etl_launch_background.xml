@@ -4,10 +4,6 @@
     <item
         android:width="144dp"
         android:height="144dp"
-        android:gravity="center">
-        <bitmap
-            android:src="@drawable/etl_logo"
-            android:gravity="fill"
-            android:filter="true" />
-    </item>
+        android:gravity="center"
+        android:drawable="@drawable/etl_logo" />
 </layer-list>

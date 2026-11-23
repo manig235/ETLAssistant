@@ -1,7 +1,10 @@
 <resources>
-    <!-- 런처 아이콘 배경(영민이 로고의 파란색). -->
-    <color name="ic_launcher_background">#0002FD</color>
-    <color name="etl_launch_background">#FFFFFF</color>
+    <!-- 최종 선택한 하늘색 전신 로봇 B3의 브랜드 색상. -->
+    <color name="brand_navy">#181B35</color>
+    <color name="brand_robot_blue">#85BDE2</color>
+    <color name="brand_ivory">#FFF4DF</color>
+    <color name="ic_launcher_background">@color/brand_navy</color>
+    <color name="etl_launch_background">@color/brand_navy</color>
     <color name="bubble_user">#2F6FED</color>
     <color name="bubble_user_text">#FFFFFF</color>
     <color name="bubble_assistant">#EEF0F3</color>
