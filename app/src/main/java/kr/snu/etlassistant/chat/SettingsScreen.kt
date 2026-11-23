@@ -116,6 +116,8 @@ class SettingsState {
     var powerSave by mutableStateOf(false)
     var lastCheckText by mutableStateOf("")
     var lastBriefText by mutableStateOf("")
+    /** 과목별 알림 요약(예: "알림 끈 과목 1개 · 숨긴 과목 2개"). */
+    var courseAlertsSummary by mutableStateOf("")
 
     /** 업데이트 알림(GitHub Release 확인) 켬/끔. */
     var updateAlerts by mutableStateOf(true)
@@ -151,6 +153,7 @@ class SettingsActions(
     val setModelChoice: (ModelChoice) -> Unit,
     val replayOnboarding: () -> Unit,
     val openHistory: () -> Unit = {},
+    val openCourseAlerts: () -> Unit = {},
     val openTimetable: () -> Unit = {},
     val openMyDeadlines: () -> Unit = {},
     val setCasualTone: (Boolean) -> Unit = {},
@@ -657,6 +660,7 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                     }
                 }
             }
+            LinkRow("과목별 알림", onClick = a.openCourseAlerts, desc = s.courseAlertsSummary.ifBlank { null })
             SwitchRow("정기 브리핑", "마감·누락·새 공지를 정해진 시각에 요약해서 보내줘요", n.briefEnabled) { v -> a.updateNotify { it.copy(briefEnabled = v) } }
             if (n.briefEnabled) {
                 Spacer(Modifier.height(4.dp))
@@ -942,7 +946,7 @@ private fun HyperLink(text: String, onClickLabel: String, enabled: Boolean = tru
 private const val FEEDBACK_URL = "https://open.kakao.com/o/gpg3G9Xi"
 
 @Composable
-private fun LinkRow(title: String, onClick: () -> Unit) {
+private fun LinkRow(title: String, onClick: () -> Unit, desc: String? = null) {
     val c = DesignSystemTheme.colors
     Row(
         Modifier
@@ -951,7 +955,10 @@ private fun LinkRow(title: String, onClick: () -> Unit) {
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = DesignSystemTheme.typography.body1Medium, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = DesignSystemTheme.typography.body1Medium, color = c.foregroundNeutralPrimary)
+            if (desc != null) Text(desc, style = DesignSystemTheme.typography.caption1Regular, color = c.foregroundNeutralSecondary)
+        }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = c.foregroundNeutralSecondary)
     }
 }
