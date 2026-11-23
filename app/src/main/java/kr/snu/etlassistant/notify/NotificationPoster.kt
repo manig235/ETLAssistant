@@ -32,11 +32,23 @@ object NotificationPoster {
             nm.createNotificationChannel(NotificationChannel(Channel.CLASS.id, "수업 알림", NotificationManager.IMPORTANCE_HIGH))
             nm.createNotificationChannel(NotificationChannel(Channel.UPDATE.id, "앱 업데이트", upgraded(nm, LEGACY_UPDATE)))
             nm.createNotificationChannel(NotificationChannel(Channel.SUBMIT.id, "제출 확인", NotificationManager.IMPORTANCE_HIGH))
+            // 새 강의자료는 급하지 않고 한 번에 여러 과목이 올 수 있어 팝업 없이 알림창에만 둔다.
+            nm.createNotificationChannel(NotificationChannel(Channel.NEW_FILES.id, "새 강의자료", NotificationManager.IMPORTANCE_DEFAULT))
             nm.deleteNotificationChannel(LEGACY_ANNOUNCEMENT)
             nm.deleteNotificationChannel(LEGACY_CHANGE)
             nm.deleteNotificationChannel(LEGACY_UPDATE)
         }
     }
+
+    private const val CHAT_REQUEST_SALT = 0x5f3c1d
+
+    private fun chatOpen(context: Context, prefill: String?): Intent =
+        Intent().setClassName(context, CHAT_ACTIVITY)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .apply { if (prefill != null) putExtra(EXTRA_PREFILL, prefill) }
+
+    /** ChatActivity.EXTRA_PREFILL과 같은 값(알림 쪽은 채팅 화면 클래스에 의존하지 않는다). */
+    private const val EXTRA_PREFILL = "prefill"
 
     /** 중요도를 DEFAULT로 만들었던 옛 채널 ID(팝업으로 올리며 바꿨다). */
     internal const val LEGACY_ANNOUNCEMENT = "announcement"
@@ -65,13 +77,17 @@ object NotificationPoster {
 
             // eTL 콘텐츠는 펼치지 않고 알림 본문을 눌러도 같은 원문으로 이동한다.
             val url = NoticeText.safeUrl(notice.url)
-            val open = if (url != null) {
-                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            } else {
-                Intent().setClassName(context, CHAT_ACTIVITY)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            val etlIntent = url?.let {
+                PendingIntent.getActivity(context, id, Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags)
             }
-            val contentIntent = PendingIntent.getActivity(context, id, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            // 채팅 입력창 채우기(보내지는 않는다). 요청 코드를 알림마다 달리 해 다른 알림의 문구로 덮이지 않게 한다.
+            val chatIntent = PendingIntent.getActivity(context, id xor CHAT_REQUEST_SALT, chatOpen(context, notice.prefill), flags)
+            val contentIntent = when {
+                notice.prefill != null && notice.prefillAction == null -> chatIntent
+                etlIntent != null -> etlIntent
+                else -> chatIntent
+            }
 
             val b = NotificationCompat.Builder(context, notice.channel.id)
                 .setSmallIcon(R.drawable.ic_stat_etl)
@@ -80,14 +96,17 @@ object NotificationPoster {
                 .setContentIntent(contentIntent)
                 .setAutoCancel(true)
                 .setCategory(if (notice.channel == Channel.DEADLINE) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_EVENT)
-                .setPriority(if (notice.channel == Channel.BRIEF) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
+                .setPriority(if (notice.channel == Channel.BRIEF || notice.channel == Channel.NEW_FILES) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_HIGH)
 
             notice.bigText?.takeIf { it.isNotBlank() }?.let {
                 b.setStyle(NotificationCompat.BigTextStyle().bigText(it))
             }
 
-            if (url != null) {
-                b.addAction(0, "eTL에서 열기", contentIntent)
+            if (etlIntent != null) {
+                b.addAction(0, "eTL에서 열기", etlIntent)
+            }
+            if (notice.prefill != null && notice.prefillAction != null) {
+                b.addAction(0, notice.prefillAction, chatIntent)
             }
 
             if (settings.hideContentOnLockScreen) {

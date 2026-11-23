@@ -652,6 +652,7 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
             SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려줘요(보강·휴강 공지는 따로 표시)", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
             SwitchRow("새 과제·마감 변경·성적 알림", "과제가 새로 올라오거나, 마감이 바뀌거나, 점수가 등록되면 알려줘요", n.changeAlerts) { v -> a.updateNotify { it.copy(changeAlerts = v) } }
             SwitchRow("제출 직후 확인", "과제를 내면 eTL 제출 기록을 살펴보고 빈 파일·허용되지 않은 형식·첨부 없음 같은 문제가 있을 때만 알려줘요", n.submitAlerts) { v -> a.updateNotify { it.copy(submitAlerts = v) } }
+            SwitchRow("새 강의자료 알림", "4시간마다 과목별 파일 목록을 보고 새 자료가 올라오면 알려줘요. 누르면 비서에게 받아 달라고 할 수 있어요", n.newFileAlerts) { v -> a.updateNotify { it.copy(newFileAlerts = v) } }
             SwitchRow("수업 알림", "시간표(수강편람 + 보강·휴강)의 수업 시작 ${n.classLeadMinutes}분 전에 알려줘요", n.classAlerts) { v -> a.updateNotify { it.copy(classAlerts = v) } }
             if (n.classAlerts) {
                 Spacer(Modifier.height(4.dp))

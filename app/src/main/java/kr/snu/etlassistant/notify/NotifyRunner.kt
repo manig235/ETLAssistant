@@ -120,9 +120,31 @@ object NotifyRunner {
             runCatching { DeadlineAlarm.schedule(app, listOfNotNull(nextDeadline, nextClass, nextReminder).minOrNull()) }
             logErrors(snapshot.errors, fetched.cachedAt)
             log("확인 완료: 마감 $deadlines, 공지 $anns, 조회 오류 ${snapshot.errors.size}")
+            // 새 강의자료: 마지막 단계로, 4시간에 한 번만. 실패해도 이번 확인 결과에는 영향이 없다.
+            if (settings.newFileAlerts && etlOk && !quiet && token != null) {
+                runCatching { checkNewFiles(app, token, fetched.snapshot.courses, courses, settings, now) }
+                    .onFailure { log("새 강의자료 확인 실패: ${reasonOf(it)}") }
+            }
             // 연결 실패면 받아 둔 정보로 보낼 것은 보냈지만, 새 공지·변경을 보려고 다시 시도한다(중복은 fired 키가 막는다).
             if (failure != null) Outcome.RETRY else Outcome.SUCCESS
         }
+    }
+
+    /** 과목마다 차례로 파일 목록 첫 쪽을 보고(GET), 새 파일을 과목별로 묶어 알린다. 처음 보는 과목은 기준선만. */
+    private fun checkNewFiles(app: Context, token: String, current: List<CourseRef>, filter: CourseFilter, settings: NotifySettings, now: Instant) {
+        if (current.isEmpty()) return
+        val store = NewFilesStore(app)
+        val before = store.load()
+        val nowMs = now.toEpochMilli()
+        if (!NewFiles.due(before, nowMs)) return
+        val results = NewFilesCheck.fetch(EtlClient(token), NewFiles.toCheck(before, current, nowMs))
+        val (after, notices) = NewFiles.apply(before, nowMs, current, results, filter::muted)
+        store.save(after)
+        notices.forEach { NotificationPoster.post(app, it, settings) }
+        val denied = results.values.count { it == NewFiles.Outcome.Denied || it == NewFiles.Outcome.AuthRejected }
+        val failed = results.values.count { it == NewFiles.Outcome.Failed }
+        log("새 강의자료 확인: 과목 ${results.size}개, 알림 ${notices.size}건" +
+            (if (denied > 0) ", 파일 탭 막힘 $denied" else "") + (if (failed > 0) ", 실패 $failed" else ""))
     }
 
     /**
