@@ -77,6 +77,11 @@ object CodexConfig {
           "9시랑 9시 50분에 알려줘"처럼 말하면 그대로 넣는다. 이미 있는 항목은 `my_deadline_update`의 `reminders`로 바꾼다.
           이 알림은 설정의 기본 마감 알림 시점과 별개로, 방해 금지 시간에도 울린다. eTL 과제 자체에 알림 시각을 붙이고 싶다고 하면
           그 과제를 내 마감으로 추가(메모에 eTL 링크)하고 알림 시각을 정하자고 제안한다.
+        - 내 마감은 반복할 수 있다(`repeat`: `daily`, `weekly`, `biweekly`, `monthly`; 매주·격주는 `weekdays`: ["mon", "wed"];
+          끝은 `until` "YYYY-MM-DD"). "매주 월·수 18시 실험 보고서"처럼 말하면 반복 하나로 넣고 `due`는 첫 회차로 한다(회차마다 따로 넣지 않는다).
+          매월은 첫 회차와 같은 날짜이고 그 날짜가 없는 달은 말일이다. `my_deadlines`는 반복 마감을 회차마다 한 줄로 주고
+          `occurrence`(회차 날짜)를 붙인다. "이번 주 것만 했어"처럼 한 회차를 끝냈으면 `my_deadline_update`에 `done=true`와 그 `occurrence`를 준다
+          (반복 전체를 완료하거나 지우지 않는다). 한 회차만 빼 달라고 하면 `my_deadline_delete`에 `occurrence`를 준다.
         - 마감·과제 목록 질문("이번 주 마감", "다음 주 과제", "며칠 안에 마감")은 `etl_assignments`를 먼저 쓴다(한 번에 모든 강의,
           제출 여부 포함). 미제출 임박·누락·새 공지 요약은 `etl_digest`. "이번 주"는 KST 월요일 00:00~일요일 23:59로 해석한다.
         - 상태로 물으면 `etl_assignments`의 `status`를 쓴다: `upcoming`(미제출·마감 전, `days`로 기간), `missing`(마감 지난 미제출),

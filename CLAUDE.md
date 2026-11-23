@@ -115,6 +115,9 @@ eTL 과제는 알림 확인·브리핑 때 `SnapshotCache`에 저장한 결과�
 내 마감마다 **알림 시각을 직접** 정할 수 있다(`MyDeadline.reminders`, 최대 5개; 화면은 "N분 전"·"시각 고르기", AI는 `reminders`/`remind_before_minutes`).
 기본 마감 알림 시점과 별개이고 방해 금지와 무관하다. `NotifyRunner.runCheck`가 eTL 조회 전에 네트워크 없이 먼저 보내고(키 `mine-remind:{id}:{분}`),
 제시간 알람(`DeadlineAlarm`)은 네트워크를 기다리지 않고 manual로 돈다. 저장할 때 `DeadlineAlarm.scheduleEarlier`로 바로 건다.
+**반복(2026-11-23)**: 내 마감에 반복(`MyDeadline.repeat` = `MyRepeat`: 매일/매주·격주(요일 여러 개)/매월, 끝 날짜 선택)을 둘 수 있다. 규칙만 저장하고 회차는 KST로 그때그때 펼친다
+(`due`는 첫 회차, 매월 31일은 없는 달에 말일로 맞춤). 완료·"이번만 지우기"는 회차별(`doneDates`·`skipDates`). 알림·브리핑·위젯은 최근 놓친 회차(7일 이내)와 다음 회차만(`MyDeadlines.active`),
+알림 ID는 회차마다 다르다(`itemId`). 직접 정한 알림 시각은 회차마다 따라간다. 내 일정은 7일 안 회차를 모두 보인다. AI는 `repeat`·`weekdays`·`until`·`occurrence`. 상세는 `docs/phase3-log.md` "내 마감 반복".
 채팅 말풍선은 `SelectionContainer`로 길게 눌러 부분 선택·복사(접근성에는 "전체 복사" 동작).
 **수식(2026-11-22, 0.2.1)**: 말풍선의 LaTeX(`\( \)`, `$ $`, `\[ \]`, `$$ $$`)를 기기 안에서 그린다(`ru.noties:jlatexmath-android`, GPLv2+classpath exception, 외부 서버·WebView 없음).
 수식이 있는 본문은 선택 가능한 TextView 한 개에서 `ReplacementSpan`으로 수식과 글을 함께 그린다(2026-11-23 선택 문제 수정, 0.2.8).
@@ -234,7 +237,7 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
 - `etl_download(file_id_or_url)`: 폰 `Download/etl/`에 저장하고 경로, 크기, 일치 여부를 반환
 - `etl_verify_submission(course_id, assignment_id)`
 - `my_deadlines(range=all|this_week|next_week|days, days=7, include_done=false)`: 폰 안의 "내 마감"(eTL 요청 없음, 토큰 불필요)
-- 쓰기(폰 안만): `my_deadline_add(title, due, memo)`, `my_deadline_update(id, …)`, `my_deadline_delete(id)`, `timetable_change_add(kind, date, course, start, end, room, note)`, `timetable_change_delete(id)`
+- 쓰기(폰 안만): `my_deadline_add(title, due, memo, repeat, weekdays, until)`, `my_deadline_update(id, …, occurrence)`, `my_deadline_delete(id, occurrence)`, `timetable_change_add(kind, date, course, start, end, room, note)`, `timetable_change_delete(id)`
 - `etl_boards(course_id)`, `etl_board_posts(course_id, board_id, page=1, keyword)`, `etl_board_post(course_id, board_id, post_id)`: LearningX 게시판
 - `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
 - `etl_syllabus(course_id, attachment?)`: 강의계획서. eTL `syllabus_body`(글, 걸린 eTL 파일 ID) + 수강편람 강의계획서(`cc103ajax`: 평가 비율, 주차별 계획, 목표, 교재, 출석 규정, 첨부 목록). `attachment`(index)로 첨부 계획서를 비서용 작업 폴더에만 받아 읽는다(2026-11-21 사용자 결정: 원본 파일은 사용자에게 주지 않는다. 폰 저장·채팅 파일 카드 없음. 첨부는 `etl-files/syllabus/`에 두고, PDF를 `etl_render_pages`로 읽어도 채팅에 쪽 미리보기를 띄우지 않는다(`EtlFiles.isPrivateRead`). 계획서는 비서가 정보를 얻으려고 보는 것이지 사용자에게 필요한 게 아니라는 사용자 결정)
