@@ -89,6 +89,7 @@ import androidx.compose.ui.semantics.semantics
 
 /** 화면이 그리는 값. 액티비티가 세션 이벤트와 저장소 상태를 여기에 반영한다. */
 class SettingsState {
+    var themeMode by mutableStateOf(ThemeMode.SYSTEM)
     var sessionState by mutableStateOf(SessionState.STOPPED)
     var sessionDetail by mutableStateOf<String?>(null)
     var account by mutableStateOf<AccountInfo?>(null)
@@ -157,6 +158,7 @@ class SettingsActions(
     val setUpdateAlerts: (Boolean) -> Unit = {},
     val checkUpdate: () -> Unit = {},
     val openUpdate: () -> Unit = {},
+    val setThemeMode: (ThemeMode) -> Unit = {},
 )
 
 @Composable
@@ -821,11 +823,25 @@ private fun ApiKeySection(s: SettingsState, a: SettingsActions) {
 private fun MiscSection(s: SettingsState, a: SettingsActions) {
     Section("기타") {
         SettingsCard {
+            Text("화면 모드", style = DesignSystemTheme.typography.body2Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+            Spacer(Modifier.height(10.dp))
+            ThemeModePicker(s.themeMode, a.setThemeMode)
+            Spacer(Modifier.height(20.dp))
             SwitchRow("업데이트 알림", "새 버전이 나오면 알려 줘요(GitHub에 최신 버전만 물어봐요)", s.updateAlerts, onChange = a.setUpdateAlerts)
             LinkRow("알림 기록", onClick = a.openHistory)
             LinkRow("시간표 · 보강/휴강", onClick = a.openTimetable)
             LinkRow("내 일정", onClick = a.openMyDeadlines)
             LinkRow("처음 안내 다시 보기", onClick = a.replayOnboarding)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ThemeModePicker(selected: ThemeMode, onSelect: (ThemeMode) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ThemeMode.entries.forEach { mode ->
+            WantedChip(text = mode.label, isActive = selected == mode, onClick = { onSelect(mode) })
         }
     }
 }

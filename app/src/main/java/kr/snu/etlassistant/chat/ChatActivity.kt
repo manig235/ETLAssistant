@@ -13,7 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
@@ -42,7 +42,7 @@ import kr.snu.etlassistant.notify.NotifySettingsStore
  * 채팅 화면(Montage). Codex 세션은 이 화면이 열려 있을 때만 돌린다([CodexSession]이 화면이 모두 사라지면 일정 시간 뒤 멈춘다).
  * 그리기는 [ChatRoot]가 하고, 이 클래스는 세션 이벤트와 대화 변경을 [ChatViewModel]의 상태로 옮겨 준다.
  */
-class ChatActivity : ComponentActivity(), CodexSession.Listener, ChatModel.Listener {
+class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Listener {
 
     private val vm: ChatViewModel by viewModels()
     private val main = Handler(Looper.getMainLooper())

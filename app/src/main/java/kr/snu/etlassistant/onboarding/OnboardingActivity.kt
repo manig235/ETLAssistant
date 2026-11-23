@@ -12,7 +12,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.format.DateFormat
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,7 +28,7 @@ import kr.snu.etlassistant.phase0.CodexRunner
  * 첫 실행 안내(환영 → eTL 연결 → ChatGPT 로그인 → 알림 → 완료). 화면은 Montage(Wanted 디자인 시스템)로 그린다.
  * Codex 세션은 로그인 단계에 들어갈 때 시작하고, 이 화면이 보이는 동안만 이벤트를 받는다.
  */
-class OnboardingActivity : ComponentActivity(), CodexSession.Listener {
+class OnboardingActivity : AppCompatActivity(), CodexSession.Listener {
 
     private val vm: OnboardingViewModel by viewModels()
 

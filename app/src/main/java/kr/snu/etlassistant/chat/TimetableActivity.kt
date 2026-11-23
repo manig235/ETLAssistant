@@ -5,7 +5,7 @@ import android.app.TimePickerDialog
 import android.os.Bundle
 import android.text.format.DateFormat
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -69,7 +69,7 @@ import java.time.LocalTime
  * 시간표: 수강편람에서 가져온 주간 수업과 사용자가 넣는 보강·휴강(ttokttok-pet의 timetable.md).
  * 보강·휴강은 AI 답변(etl_timetable), 브리핑의 "오늘 수업", 수업 알림에 반영된다.
  */
-class TimetableActivity : ComponentActivity() {
+class TimetableActivity : AppCompatActivity() {
     private val store by lazy { TimetableStore(this) }
     private val changes by lazy { TimetableChangeStore(this) }
     private var weekly by mutableStateOf<TimetableLogic.Weekly?>(null)
@@ -99,7 +99,11 @@ class TimetableActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         reload()
-        if (weekly == null) refresh(force = false)
+        val cached = weekly
+        val now = System.currentTimeMillis()
+        if (cached == null || cached.metadataVersion < 2 || now < cached.fetchedAt || now - cached.fetchedAt >= Timetable.CACHE_MS) {
+            refresh(force = false)
+        }
     }
 
     private fun reload() {
@@ -162,58 +166,56 @@ private fun TimetableScreen(
                 if (loading) WantedCircularProgressIndicator()
                 else IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, contentDescription = "수강편람에서 다시 가져오기", tint = c.foregroundNeutralSecondary) }
             }
-            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                 Spacer(Modifier.height(8.dp))
-                Text("주간 수업", style = t.headline1Bold, color = c.foregroundNeutralPrimary)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("주간 수업", style = t.body2Medium, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
+                    weekly?.let { Text("${it.courses.size}과목", style = t.caption1Regular, color = c.foregroundNeutralSecondary) }
+                }
                 Spacer(Modifier.height(8.dp))
                 val w = weekly
                 if (w == null) {
-                    Text(if (loading) "가져오는 중…" else "아직 가져오지 않았어요. 오른쪽 위 새로고침을 누르세요.", style = t.body2Regular, color = c.foregroundNeutralSecondary)
+                    Text(if (loading) "가져오는 중…" else "아직 가져오지 않았어요. 오른쪽 위 새로고침을 누르세요.",
+                        style = t.body2Regular, color = c.foregroundNeutralSecondary, modifier = Modifier.padding(horizontal = 16.dp))
                 } else {
-                    var any = false
-                    for (d in TimetableLogic.WEEKDAYS) {
-                        val rows = w.courses.flatMap { co -> co.meetings.filter { it.day == d.toString() }.map { co to it } }.sortedBy { it.second.start }
-                        if (rows.isEmpty()) continue
-                        any = true
-                        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(16.dp)).background(c.surfaceNeutralSecondary).padding(14.dp)) {
-                            Text("${d}요일", style = t.body2Medium, color = c.foregroundBrandPrimary)
-                            for ((co, m) in rows) {
-                                Text("${m.start}~${m.end}  ${TimetableLogic.shortName(co.name)}" + (m.room?.let { "  ($it)" } ?: ""), style = t.body2Regular, color = c.foregroundNeutralPrimary)
-                            }
-                        }
-                    }
-                    if (!any) Text("수강편람에서 수업 시간을 찾지 못했어요.", style = t.body2Regular, color = c.foregroundNeutralSecondary)
+                    if (TimetableGridLogic.build(w.courses).blocks.isEmpty()) {
+                        Text("수강편람에서 수업 시간을 찾지 못했어요.", style = t.body2Regular, color = c.foregroundNeutralSecondary,
+                            modifier = Modifier.padding(horizontal = 16.dp))
+                    } else WeeklyTimetable(w)
                     if (w.errors.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("시간을 못 가져온 과목:\n" + w.errors.joinToString("\n") { "· $it" }, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+                        Text("일부 정보를 확인하지 못했어요\n" + w.errors.joinToString("\n") { "· $it" },
+                            style = t.caption1Regular, color = c.foregroundNeutralSecondary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("보강 · 휴강", style = t.headline1Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { adding = true }) { Icon(Icons.Outlined.Add, contentDescription = "보강·휴강 추가", tint = c.foregroundBrandPrimary) }
-                }
-                Text("공지로 바뀐 수업을 넣으면 AI 답변, 오늘 수업 브리핑, 수업 알림에 반영돼요. 시간이 바뀐 수업은 원래 날짜에 휴강, 새 시간에 보강을 넣으세요.", style = t.caption1Regular, color = c.foregroundNeutralSecondary)
-                Spacer(Modifier.height(8.dp))
-                if (changes.isEmpty()) Text("예정된 보강·휴강이 없어요", style = t.body2Regular, color = c.foregroundNeutralSecondary)
-                for (ch in changes) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(16.dp)).background(c.surfaceNeutralSecondary).padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            val wd = TimetableLogic.weekdayOf(ch.date)
-                            Text("${ch.date.monthValue}/${ch.date.dayOfMonth}($wd) ${ch.kind} · ${ch.course}", style = t.body2Medium, color = c.foregroundNeutralPrimary)
-                            val detail = listOfNotNull(
-                                if (ch.start != null) "${ch.start}" + (ch.end?.let { "~$it" } ?: "") else null,
-                                ch.room, ch.note,
-                            ).joinToString(" · ")
-                            if (detail.isNotEmpty()) Text(detail, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
-                        }
-                        IconButton(onClick = { onDelete(ch) }) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "지우기", tint = c.foregroundNeutralSecondary, modifier = Modifier.size(20.dp)) }
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("보강 · 휴강", style = t.headline1Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { adding = true }) { Icon(Icons.Outlined.Add, contentDescription = "보강·휴강 추가", tint = c.foregroundBrandPrimary) }
                     }
+                    Text("공지로 바뀐 수업을 넣으면 AI 답변, 오늘 수업 브리핑, 수업 알림에 반영돼요. 시간이 바뀐 수업은 원래 날짜에 휴강, 새 시간에 보강을 넣으세요.", style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    if (changes.isEmpty()) Text("예정된 보강·휴강이 없어요", style = t.body2Regular, color = c.foregroundNeutralSecondary)
+                    for (ch in changes) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(16.dp)).background(c.surfaceNeutralSecondary).padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                val wd = TimetableLogic.weekdayOf(ch.date)
+                                Text("${ch.date.monthValue}/${ch.date.dayOfMonth}($wd) ${ch.kind} · ${ch.course}", style = t.body2Medium, color = c.foregroundNeutralPrimary)
+                                val detail = listOfNotNull(
+                                    if (ch.start != null) "${ch.start}" + (ch.end?.let { "~$it" } ?: "") else null,
+                                    ch.room, ch.note,
+                                ).joinToString(" · ")
+                                if (detail.isNotEmpty()) Text(detail, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+                            }
+                            IconButton(onClick = { onDelete(ch) }) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "지우기", tint = c.foregroundNeutralSecondary, modifier = Modifier.size(20.dp)) }
+                        }
+                    }
+                    Spacer(Modifier.height(32.dp))
                 }
-                Spacer(Modifier.height(32.dp))
             }
         }
         if (adding) {

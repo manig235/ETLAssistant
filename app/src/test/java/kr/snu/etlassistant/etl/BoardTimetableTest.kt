@@ -147,6 +147,36 @@ class BoardTimetableTest {
         assertTrue(TimetableLogic.parseMeetings(JSONObject()).isEmpty())
     }
 
+    @Test fun professorComesFromSyllabusAndFallsBackToCourseDetails() {
+        assertEquals("홍교수", TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":"<b>홍교수</b>"},"LISTTAB01":{"profNm":"김교수"}}""")))
+        assertEquals("김교수", TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":" "},"LISTTAB01":{"profNm":"김교수"}}""")))
+        assertNull(TimetableLogic.professor(JSONObject("""{"LISTTAB03":{"profNm":null}}""")))
+        assertNull(TimetableLogic.professor(null))
+    }
+
+    @Test fun professorSurvivesCacheAndOldCacheStillShowsMeetings() {
+        val course = TimetableLogic.CourseMeetings(1,"과목",listOf(TimetableLogic.Meeting("월","09:00","10:00","301-302")),"홍교수")
+        val current = TimetableLogic.Weekly("1",1000,listOf(course),emptyList())
+        assertEquals(current, TimetableLogic.fromJson(TimetableLogic.toJson(current)))
+        val old = JSONObject(TimetableLogic.toJson(current)).put("version",1)
+        old.getJSONArray("courses").getJSONObject(0).remove("professor")
+        val restored = TimetableLogic.fromJson(old.toString())!!
+        assertEquals(1, restored.metadataVersion)
+        assertEquals(course.meetings, restored.courses.single().meetings)
+        assertNull(restored.courses.single().professor)
+    }
+
+    @Test fun partialMetadataFailurePreservesKnownMeetingsAndProfessor() {
+        val old = TimetableLogic.CourseMeetings(1,"과목",listOf(TimetableLogic.Meeting("월","09:00","10:00","301-302")),"이전 교수")
+        val onlyProfessor = TimetableLogic.CatalogCourse(emptyList(),"새 교수",meetingError="조회 실패")
+        assertEquals(old.meetings, TimetableLogic.refreshedCourse(1,"과목",onlyProfessor,old).meetings)
+        assertEquals("새 교수", TimetableLogic.refreshedCourse(1,"과목",onlyProfessor,old).professor)
+        assertEquals(old, TimetableLogic.refreshedCourse(1,"과목",null,old))
+        val confirmedEmpty = TimetableLogic.CatalogCourse(emptyList(),null)
+        assertTrue(TimetableLogic.refreshedCourse(1,"과목",confirmedEmpty,old).meetings.isEmpty())
+        assertEquals("이전 교수", TimetableLogic.refreshedCourse(1,"과목",confirmedEmpty,old).professor)
+    }
+
     @Test fun dayClassesAndCacheRoundTrip() {
         val w = TimetableLogic.Weekly(
             "1,2", 1000L,

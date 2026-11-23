@@ -3,7 +3,7 @@ package kr.snu.etlassistant.chat
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -45,7 +45,7 @@ import kr.snu.etlassistant.notify.NotifyHistoryLogic
 import java.time.Instant
 
 /** 지난 알림(최근 90일). 실수로 지웠거나 사라진 알림을 다시 본다. ttokttok-pet의 etl-history.log에 해당한다. */
-class NotifyHistoryActivity : ComponentActivity() {
+class NotifyHistoryActivity : AppCompatActivity() {
     private val store by lazy { NotifyHistory(this) }
     private var items by mutableStateOf<List<HistoryEntry>>(emptyList())
 

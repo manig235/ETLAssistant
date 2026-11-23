@@ -28,7 +28,7 @@ import android.app.TimePickerDialog
 import android.os.Bundle
 import android.text.format.DateFormat
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -96,7 +96,7 @@ import java.time.ZoneId
  * eTL 과제는 알림 확인 때 저장해 둔 결과([SnapshotCache])를 바로 보여 주고, 없거나 오래됐으면 뒤에서 새로 받는다.
  * 내 마감(eTL 밖의 마감)은 여기서 추가·수정·완료·삭제하며, eTL 과제처럼 마감 알림과 브리핑에 들어간다. 저장은 폰 안에만.
  */
-class MyDeadlinesActivity : ComponentActivity() {
+class MyDeadlinesActivity : AppCompatActivity() {
     private val store by lazy { MyDeadlineStore(this) }
     private var mine by mutableStateOf<List<MyDeadline>>(emptyList())
     private var cached by mutableStateOf<CachedSnapshot?>(null)

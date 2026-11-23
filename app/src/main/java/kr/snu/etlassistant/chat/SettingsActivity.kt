@@ -11,7 +11,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,7 +38,7 @@ import kr.snu.etlassistant.update.UpdateStore
  * 설정 화면: ChatGPT 계정(브라우저 / 기기 코드), eTL 토큰, 알림, AI 모델, API 키(고급). 화면은 Montage(Wanted 디자인 시스템)로 그린다.
  * 이 화면이 열려 있는 동안에도 Codex 세션이 유지돼야 로그인 알림을 받을 수 있으므로 세션 리스너로 붙는다.
  */
-class SettingsActivity : ComponentActivity(), CodexSession.Listener {
+class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
 
     private val state = SettingsState()
     private val apiKeys by lazy { ApiKeyStore(this) }
@@ -114,6 +114,10 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
                 UpdateScheduler.apply(this)
             },
             checkUpdate = ::checkUpdate,
+            setThemeMode = { mode ->
+                state.themeMode = mode
+                AppAppearance.save(this, mode)
+            },
             openUpdate = {
                 val url = state.updateUrl
                 if (url != null && UpdateLogic.isAllowedDownloadUrl(url)) {
@@ -128,6 +132,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
 
     override fun onStart() {
         super.onStart()
+        state.themeMode = AppAppearance.load(this)
         // attach가 진행 중인 로그인(없으면 LoginIdle)을 알려 주므로 로그인 패널은 그것으로 맞춰진다.
         CodexSession.attach(this)
         CodexSession.ensureStarted()
