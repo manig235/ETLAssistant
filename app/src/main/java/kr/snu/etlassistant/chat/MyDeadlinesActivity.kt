@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.outlined.CalendarViewWeek
 import com.wanted.android.wanted.design.actions.chip.WantedChip
 import com.wanted.android.wanted.design.loading.loading.WantedCircularProgressIndicator
@@ -112,6 +113,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
     private var filter by mutableStateOf(Agenda.Filter.ALL)
     private var hideDone by mutableStateOf(true)
     private var courseFilter by mutableStateOf(CourseFilter())
+    private var submitCheck by mutableStateOf<SubmissionCheckUi?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -160,8 +162,35 @@ class MyDeadlinesActivity : AppCompatActivity() {
                 seriesOf = ::seriesOf,
                 pickDate = ::pickDate,
                 pickTime = ::pickTime,
+                onCheckSubmission = ::checkSubmission,
             )
+            submitCheck?.let { st ->
+                SubmissionCheckDialog(st, onDismiss = { submitCheck = null }, onOpen = { url ->
+                    if (url.startsWith("https://myetl.snu.ac.kr/")) runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                })
+            }
         }
+    }
+
+    /** "제출 확인": 과제와 내 제출을 지금 받아(GET 두 번) 판정한다. 파일은 받지 않는다. */
+    private fun checkSubmission(a: kr.snu.etlassistant.notify.AssignmentItem) {
+        val token = EtlService.tokens(this).load()
+        if (token.isNullOrEmpty()) return toast("eTL 토큰을 먼저 저장하세요")
+        val title = a.name
+        submitCheck = SubmissionCheckUi.Loading(title)
+        Thread {
+            val result = try {
+                SubmissionCheckUi.Done(title, kr.snu.etlassistant.etl.SubmissionCheck.live(EtlClient(token), a.courseId, a.assignmentId, Instant.now()))
+            } catch (e: EtlAuthException) {
+                SubmissionCheckUi.Failed(title, "eTL이 토큰을 거부했어요. 설정에서 토큰을 다시 저장하세요")
+            } catch (e: EtlException) {
+                SubmissionCheckUi.Failed(title, e.message ?: "eTL 요청 실패")
+            } catch (e: Exception) {
+                SubmissionCheckUi.Failed(title, "확인하지 못했어요(${e.javaClass.simpleName})")
+            }
+            // 그사이 닫았으면 다시 띄우지 않는다.
+            runOnUiThread { if (submitCheck == SubmissionCheckUi.Loading(title)) submitCheck = result }
+        }.start()
     }
 
     override fun onStart() {
@@ -269,6 +298,7 @@ private fun AgendaScreen(
     seriesOf: (MyDeadline) -> MyDeadline?,
     pickDate: (LocalDate, (LocalDate) -> Unit) -> Unit,
     pickTime: (LocalTime, (LocalTime) -> Unit) -> Unit,
+    onCheckSubmission: (kr.snu.etlassistant.notify.AssignmentItem) -> Unit = {},
 ) {
     DesignSystemTheme {
         val c = DesignSystemTheme.colors
@@ -319,7 +349,8 @@ private fun AgendaScreen(
                             modifier = Modifier.padding(start = 8.dp, top = 8.dp))
                     }
                     items(schedule.overdue, key = { "overdue-${it.id}" }) { r ->
-                        AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine })
+                        AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine },
+                            onCheck = r.assignment?.takeIf { it.submitted }?.let { a -> { onCheckSubmission(a) } })
                     }
                 }
                 for ((isUpcoming, groups) in listOf(true to schedule.upcoming, false to schedule.later)) {
@@ -344,7 +375,8 @@ private fun AgendaScreen(
                                 modifier = Modifier.padding(start = 8.dp, top = 8.dp))
                         }
                         items(g.rows, key = { it.id }) { r ->
-                            AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine })
+                            AgendaRow(r, now, onClick = { openRow(r) }, onToggleDone = { r.mine?.let(onToggleDone) }, onDelete = { deleting = r.mine },
+                            onCheck = r.assignment?.takeIf { it.submitted }?.let { a -> { onCheckSubmission(a) } })
                         }
                     }
                 }
@@ -450,7 +482,7 @@ private fun DeadlineEmptyText(text: String) {
 }
 
 @Composable
-private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggleDone: () -> Unit, onDelete: () -> Unit) {
+private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggleDone: () -> Unit, onDelete: () -> Unit, onCheck: (() -> Unit)? = null) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     val clickable = r.mine != null || r.url != null
@@ -477,6 +509,12 @@ private fun AgendaRow(r: Agenda.Row, now: Instant, onClick: () -> Unit, onToggle
             val whenText = Agenda.whenLabel(r, now)
             Text(listOf(whenText, r.subtitle).filter { it.isNotEmpty() }.joinToString(" · "), style = t.caption1Regular,
                 color = if (r.overdue) c.foregroundNegativePrimary else c.foregroundNeutralSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        if (onCheck != null) {
+            IconButton(onClick = onCheck, modifier = Modifier.semantics { contentDescription = "'${r.title}' 제출 확인" }) {
+                Icon(Icons.AutoMirrored.Outlined.FactCheck, contentDescription = null,
+                    tint = if (r.attention) c.foregroundNegativePrimary else c.foregroundNeutralSecondary, modifier = Modifier.size(20.dp))
+            }
         }
         if (r.mine != null) {
             IconButton(onClick = onDelete, modifier = Modifier.semantics { contentDescription = "'${r.title}' 지우기" }) {

@@ -22,6 +22,7 @@ class NotifySettingsStore(context: Context) {
             changeAlerts = prefs.getBoolean("changeAlerts", d.changeAlerts),
             classAlerts = prefs.getBoolean("classAlerts", d.classAlerts),
             classLeadMinutes = prefs.getInt("classLeadMinutes", d.classLeadMinutes).coerceIn(1, 120),
+            submitAlerts = prefs.getBoolean("submitAlerts", d.submitAlerts),
         )
     }
 
@@ -42,6 +43,7 @@ class NotifySettingsStore(context: Context) {
             .putBoolean("changeAlerts", s.changeAlerts)
             .putBoolean("classAlerts", s.classAlerts)
             .putInt("classLeadMinutes", s.classLeadMinutes)
+            .putBoolean("submitAlerts", s.submitAlerts)
             .apply()
     }
 

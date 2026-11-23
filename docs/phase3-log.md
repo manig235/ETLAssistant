@@ -175,3 +175,19 @@ AI 없이 앱 코드(WorkManager)만으로 마감·공지를 알린다. 코드�
 - 저장 형식: 반복 항목만 `repeat`·`doneDates`·`skipDates` 키가 붙는다. 예전 데이터(키 없음)와 모르는 freq는 반복 없음으로 읽는다.
 - 검증: 단위 테스트 `MyDeadlinesRepeatTest`(요일 여러 개, 격주, 31일 매월, 끝 날짜, KST 자정 근처, 회차별 완료·알림 키·직접 알림, 이번만 지우기, JSON 호환, 내 일정·위젯·비서 결과).
   기기에서는 아직 확인하지 못했다(편집 화면 모양, 위젯 완료 버튼, 반복 알림이 실제로 매주 울리는지).
+
+## 제출 직후 자동 점검 (2026-11-23)
+
+- 파일을 받지 않고 제출 정보(메타데이터)만 본다. 과제 목록(`include[]=submission`)의 제출을 `SubmissionCheck.evaluate`(`etl/SubmissionCheck.kt`)로 판정해
+  `AssignmentItem.submittedAt`·`check`(늦음, 문제 목록, 첨부 목록 확인 여부)에 넣는다. 판정은 `etl_verify_submission`과 같은
+  `EtlLogic.evaluateSubmission`·`checkAttachment`: 누락 표시, 허용되지 않은 제출 방식, 0바이트 첨부, 허용되지 않은 확장자, 파일 업로드인데 첨부 없음.
+- 알림(`AssignmentWatch.diff`의 `submits`): 제출 시각이 지난 확인과 다르면(새 제출·다시 제출) 문제가 있을 때만 `submit_check` 채널(HIGH, "제출 확인")로 알린다.
+  키 `submit:{과목}:{과제}:{제출 시각}`. **늦음만 있으면 알리지 않는다**(본인이 안다) — 내 일정에 "제출함(늦음)"으로 보인다. 과목별 알림 끄기를 따른다.
+  설정 "제출 직후 확인"(`submitAlerts`, 기본 켬). 새 과제·변경 알림을 꺼도 따로 돈다.
+- 기준선: `WatchState.submitInitialized`(version 2). 예전 기록에는 제출 시각이 없어서 업데이트 뒤 첫 확인은 기준선만 잡는다.
+- 첨부 목록: 파일 업로드 제출인데 목록 JSON에 `attachments` 키가 **아예 없으면** 그 새 제출만 `GET …/submissions/self`로 한 번 더 받는다(확인당 최대 5개).
+  받지 못하면 제출 시각을 기록하지 않고 다음 확인에서 다시 본다. **서울대 eTL 목록 응답에 제출 첨부가 들어 있는지는 토큰 없이 확인하지 못했다**
+  (Canvas 기본 동작으로는 들어 있다).
+- 내 일정: 제출한 eTL 과제 행에 "제출 확인" 버튼(과제 + `submissions/self`, GET 두 번)이 있고 결과를 대화상자로 보여 준다(늦음도 문제로 보인다).
+  점검에서 문제가 나온 제출은 "제출·완료 숨김"이어도 보인다("제출함 · 확인 필요"). 마감이 지난 제출 과제는 원래 목록에 없어서 버튼도 없다.
+- 검증: 단위 테스트 `SubmitWatchTest`. 기기에서는 확인하지 못했다.

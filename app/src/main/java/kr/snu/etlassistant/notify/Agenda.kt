@@ -24,7 +24,9 @@ object SnapshotCacheLogic {
             s.assignments.forEach { a ->
                 arr.put(JSONObject().put("cid", a.courseId).put("course", a.courseName).put("aid", a.assignmentId).put("name", a.name)
                     .put("due", a.due?.toEpochMilli() ?: JSONObject.NULL).put("online", a.online).put("points", a.points ?: JSONObject.NULL)
-                    .put("url", a.url ?: JSONObject.NULL).put("submitted", a.submitted).put("missing", a.missing).put("score", a.score ?: JSONObject.NULL))
+                    .put("url", a.url ?: JSONObject.NULL).put("submitted", a.submitted).put("missing", a.missing).put("score", a.score ?: JSONObject.NULL)
+                    .put("subAt", a.submittedAt?.toEpochMilli() ?: JSONObject.NULL)
+                    .also { o -> a.check?.let { c -> o.put("check", checkJson(c)) } })
             }
         }).toString()
 
@@ -39,11 +41,21 @@ object SnapshotCacheLogic {
                     if (a.isNull("due")) null else Instant.ofEpochMilli(a.optLong("due")), a.optBoolean("online", true),
                     if (a.isNull("points")) null else a.optDouble("points"), if (a.isNull("url")) null else a.optString("url"),
                     a.optBoolean("submitted"), a.optBoolean("missing"), if (a.isNull("score")) null else a.optDouble("score"),
+                    if (!a.has("subAt") || a.isNull("subAt")) null else Instant.ofEpochMilli(a.optLong("subAt")),
+                    a.optJSONObject("check")?.let(::checkFrom),
                 )
             })
         }
     } catch (_: Exception) {
         null
+    }
+
+    private fun checkJson(c: kr.snu.etlassistant.etl.SubmitCheck): JSONObject =
+        JSONObject().put("late", c.late).put("problems", JSONArray(c.problems)).put("attKnown", c.attachmentsKnown)
+
+    private fun checkFrom(o: JSONObject): kr.snu.etlassistant.etl.SubmitCheck {
+        val p = o.optJSONArray("problems") ?: JSONArray()
+        return kr.snu.etlassistant.etl.SubmitCheck(o.optBoolean("late"), (0 until p.length()).map { p.optString(it) }, o.optBoolean("attKnown", true))
     }
 }
 
@@ -79,6 +91,10 @@ object Agenda {
         val url: String? = null,
         /** 내 마감이면 그 항목. 반복 마감이면 회차(`occurrence`가 있는 펼친 값), 고칠 때는 저장된 원래 항목을 다시 찾는다. */
         val mine: MyDeadline? = null,
+        /** eTL 과제면 그 과제("제출 확인"에 쓴다). */
+        val assignment: AssignmentItem? = null,
+        /** 제출했지만 제출 정보 점검에서 문제가 나온 과제. 제출·완료를 숨겨도 보인다. */
+        val attention: Boolean = false,
     )
 
     data class Group(val date: LocalDate, val rows: List<Row>)
@@ -116,8 +132,9 @@ object Agenda {
                 if (past && (a.submitted || !a.missing)) continue
                 rows += Row(
                     "assignment-${a.courseId}-${a.assignmentId}", Kind.ASSIGNMENT, a.name,
-                    NoticeText.course(a.courseName) + (if (a.submitted) " · 제출함" else if (!a.online) " · 오프라인" else ""),
-                    due, done = a.submitted, overdue = past, url = a.url,
+                    NoticeText.course(a.courseName) + submittedLabel(a),
+                    due, done = a.submitted, overdue = past, url = a.url, assignment = a,
+                    attention = a.submitted && a.check?.problems?.isNotEmpty() == true,
                 )
             }
         }
@@ -134,7 +151,7 @@ object Agenda {
                     d.due, done = d.done, overdue = past, mine = d)
             }
         }
-        val visible = rows.filter { !hideDone || !it.done }
+        val visible = rows.filter { !hideDone || !it.done || it.attention }
             .sortedWith(compareBy({ it.at }, { it.kind.ordinal }, { it.title }, { it.id }))
         val today = now.atZone(zone).toLocalDate()
         val endExclusive = today.plusDays(7).atStartOfDay(zone).toInstant()
@@ -148,6 +165,14 @@ object Agenda {
             upcoming = groups(future.filter { it.at.isBefore(endExclusive) }),
             later = groups(future.filter { !it.at.isBefore(endExclusive) }),
         )
+    }
+
+    /** ` · 제출함`, 늦었으면 ` · 제출함(늦음)`, 점검에서 문제가 나왔으면 ` · 제출함 · 확인 필요`. */
+    fun submittedLabel(a: AssignmentItem): String = when {
+        !a.submitted -> if (!a.online) " · 오프라인" else ""
+        a.check?.problems?.isNotEmpty() == true -> " · 제출함 · 확인 필요"
+        a.check?.late == true -> " · 제출함(늦음)"
+        else -> " · 제출함"
     }
 
     fun dateLabel(date: LocalDate): String = "${date.monthValue}/${date.dayOfMonth}(${"월화수목금토일"[date.dayOfWeek.value - 1]})"

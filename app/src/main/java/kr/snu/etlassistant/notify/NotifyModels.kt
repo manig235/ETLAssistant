@@ -26,6 +26,10 @@ data class AssignmentItem(
     val missing: Boolean,
     /** 채점되었으면 점수(`workflow_state == graded`이고 score 있음). 성적 등록 알림에 쓴다. */
     val score: Double? = null,
+    /** 제출 시각(`submission.submitted_at`). 제출 직후 점검([AssignmentWatch])이 새 제출·다시 제출을 알아보는 데 쓴다. */
+    val submittedAt: Instant? = null,
+    /** 제출 정보만으로 한 점검 결과(제출했을 때만). 받아 둔 옛 저장본에서 왔으면 null일 수 있다. */
+    val check: kr.snu.etlassistant.etl.SubmitCheck? = null,
 )
 
 data class AnnouncementItem(
@@ -46,6 +50,8 @@ data class Snapshot(
     val announcements: List<AnnouncementItem>,
     /** 일부 강의 조회 실패 등(사용자에게 보일 수 있는 짧은 문구). 토큰이나 서명 URL은 절대 넣지 않는다. */
     val errors: List<String> = emptyList(),
+    /** 이번에 조회한 현재 학기 강의(새 강의자료 확인에 쓴다). 조회하지 않았으면 비어 있다. */
+    val courses: List<CourseRef> = emptyList(),
 )
 
 /**
@@ -62,6 +68,8 @@ enum class Channel(val id: String) {
     CLASS("class"),
     /** 새 버전 알림(GitHub Release, update/UpdateChecker). 2026-11-22에 팝업(HIGH)으로 올리며 `_v2`가 됐다. */
     UPDATE("update_v2"),
+    /** 제출 직후 점검에서 문제를 찾았을 때(2026-11-23). 팝업(HIGH). */
+    SUBMIT("submit_check"),
 }
 
 /**
@@ -149,11 +157,13 @@ data class NotifySettings(
     /** 수업 시작 전 알림(시간표: 수강편람 + 보강·휴강). */
     val classAlerts: Boolean = false,
     val classLeadMinutes: Int = 10,
+    /** 제출 직후 점검: 새로 낸 제출에 문제(누락 표시, 빈 파일, 허용되지 않은 확장자·방식, 첨부 없음)가 있으면 알린다. */
+    val submitAlerts: Boolean = true,
 ) {
     /** 어떤 알림이든 켜져 있는가(전부 꺼져 있으면 예약 작업을 만들지 않는다). */
-    val anyEnabled: Boolean get() = deadlineAlerts || announcementAlerts || briefEnabled || changeAlerts || classAlerts
+    val anyEnabled: Boolean get() = deadlineAlerts || announcementAlerts || briefEnabled || changeAlerts || classAlerts || submitAlerts
     /** 주기 확인이 필요한가(브리핑도 데이터가 필요하므로 브리핑만 켜도 브리핑 시점에 조회한다). */
-    val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts || changeAlerts || classAlerts
+    val needsPeriodicCheck: Boolean get() = deadlineAlerts || announcementAlerts || changeAlerts || classAlerts || submitAlerts
     /** 제시간 알람(마감·수업 시각에 맞춘 추가 확인)이 필요한가. */
     val needsTimedCheck: Boolean get() = deadlineAlerts || classAlerts
 

@@ -23,15 +23,25 @@ object SnapshotFetcher {
      * [EtlAuthException]은 그대로 던진다(토큰 거부는 사용자에게 알려야 한다).
      * 그 외 [EtlException]은 해당 강의(또는 공지)만 건너뛰고 [Snapshot.errors]에 모은다.
      */
-    fun fetch(client: EtlClient, now: Instant, announcementDays: Int = 2): Snapshot {
+    fun fetch(
+        client: EtlClient,
+        now: Instant,
+        announcementDays: Int = 2,
+        needsSubmissionDetail: (AssignmentItem) -> Boolean = { false },
+    ): Snapshot {
         val courses = CourseAssignments.currentCourses(client)
         val errors = mutableListOf<String>()
 
         // ---- 과제 (강의별 병렬, 동시 요청 수는 EtlClient가 제한) ----
         val assignments = mutableListOf<AssignmentItem>()
+        var detailBudget = MAX_SUBMISSION_DETAIL
         for (r in retryFailed(client, CourseAssignments.fetch(client, courses))) {
             if (r.error != null) errors += "${r.courseName}: ${r.error}"
-            else assignments += mapAssignments(r.courseId, r.courseName, r.assignments, now)
+            else assignments += mapAssignments(r.courseId, r.courseName, r.assignments, now).map { item ->
+                if (detailBudget <= 0 || item.check?.attachmentsKnown != false || !needsSubmissionDetail(item)) return@map item
+                detailBudget--
+                withSubmissionDetail(client, item, r.assignments, now)
+            }
         }
 
         // ---- 공지 ----
@@ -50,7 +60,28 @@ object SnapshotFetcher {
             }
         }
 
-        return Snapshot(now, sortAssignments(assignments), announcements, errors)
+        val refs = courses.map { CourseRef(it.optLong("id"), it.str("name").orEmpty()) }
+        return Snapshot(now, sortAssignments(assignments), announcements, errors, refs)
+    }
+
+    /** 한 번 확인에서 `submissions/self`를 더 받는 과제 수 상한(대개 0~1개). */
+    private const val MAX_SUBMISSION_DETAIL = 5
+
+    /**
+     * 파일 업로드 제출인데 과제 목록에 첨부 목록이 없을 때, 내 제출(`submissions/self`, GET)을 한 번 받아 다시 판정한다.
+     * 실패하면 그대로 둔다(첨부를 모르는 채로 두면 [AssignmentWatch]가 다음 확인에서 다시 시도한다).
+     */
+    private fun withSubmissionDetail(client: EtlClient, item: AssignmentItem, raw: List<JSONObject>, now: Instant): AssignmentItem {
+        val a = raw.firstOrNull { it.optLong("id") == item.assignmentId } ?: return item
+        return try {
+            val s = client.getObject(kr.snu.etlassistant.etl.SubmissionCheck.submissionPath(item.courseId, item.assignmentId))
+            kr.snu.etlassistant.etl.SubmissionCheck.evaluate(a, s, now)
+                ?.let { item.copy(check = it, submittedAt = EtlLogic.parseInstant(s.str("submitted_at")) ?: item.submittedAt) } ?: item
+        } catch (e: EtlAuthException) {
+            throw e
+        } catch (_: EtlException) {
+            item
+        }
     }
 
     /**
@@ -89,6 +120,8 @@ object SnapshotFetcher {
                 submitted = EtlLogic.isSubmitted(a),
                 missing = EtlLogic.isMissing(a, now),
                 score = if (kr.snu.etlassistant.etl.Queries.isGraded(a)) a.obj("submission")?.optDouble("score")?.takeIf { !it.isNaN() } else null,
+                submittedAt = EtlLogic.parseInstant(a.obj("submission")?.str("submitted_at")),
+                check = kr.snu.etlassistant.etl.SubmissionCheck.evaluate(a, a.obj("submission"), now),
             )
         }
 
