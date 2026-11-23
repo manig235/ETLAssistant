@@ -187,7 +187,7 @@ private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
         if (a.size > 0) add(AttachmentLogic.formatSize(a.size))
         when {
             !exists -> add("폰에서 정리된 파일")
-            a.shownPath != null -> add("내 폰 Download/etl")
+            a.shownPath != null -> add(if (kr.snu.etlassistant.files.GeneratedFilesLogic.isGeneratedPath(a.shownPath)) "내 폰 Download/etl/${kr.snu.etlassistant.files.GeneratedFilesLogic.SUBDIR}" else "내 폰 Download/etl")
         }
     }.joinToString(" · ")
     Row(

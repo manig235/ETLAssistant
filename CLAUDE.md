@@ -266,6 +266,8 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
 - `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
 - `etl_syllabus(course_id, attachment?)`: 강의계획서. eTL `syllabus_body`(글, 걸린 eTL 파일 ID) + 수강편람 강의계획서(`cc103ajax`: 평가 비율, 주차별 계획, 목표, 교재, 출석 규정, 첨부 목록). `attachment`(index)로 첨부 계획서를 비서용 작업 폴더에만 받아 읽는다(2026-11-21 사용자 결정: 원본 파일은 사용자에게 주지 않는다. 폰 저장·채팅 파일 카드 없음. 첨부는 `etl-files/syllabus/`에 두고, PDF를 `etl_render_pages`로 읽어도 채팅에 쪽 미리보기를 띄우지 않는다(`EtlFiles.isPrivateRead`). 계획서는 비서가 정보를 얻으려고 보는 것이지 사용자에게 필요한 게 아니라는 사용자 결정)
 - `etl_download`에 게시판 첨부용 `course_id`, `board_id`, `post_id`(선택)
+- `make_pdf(title, content_markdown, filename?)`(2026-11-24, 폰 안 쓰기): 비서가 쓴 마크다운을 기기 안에서 A4 PDF로(`pdf/`: `PdfMarkdown` 파서, `PdfLayoutLogic` 쪽 나누기·파일명, `PdfMaker` = PdfDocument+StaticLayout+시스템 글꼴, 수식은 `MathRender` 그림/`MathText.toUnicode`).
+  `Download/etl/영민이가 만든 파일/`(MediaStore)에 저장하고 받은 파일과 같은 카드를 붙인다. 20MB·200쪽·30만 자 상한. AI가 만든 파일은 `files/GeneratedFiles`가 URI를 기록하고 `isGenerated`로 판정한다(받은 파일 자동 정리 제외용). NOTICE 줄은 남기지 않는다(사용자가 요청한 결과물이고 카드가 보임).
 - `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
 
 ## 보안 규칙
