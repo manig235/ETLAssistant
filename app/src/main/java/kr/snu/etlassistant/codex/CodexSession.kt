@@ -94,6 +94,11 @@ object AppSettings {
     var currentChatId: String?
         get() = prefs.getString("currentChatId", null)
         set(v) = prefs.edit().apply { if (v == null) remove("currentChatId") else putString("currentChatId", v) }.apply()
+
+    /** 지운 대화의 Codex 스레드 중 아직 `thread/delete`로 지우지 못한 것(Codex가 꺼져 있었거나 실패). 다음 시작 때 다시 지운다. */
+    var pendingThreadDeletes: Set<String>
+        get() = prefs.getStringSet("pendingThreadDeletes", null)?.toSet() ?: emptySet()
+        set(v) = prefs.edit().apply { if (v.isEmpty()) remove("pendingThreadDeletes") else putStringSet("pendingThreadDeletes", v.toSet()) }.apply()
 }
 
 /**
@@ -374,6 +379,13 @@ object CodexSession {
         setState(SessionState.READY)
         CodexRunner.log.line("[session] 준비됨")
         refreshModels()
+        calls.execute {
+            try {
+                purgeOnStart(c)
+            } catch (e: Exception) {
+                CodexRunner.log.line("[session] 지운 대화 정리 실패: ${e.javaClass.simpleName}")
+            }
+        }
     }
 
     private fun teardown() {
@@ -590,25 +602,64 @@ object CodexSession {
     fun renameConversation(id: String, title: String) = chats.rename(id, title)
 
     /**
-     * 대화를 지운다(색인과 메시지 파일). Codex 쪽 스레드는 thread/archive로 보관 처리한다(실패해도 무시).
+     * 대화를 지운다(색인과 메시지 파일). Codex 쪽 스레드도 `thread/delete`로 지운다(rollout 파일과 Codex 내부 DB의 행).
+     * Codex가 꺼져 있거나 실패하면 rollout 파일만 바로 지우고, 스레드 ID를 남겨 다음 시작 때 다시 `thread/delete`한다.
      * 지금 대화를 지우면 빈 새 대화로 바꾼다. 메인 스레드에서 부른다. 답변 중이면 false.
      */
     fun deleteConversation(id: String): Boolean {
         if (busy) return false
         val removed = chats.delete(id) ?: return true
         if (id == chatId) openChat(chats.newId())
-        val thread = removed.threadId
-        val c = client
-        if (thread != null && c != null) {
-            calls.execute {
+        val thread = removed.threadId?.takeIf { ThreadPurge.isThreadId(it) } ?: return true
+        synchronized(purgeLock) { AppSettings.pendingThreadDeletes = AppSettings.pendingThreadDeletes + thread }
+        calls.execute { purgeThreads(client) }
+        return true
+    }
+
+    private val purgeLock = Any()
+
+    private val codexHome: File get() = File(app.filesDir, "codex-home")
+
+    /**
+     * 지우기로 한 스레드를 정리한다. [c]가 있으면 `thread/delete`를 먼저 부르고, 결과와 상관없이 남은 rollout 파일을 지운다.
+     * `thread/delete`가 성공했거나 스레드가 이미 없을 때만 목록에서 뺀다(그 밖의 실패는 다음 시작 때 다시 시도).
+     */
+    private fun purgeThreads(c: AppServerClient?) {
+        val pending = synchronized(purgeLock) { AppSettings.pendingThreadDeletes }
+        if (pending.isEmpty()) return
+        val done = mutableSetOf<String>()
+        for (t in pending) {
+            if (!ThreadPurge.isThreadId(t)) { done += t; continue }
+            var gone = false
+            if (c != null) {
                 try {
-                    c.request("thread/archive", JSONObject().put("threadId", thread), 15)
+                    c.request("thread/delete", JSONObject().put("threadId", t), 30)
+                    gone = true
                 } catch (e: IOException) {
-                    CodexRunner.log.line("[session] 스레드 보관 실패(무시): ${e.message}")
+                    val msg = e.message.orEmpty()
+                    gone = msg.contains("not found", ignoreCase = true)
+                    if (!gone) CodexRunner.log.line("[session] 스레드 삭제 실패(다음에 다시 시도): $msg")
                 }
             }
+            val files = ThreadPurge.delete(codexHome, t)
+            if (files > 0) CodexRunner.log.line("[session] 지운 대화의 기록 파일 ${files}개를 지웠습니다")
+            if (gone) done += t
         }
-        return true
+        if (done.isNotEmpty()) synchronized(purgeLock) { AppSettings.pendingThreadDeletes = AppSettings.pendingThreadDeletes - done }
+    }
+
+    /**
+     * 시작할 때 한 번: 예전 버전이 대화를 지울 때 보관(thread/archive)만 해 둔 스레드와, 지우다 만 스레드를 지운다.
+     * 보관함은 앱이 대화를 지울 때만 쓰므로, 대화 목록에 없는 보관 스레드는 모두 지운 대화의 것이다.
+     */
+    private fun purgeOnStart(c: AppServerClient) {
+        val keep = chats.list().mapNotNull { it.threadId }.toSet()
+        val orphans = ThreadPurge.archivedOrphans(codexHome, keep)
+        if (orphans.isNotEmpty()) {
+            CodexRunner.log.line("[session] 지운 대화의 보관 기록 ${orphans.size}개를 정리합니다")
+            synchronized(purgeLock) { AppSettings.pendingThreadDeletes = AppSettings.pendingThreadDeletes + orphans }
+        }
+        purgeThreads(c)
     }
 
     /**
