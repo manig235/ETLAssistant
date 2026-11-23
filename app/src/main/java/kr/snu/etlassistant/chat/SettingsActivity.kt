@@ -314,10 +314,14 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         return saved
     }
 
+    /** eTL 연결 해제: 토큰과 eTL에서 받아 둔 캐시를 지운다(무엇을 남기는지는 [EtlDisconnect]). */
     private fun clearEtlToken() {
-        EtlService.tokens(this).clear()
+        kr.snu.etlassistant.etl.EtlDisconnect.run(this)
+        kr.snu.etlassistant.widget.HomeWidgets.dataChanged(this)
+        NotifyScheduler.apply(this)
         CodexSession.restart()
         refreshSecrets()
+        toast("eTL 연결을 해제했어요")
     }
 
     // ---- 알림 ----------------------------------------------------------------
