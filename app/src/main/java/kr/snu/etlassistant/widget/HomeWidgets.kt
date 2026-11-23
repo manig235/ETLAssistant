@@ -92,7 +92,8 @@ object HomeWidgets {
         val now = Instant.now()
         val snapshot = SnapshotCache(context).load()
         // 숨긴 과목(과목별 알림 → 숨기기)의 과제는 빼고 보인다.
-        val assignments = CourseFilterStore(context).load().visibleAssignments(snapshot?.assignments.orEmpty())
+        val courseFilter = CourseFilterStore(context).load()
+        val assignments = courseFilter.visibleAssignments(snapshot?.assignments.orEmpty())
         val items = DeadlineWidgetLogic.items(assignments, MyDeadlineStore(context).load(), now)
         for (provider in deadlineProviders) ids(context, provider).forEach { id ->
             val compact = provider == CompactDeadlineWidgetProvider::class.java
@@ -101,13 +102,13 @@ object HomeWidgets {
         }
         val weekly = TimetableStore(context).load()
         val changes = TimetableChangeStore(context).load()
-        val week = TimetableWidgetLogic.week(weekly, changes, now.atZone(EtlLogic.KST).toLocalDate())
+        val week = TimetableWidgetLogic.week(weekly, changes, now.atZone(EtlLogic.KST).toLocalDate(), courseFilter)
         for (provider in weekProviders) ids(context, provider).forEach { id ->
             val height = if (provider == TallTimetableWidgetProvider::class.java) 390 else 250
             val size = size(context, manager.getAppWidgetOptions(id), 250, height)
             manager.updateAppWidget(id, timetable(context, week, size, now))
         }
-        val next = TimetableWidgetLogic.nextClass(weekly, changes, now)
+        val next = TimetableWidgetLogic.nextClass(weekly, changes, now, courseFilter) // 시간표에서도 숨긴 과목은 뺀다
         val nextIds = ids(context, NextClassWidgetProvider::class.java)
         nextIds.forEach { id ->
             val size = size(context, manager.getAppWidgetOptions(id), 110, 40)
