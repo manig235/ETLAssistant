@@ -26,8 +26,8 @@ android {
         applicationId = "kr.snu.etlassistant.phase0"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.2.1"
+        versionCode = 12
+        versionName = "0.2.2"
         ndk {
             abiFilters += "arm64-v8a"
         }
