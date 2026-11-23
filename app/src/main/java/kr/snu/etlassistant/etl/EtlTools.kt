@@ -11,7 +11,9 @@ import kr.snu.etlassistant.etl.EtlLogic.str
 import kr.snu.etlassistant.etl.EtlLogic.strList
 import kr.snu.etlassistant.mcp.ToolHost
 import kr.snu.etlassistant.notify.MyDeadlineStore
+import kr.snu.etlassistant.notify.MyDeadline
 import kr.snu.etlassistant.notify.MyDeadlines
+import kr.snu.etlassistant.notify.MyRepeat
 import kr.snu.etlassistant.mcp.ToolResult
 import kr.snu.etlassistant.mcp.UnknownToolException
 import org.json.JSONArray
@@ -21,6 +23,7 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.URLEncoder
 import java.time.Instant
+import java.time.LocalDate
 
 /**
  * Codex에 노출하는 eTL 도구. **eTL에 대해서는 전부 읽기 전용**(GET만 보낸다. 예외: 게시판 LTI 실행, Board.kt).
@@ -108,23 +111,25 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_timetable", "수업 시간표. 정규 수업 요일·시간·강의실은 각 과목 강의계획서에 연결된 서울대 수강편람에서 가져오고(하루 캐시), 사용자가 앱의 '시간표' 화면에 넣은 보강·휴강을 반영하고(휴강은 cancelled), 그날 eTL 캘린더 일정을 더한다. 기본은 오늘(KST)의 수업. week=true면 요일별 주간 시간표. 사용자에게 시간표를 따로 묻지 않는다.",
             schema(Triple("date", "string", "YYYY-MM-DD(KST). 기본 오늘"), Triple("week", "boolean", "주간 시간표 전체. 기본 false"),
                 Triple("refresh", "boolean", "캐시를 무시하고 수강편람을 다시 조회. 기본 false"))))
-        .put(tool("my_deadlines", "사용자가 앱의 '내 마감'에 직접 등록한 마감(eTL 밖의 일정: 서류 제출, 회의 등)을 마감순으로 돌려준다(id 포함: my_deadline_update/delete에 쓴다). 마감·할 일 질문에는 etl_assignments와 함께 쓴다. 지난 미완료 항목은 기간과 관계없이 포함된다. eTL 토큰이 없어도 동작한다.",
+        .put(tool("my_deadlines", "사용자가 앱의 '내 마감'에 직접 등록한 마감(eTL 밖의 일정: 서류 제출, 회의 등)을 마감순으로 돌려준다(id 포함: my_deadline_update/delete에 쓴다). 마감·할 일 질문에는 etl_assignments와 함께 쓴다. 지난 미완료 항목은 기간과 관계없이 포함된다. 반복 마감은 회차마다 한 줄이고 occurrence(회차 날짜)와 repeat(규칙)가 붙는다: 기간을 주면 그 안의 회차, all이면 최근 놓친 회차와 다음 회차. eTL 토큰이 없어도 동작한다.",
             JSONObject().put("type", "object").put("properties", JSONObject()
                 .put("range", JSONObject().put("type", "string").put("enum", JSONArray(listOf("all", "this_week", "next_week", "days")))
                     .put("description", "all(기본): 전체, this_week: 이번 주 월~일(KST), next_week: 다음 주, days: 지금부터 days일"))
                 .put("days", JSONObject().put("type", "integer").put("description", "range=days일 때 기간(일). 기본 7, 최대 60"))
                 .put("include_done", JSONObject().put("type", "boolean").put("description", "완료로 표시한 항목도 포함할지. 기본 false")))
                 .put("required", JSONArray())))
-        .put(tool("my_deadline_add", "앱의 '내 마감'에 마감을 추가한다(폰 안에만 저장, eTL은 바뀌지 않음). 추가하면 eTL 과제처럼 마감 알림과 브리핑에 들어간다. $writeRule \"내일\", \"금요일\" 같은 말은 오늘(KST) 기준 실제 날짜로 바꿔 넣는다.",
-            schema(Triple("title", "string", "제목(60자 이내)"), Triple("due", "string", "마감 KST \"YYYY-MM-DD HH:MM\". 시각을 모르면 날짜만(그날 23:59)"),
+        .put(tool("my_deadline_add", "앱의 '내 마감'에 마감을 추가한다(폰 안에만 저장, eTL은 바뀌지 않음). 추가하면 eTL 과제처럼 마감 알림과 브리핑에 들어간다. $writeRule \"내일\", \"금요일\" 같은 말은 오늘(KST) 기준 실제 날짜로 바꿔 넣는다. \"매주 월·수 18시\"처럼 반복이면 repeat·weekdays를 주고 due는 첫 회차(시작 날짜와 마감 시각)로 한다.",
+            schema(Triple("title", "string", "제목(60자 이내)"), Triple("due", "string", "마감 KST \"YYYY-MM-DD HH:MM\". 시각을 모르면 날짜만(그날 23:59). 반복이면 첫 회차"),
                 Triple("memo", "string", "메모(선택, 200자 이내). eTL 과제를 옮길 때는 그 링크"),
-                required = listOf("title", "due")).also { s -> reminderSchemaProps(s.getJSONObject("properties")) }, readOnly = false))
-        .put(tool("my_deadline_update", "내 마감 하나를 고친다(제목, 마감, 메모, 완료 여부). id는 my_deadlines 결과에서 얻는다. $writeRule",
-            schema(Triple("id", "integer", "my_deadlines의 id"), Triple("title", "string", "새 제목(선택)"), Triple("due", "string", "새 마감 \"YYYY-MM-DD HH:MM\"(선택)"),
+                required = listOf("title", "due")).also { s -> reminderSchemaProps(s.getJSONObject("properties")); repeatSchemaProps(s.getJSONObject("properties")) }, readOnly = false))
+        .put(tool("my_deadline_update", "내 마감 하나를 고친다(제목, 마감, 메모, 완료 여부, 반복). id는 my_deadlines 결과에서 얻는다. 반복 마감에서 done은 한 회차에만 적용된다(occurrence로 회차 날짜를 주고, 없으면 가장 가까운 미완료 회차). 제목·마감·반복을 고치면 반복 전체에 적용된다. $writeRule",
+            schema(Triple("id", "integer", "my_deadlines의 id"), Triple("title", "string", "새 제목(선택)"), Triple("due", "string", "새 마감 \"YYYY-MM-DD HH:MM\"(선택). 반복이면 첫 회차"),
                 Triple("memo", "string", "새 메모(선택)"), Triple("done", "boolean", "완료로 표시(true) / 취소(false)(선택)"),
-                required = listOf("id")).also { s -> reminderSchemaProps(s.getJSONObject("properties")) }, readOnly = false))
-        .put(tool("my_deadline_delete", "내 마감 하나를 지운다. 사용자가 지워 달라고 분명히 말했을 때만 쓴다(끝난 일은 지우지 말고 done=true로 표시).",
-            schema(Triple("id", "integer", "my_deadlines의 id"), required = listOf("id")), readOnly = false))
+                Triple("occurrence", "string", "반복 마감에서 done을 적용할 회차 날짜 YYYY-MM-DD(my_deadlines의 occurrence)"),
+                required = listOf("id")).also { s -> reminderSchemaProps(s.getJSONObject("properties")); repeatSchemaProps(s.getJSONObject("properties")) }, readOnly = false))
+        .put(tool("my_deadline_delete", "내 마감 하나를 지운다. 사용자가 지워 달라고 분명히 말했을 때만 쓴다(끝난 일은 지우지 말고 done=true로 표시). 반복 마감에서 occurrence를 주면 그 회차만 빼고, 없으면 반복 전체를 지운다.",
+            schema(Triple("id", "integer", "my_deadlines의 id"), Triple("occurrence", "string", "반복 마감에서 그 회차만 지울 때 회차 날짜 YYYY-MM-DD(선택)"),
+                required = listOf("id")), readOnly = false))
         .put(tool("timetable_change_add", "시간표에 보강 또는 휴강을 넣는다(폰 안에만 저장). 수업 알림, 오늘 수업 브리핑, etl_timetable에 반영된다. 시간이 바뀐 수업은 원래 날짜에 휴강, 새 시간에 보강 두 개를 넣는다. $writeRule 공지에서 찾았다면 날짜·시간·과목을 보여 주고 사용자가 넣으라고 했을 때만 쓴다.",
             schema(Triple("kind", "string", "\"보강\" 또는 \"휴강\""), Triple("date", "string", "YYYY-MM-DD(KST)"),
                 Triple("course", "string", "과목명: etl_timetable(week=true)의 과목명 그대로(줄임말 금지)"),
@@ -244,6 +249,45 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put("remind_before_minutes", JSONObject().put("type", "array").put("items", JSONObject().put("type", "integer"))
             .put("description", "마감 몇 분 전에 알릴지(reminders 대신 써도 된다). 예: [60, 10]"))
 
+    private fun repeatSchemaProps(o: JSONObject): JSONObject = o
+        .put("repeat", JSONObject().put("type", "string").put("enum", JSONArray(listOf("none", "daily", "weekly", "biweekly", "monthly")))
+            .put("description", "반복(선택): none(반복 없음, update에서는 반복 해제), daily(매일), weekly(매주, weekdays), biweekly(격주, weekdays), monthly(매월 due와 같은 날짜, 그 날짜가 없는 달은 말일)"))
+        .put("weekdays", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string"))
+            .put("description", "weekly·biweekly의 요일: [\"mon\",\"wed\"] 처럼 mon~sun. 비우면 due의 요일"))
+        .put("until", JSONObject().put("type", "string")
+            .put("description", "반복 끝 날짜 YYYY-MM-DD(KST, 그날 포함). 없으면 끝없이. update에서 \"\"면 끝 날짜를 지운다"))
+
+    /** repeat·weekdays·until 인자를 반복 규칙으로. 셋 다 없으면 [old] 그대로. */
+    private fun repeatArgs(args: JSONObject, old: MyRepeat?): MyRepeat? {
+        if (!args.has("repeat") && !args.has("weekdays") && !args.has("until")) return old
+        val freqId = str(args, "repeat")?.trim()?.lowercase()
+        val freq = when {
+            freqId == "none" || freqId == "" -> return null
+            freqId != null -> MyRepeat.Freq.parse(freqId) ?: throw EtlException("repeat는 none, daily, weekly, biweekly, monthly 중 하나여야 합니다")
+            old != null -> old.freq
+            args.has("weekdays") -> MyRepeat.Freq.WEEKLY
+            else -> throw EtlException("until은 반복 마감에만 줄 수 있습니다. repeat도 주세요")
+        }
+        val weekdays = if (args.has("weekdays")) {
+            val a = args.optJSONArray("weekdays") ?: throw EtlException("weekdays는 [\"mon\", \"wed\"] 같은 배열이어야 합니다")
+            (0 until a.length()).map { i -> MyDeadlines.parseWeekday(a.optString(i)) ?: throw EtlException("요일 \"${a.optString(i)}\"을(를) 읽을 수 없습니다. mon~sun으로 주세요") }.toSet()
+        } else old?.weekdays.orEmpty()
+        val until = if (args.has("until")) str(args, "until")?.trim()?.takeIf { it.isNotEmpty() && it != "none" }?.let {
+            try { LocalDate.parse(it) } catch (_: Exception) { throw EtlException("until은 YYYY-MM-DD 형식이어야 합니다") }
+        } else old?.until
+        val usesWeekdays = freq == MyRepeat.Freq.WEEKLY || freq == MyRepeat.Freq.BIWEEKLY
+        return MyRepeat(freq, if (usesWeekdays) weekdays else emptySet(), until)
+    }
+
+    private fun occurrenceArg(args: JSONObject): LocalDate? = str(args, "occurrence")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        try { LocalDate.parse(it) } catch (_: Exception) { throw EtlException("occurrence는 YYYY-MM-DD 형식이어야 합니다") }
+    }
+
+    private fun deadlineJson(d: MyDeadline): JSONObject = JSONObject().put("ok", true).put("id", d.id).put("title", d.title)
+        .put("due_kst", EtlLogic.fmtKst(d.due)).put("done", d.done)
+        .put("reminders_kst", JSONArray(d.reminders.map { EtlLogic.fmtKst(it) }))
+        .apply { if (d.repeat != null) put("repeat", MyDeadlines.repeatJson(d).put("label", MyDeadlines.repeatLabel(d))) }
+
     private fun myDeadlineAdd(args: JSONObject): JSONObject {
         val store = MyDeadlineStore(context)
         val title = str(args, "title").orEmpty().trim()
@@ -251,13 +295,13 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         MyDeadlines.validate(title, memo, store.load().size)?.let { throw EtlException(it) }
         val due = MyDeadlines.parseDue(str(args, "due")) ?: throw EtlException("due는 \"YYYY-MM-DD HH:MM\"(KST) 형식이어야 합니다")
         val reminders = reminderArgs(args, due).orEmpty()
-        val d = kr.snu.etlassistant.notify.MyDeadline(System.currentTimeMillis(), title, due, memo, reminders = reminders)
+        val d = MyDeadline(System.currentTimeMillis(), title, due, memo, reminders = reminders, repeat = repeatArgs(args, null))
+        MyDeadlines.validateRepeat(d)?.let { throw EtlException(it) }
         store.upsert(d)
         rescheduleNotify()
         EtlEvents.notice("📌 내 마감에 추가: ${MyDeadlines.line(d)}" + (if (reminders.isNotEmpty()) " · 🔔 ${MyDeadlines.reminderLabel(d)}" else "") +
             " · 서랍 → 내 일정에서 고치거나 지울 수 있어요")
-        return JSONObject().put("ok", true).put("id", d.id).put("title", d.title).put("due_kst", EtlLogic.fmtKst(d.due))
-            .put("reminders_kst", JSONArray(reminders.map { EtlLogic.fmtKst(it) }))
+        return deadlineJson(d)
     }
 
     private fun myDeadlineUpdate(args: JSONObject): JSONObject {
@@ -268,28 +312,53 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val memo = str(args, "memo")?.trim() ?: old.memo
         MyDeadlines.validate(title, memo, 0)?.let { throw EtlException(it) }
         val due = str(args, "due")?.let { MyDeadlines.parseDue(it) ?: throw EtlException("due는 \"YYYY-MM-DD HH:MM\"(KST) 형식이어야 합니다") } ?: old.due
-        val done = if (args.has("done")) args.optBoolean("done") else old.done
+        val repeat = repeatArgs(args, old.repeat)
         // 알림 시각: 새로 주면 바꾸고, 안 주면 그대로(마감이 바뀌어 마감보다 늦어진 것은 뺀다).
-        val reminders = reminderArgs(args, due) ?: old.reminders.filter { it.isBefore(due) }
+        // 반복 마감은 "마감 몇 분 전"이 회차마다 따라가므로 마감을 옮기면 알림도 같은 만큼 옮긴다(화면과 같다).
+        val reminders = reminderArgs(args, due)
+            ?: (if (repeat != null) old.reminders.map { it.plus(java.time.Duration.between(old.due, due)) } else old.reminders).filter { it.isBefore(due) }
         // 마감 시각이 바뀌면 새 ID로 저장한다(예전 시각 기준 알림 기록이 새 알림을 막지 않게, 화면과 같은 규칙).
-        val new = old.copy(id = if (due != old.due) System.currentTimeMillis() else old.id, title = title, due = due, memo = memo, done = done, reminders = reminders)
+        var new = old.copy(id = if (due != old.due) System.currentTimeMillis() else old.id, title = title, due = due, memo = memo, reminders = reminders,
+            repeat = repeat, doneDates = if (repeat == null) emptySet() else old.doneDates, skipDates = if (repeat == null) emptySet() else old.skipDates,
+            done = if (repeat == null) old.done else false)
+        MyDeadlines.validateRepeat(new)?.let { throw EtlException(it) }
+        var what = "수정"
+        if (args.has("done")) {
+            val done = args.optBoolean("done")
+            val now = Instant.now()
+            if (repeat == null) {
+                new = new.copy(done = done)
+                if (done != old.done) what = if (done) "완료 표시" else "완료 취소"
+            } else {
+                // 반복 마감: 한 회차만. 날짜가 없으면 최근 놓친 회차, 없으면 다음 회차.
+                val date = occurrenceArg(args)
+                    ?: (if (done) (MyDeadlines.lastMissed(new, now) ?: MyDeadlines.nextOccurrence(new, now))?.occurrence
+                        else new.doneDates.filter { !it.isAfter(now.atZone(EtlLogic.KST).toLocalDate()) }.maxOrNull())
+                    ?: throw EtlException(if (done) "완료로 표시할 회차가 없습니다. occurrence로 날짜를 주세요" else "완료를 취소할 회차가 없습니다. occurrence로 날짜를 주세요")
+                if (!MyDeadlines.matches(new, date)) throw EtlException("$date 는 이 반복 마감의 회차가 아닙니다. my_deadlines의 occurrence를 쓰세요")
+                new = MyDeadlines.setDone(new, date, done, now)
+                what = (if (done) "완료 표시" else "완료 취소") + "(${kr.snu.etlassistant.notify.Agenda.dateLabel(date)} 회차)"
+            }
+        }
         if (new.id != old.id) store.delete(old.id)
         store.upsert(new)
         rescheduleNotify()
-        val what = when {
-            done && !old.done -> "완료 표시"
-            !done && old.done -> "완료 취소"
-            else -> "수정"
-        }
         EtlEvents.notice("📌 내 마감 $what: ${MyDeadlines.line(new)}" + (if (new.reminders.isNotEmpty()) " · 🔔 ${MyDeadlines.reminderLabel(new)}" else ""))
-        return JSONObject().put("ok", true).put("id", new.id).put("title", new.title).put("due_kst", EtlLogic.fmtKst(new.due)).put("done", new.done)
-            .put("reminders_kst", JSONArray(new.reminders.map { EtlLogic.fmtKst(it) }))
+        return deadlineJson(new)
     }
 
     private fun myDeadlineDelete(args: JSONObject): JSONObject {
         val store = MyDeadlineStore(context)
         val idv = id(args, "id")
         val old = store.load().firstOrNull { it.id == idv } ?: throw EtlException("내 마감에서 id $idv 를 찾을 수 없습니다. my_deadlines로 확인하세요.")
+        val date = occurrenceArg(args)
+        if (date != null && old.repeat != null) {
+            if (!MyDeadlines.matches(old, date)) throw EtlException("$date 는 이 반복 마감의 회차가 아닙니다. my_deadlines의 occurrence를 쓰세요")
+            store.upsert(MyDeadlines.skip(old, date, Instant.now()))
+            rescheduleNotify()
+            EtlEvents.notice("🗑 내 마감에서 한 회차 지움: ${old.title} · ${kr.snu.etlassistant.notify.Agenda.dateLabel(date)}")
+            return JSONObject().put("ok", true).put("deleted", old.title).put("occurrence", date.toString())
+        }
         store.delete(idv)
         EtlEvents.notice("🗑 내 마감에서 지움: ${MyDeadlines.line(old)}")
         return JSONObject().put("ok", true).put("deleted", old.title)

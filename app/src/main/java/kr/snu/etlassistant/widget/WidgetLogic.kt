@@ -5,6 +5,7 @@ import kr.snu.etlassistant.etl.EtlLogic
 import kr.snu.etlassistant.etl.TimetableLogic
 import kr.snu.etlassistant.notify.AssignmentItem
 import kr.snu.etlassistant.notify.MyDeadline
+import kr.snu.etlassistant.notify.MyDeadlines
 import java.time.DayOfWeek
 import java.time.Duration
 import java.time.Instant
@@ -18,6 +19,8 @@ object DeadlineWidgetLogic {
     data class Item(
         val key: String, val title: String, val source: String, val due: Instant,
         val url: String? = null, val mineId: Long? = null,
+        /** 반복 내 마감이면 그 회차 날짜(KST). 완료 버튼이 이 회차만 완료로 표시한다. */
+        val mineDate: LocalDate? = null,
     )
 
     fun items(assignments: List<AssignmentItem>, mine: List<MyDeadline>, now: Instant): List<Item> =
@@ -26,8 +29,9 @@ object DeadlineWidgetLogic {
             if (a.submitted || !due.isAfter(now)) return@mapNotNull null
             Item("etl-${a.courseId}-${a.assignmentId}", a.name, TimetableLogic.shortName(a.courseName), due,
                 assignmentUrl(a))
-        } + mine.filter { !it.done && it.due.isAfter(now) }.map {
-            Item("mine-${it.id}", it.title, "내 마감", it.due, mineId = it.id)
+        } + MyDeadlines.active(mine, now).filter { !it.done && it.due.isAfter(now) }.map {
+            // 반복 마감은 다음 회차 하나만 보인다.
+            Item("mine-${it.id}" + (it.occurrence?.let { o -> "-$o" } ?: ""), it.title, "내 마감", it.due, mineId = it.id, mineDate = it.occurrence)
         }).distinctBy { it.key }.sortedWith(compareBy({ it.due }, { it.key }))
 
     private fun assignmentUrl(a: AssignmentItem): String {

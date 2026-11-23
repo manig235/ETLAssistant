@@ -77,6 +77,7 @@ object Agenda {
         val done: Boolean = false,
         val overdue: Boolean = false,
         val url: String? = null,
+        /** 내 마감이면 그 항목. 반복 마감이면 회차(`occurrence`가 있는 펼친 값), 고칠 때는 저장된 원래 항목을 다시 찾는다. */
         val mine: MyDeadline? = null,
     )
 
@@ -121,11 +122,15 @@ object Agenda {
             }
         }
         if (filter == Filter.ALL || filter == Filter.MINE) {
-            for (d in mine) {
+            // 반복 마감은 앞으로 7일의 회차를 모두 펼친다(그 안에 없으면 다음 회차 하나).
+            val until = now.atZone(zone).toLocalDate().plusDays(7).atStartOfDay(zone).toInstant()
+            for (d in MyDeadlines.agendaItems(mine, now, until)) {
                 val past = !d.due.isAfter(now)
                 if (past && d.done) continue
-                rows += Row("mine-${d.id}", Kind.MINE, d.title, "내 마감" + (if (d.reminders.isNotEmpty() && !d.done) " · 🔔 ${MyDeadlines.reminderLabel(d)}" else "") +
-                    (if (d.memo.isNotBlank()) " · ${d.memo}" else "") + (if (d.done) " · 완료" else ""),
+                rows += Row("mine-${d.id}" + (d.occurrence?.let { "-$it" } ?: ""), Kind.MINE, d.title,
+                    "내 마감" + (if (d.repeat != null) " · 🔁 ${MyDeadlines.repeatLabel(d)}" else "") +
+                        (if (d.reminders.isNotEmpty() && !d.done) " · 🔔 ${MyDeadlines.reminderLabel(d)}" else "") +
+                        (if (d.memo.isNotBlank()) " · ${d.memo}" else "") + (if (d.done) " · 완료" else ""),
                     d.due, done = d.done, overdue = past, mine = d)
             }
         }

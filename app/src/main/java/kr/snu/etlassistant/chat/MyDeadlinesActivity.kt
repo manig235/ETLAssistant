@@ -41,6 +41,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -84,8 +86,10 @@ import kr.snu.etlassistant.etl.EtlLogic
 import kr.snu.etlassistant.notify.MyDeadline
 import kr.snu.etlassistant.notify.MyDeadlineStore
 import kr.snu.etlassistant.notify.MyDeadlines
+import kr.snu.etlassistant.notify.MyRepeat
 import kr.snu.etlassistant.notify.NotifyScheduler
 import kr.snu.etlassistant.notify.NotifySettingsStore
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -140,8 +144,15 @@ class MyDeadlinesActivity : AppCompatActivity() {
                     if (old != null && old.id != new.id) store.delete(old.id)
                     save(new)
                 },
-                onToggleDone = { d -> save(d.copy(done = !d.done)) },
-                onDelete = { d -> store.delete(d.id); reload(); toast("지웠어요") },
+                // 반복 마감의 회차는 그 회차만 완료로 표시한다.
+                onToggleDone = { d -> seriesOf(d)?.let { save(MyDeadlines.setDone(it, d.occurrence, !d.done, Instant.now())) } },
+                onDelete = { d, onlyThis ->
+                    val series = seriesOf(d)
+                    if (onlyThis && series != null && d.occurrence != null) save(MyDeadlines.skip(series, d.occurrence, Instant.now()))
+                    else { store.delete(d.id); reload() }
+                    toast("지웠어요")
+                },
+                seriesOf = ::seriesOf,
                 pickDate = ::pickDate,
                 pickTime = ::pickTime,
             )
@@ -155,6 +166,9 @@ class MyDeadlinesActivity : AppCompatActivity() {
         val age = cached?.let { System.currentTimeMillis() - it.takenAt }
         if (age == null || age > STALE_MS) refresh()
     }
+
+    /** 화면의 행(반복 마감이면 회차)에 해당하는 저장된 원래 항목. */
+    private fun seriesOf(d: MyDeadline): MyDeadline? = store.load().firstOrNull { it.id == d.id }
 
     private fun reload() {
         mine = store.load()
@@ -243,7 +257,8 @@ private fun AgendaScreen(
     onOpen: (String) -> Unit,
     onSave: (old: MyDeadline?, new: MyDeadline) -> Unit,
     onToggleDone: (MyDeadline) -> Unit,
-    onDelete: (MyDeadline) -> Unit,
+    onDelete: (MyDeadline, onlyThis: Boolean) -> Unit,
+    seriesOf: (MyDeadline) -> MyDeadline?,
     pickDate: (LocalDate, (LocalDate) -> Unit) -> Unit,
     pickTime: (LocalTime, (LocalTime) -> Unit) -> Unit,
 ) {
@@ -256,7 +271,8 @@ private fun AgendaScreen(
         var showOverdue by rememberSaveable { mutableStateOf(false) }
         fun openRow(r: Agenda.Row) {
             when {
-                r.mine != null -> editing = r.mine
+                // 반복 마감은 회차가 아니라 반복 전체를 고친다.
+                r.mine != null -> editing = seriesOf(r.mine) ?: r.mine
                 r.url != null -> onOpen(r.url)
             }
         }
@@ -337,12 +353,24 @@ private fun AgendaScreen(
             )
         }
         deleting?.let { d ->
+            val occurrence = d.occurrence.takeIf { d.repeat != null }
             AlertDialog(
                 onDismissRequest = { deleting = null },
                 containerColor = c.backgroundNeutralPrimary,
-                title = { Text("이 마감을 지울까요?", style = t.headline2Bold, color = c.foregroundNeutralPrimary) },
-                text = { Text("\"${d.title}\"이(가) 목록과 알림에서 사라져요.", style = t.body2Regular, color = c.foregroundNeutralSecondary) },
-                confirmButton = { WantedTextButton(text = "삭제", onClick = { onDelete(d); deleting = null }) },
+                title = { Text(if (occurrence != null) "반복 마감을 지울까요?" else "이 마감을 지울까요?", style = t.headline2Bold, color = c.foregroundNeutralPrimary) },
+                text = {
+                    Text(
+                        if (occurrence != null) "\"${d.title}\"은(는) ${MyDeadlines.repeatLabel(d)} 반복돼요. ${Agenda.dateLabel(occurrence)} 회차만 지울지, 반복 전체를 지울지 골라 주세요."
+                        else "\"${d.title}\"이(가) 목록과 알림에서 사라져요.",
+                        style = t.body2Regular, color = c.foregroundNeutralSecondary,
+                    )
+                },
+                confirmButton = {
+                    if (occurrence != null) Row {
+                        WantedTextButton(text = "이번만", onClick = { onDelete(d, true); deleting = null })
+                        WantedTextButton(text = "전체", onClick = { onDelete(d, false); deleting = null })
+                    } else WantedTextButton(text = "삭제", onClick = { onDelete(d, false); deleting = null })
+                },
                 dismissButton = { WantedTextButton(text = "취소", onClick = { deleting = null }) },
             )
         }
@@ -468,6 +496,9 @@ private fun DeadlineDialog(
     var date by remember { mutableStateOf(start.toLocalDate()) }
     var time by remember { mutableStateOf(start.toLocalTime().withSecond(0).withNano(0)) }
     var error by remember { mutableStateOf<String?>(null) }
+    var freq by remember { mutableStateOf(initial?.repeat?.freq) }
+    var weekdays by remember { mutableStateOf(initial?.repeat?.weekdays.orEmpty()) }
+    var until by remember { mutableStateOf(initial?.repeat?.until) }
     // 알림 시각은 "마감 몇 분 전"으로 들고 있다가 저장할 때 시각으로 바꾼다(마감을 옮기면 알림도 같이 따라간다).
     var offsets by remember {
         mutableStateOf(initial?.let { d -> d.reminders.map { java.time.Duration.between(it, d.due).toMinutes() }.filter { it > 0 } }.orEmpty().sorted())
@@ -490,7 +521,7 @@ private fun DeadlineDialog(
         containerColor = c.backgroundNeutralPrimary,
         title = { Text(if (initial == null) "내 마감 추가" else "내 마감 고치기", style = t.title3Bold, color = c.foregroundNeutralPrimary) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 WantedTextField(
                     text = title,
                     placeholder = "예: 장학금 서류 제출",
@@ -499,6 +530,8 @@ private fun DeadlineDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
+                if (freq != null) Text("첫 마감 날짜와 시각", style = t.caption1Regular, color = c.foregroundNeutralSecondary,
+                    modifier = Modifier.padding(bottom = 4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     WantedButton(
                         text = "%d/%02d/%02d".format(date.year, date.monthValue, date.dayOfMonth),
@@ -516,8 +549,22 @@ private fun DeadlineDialog(
                     )
                 }
                 Spacer(Modifier.height(12.dp))
+                RepeatEditor(
+                    freq = freq, weekdays = weekdays, until = until, date = date, editingSeries = initial?.repeat != null,
+                    onFreq = { f ->
+                        freq = f
+                        // 매주·격주를 처음 고르면 마감 날짜의 요일을 골라 둔다.
+                        if ((f == MyRepeat.Freq.WEEKLY || f == MyRepeat.Freq.BIWEEKLY) && weekdays.isEmpty()) weekdays = setOf(date.dayOfWeek)
+                        error = null
+                    },
+                    onToggleWeekday = { wd -> weekdays = if (wd in weekdays) weekdays - wd else weekdays + wd; error = null },
+                    onPickUntil = { pickDate(until ?: date.plusMonths(1)) { until = it; error = null } },
+                    onClearUntil = { until = null; error = null },
+                )
+                Spacer(Modifier.height(12.dp))
                 Text("알림 (선택)", style = t.body2Medium, color = c.foregroundNeutralPrimary)
-                Text("설정의 기본 마감 알림과 별개로, 정한 시각에 꼭 울려요(방해 금지 시간에도).", style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+                Text("설정의 기본 마감 알림과 별개로, 정한 시각에 꼭 울려요(방해 금지 시간에도)." +
+                    (if (freq != null) " 반복 마감은 회차마다 울려요." else ""), style = t.caption1Regular, color = c.foregroundNeutralSecondary)
                 Spacer(Modifier.height(6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (m in offsets) WantedChip(text = offsetLabel(m) + "  ✕", onClick = { offsets = offsets - m; error = null })
@@ -561,18 +608,81 @@ private fun DeadlineDialog(
                 val due = LocalDateTime.of(date, time).atZone(zone).toInstant()
                 val reminders = MyDeadlines.normalizeReminders(offsets.map { due.minusSeconds(it * 60) })
                 MyDeadlines.validateReminders(reminders, due)?.let { error = it; return@WantedTextButton }
-                onSave(
-                    MyDeadline(
-                        id = if (initial != null && initial.due == due) initial.id else System.currentTimeMillis(),
-                        title = title.trim(),
-                        due = due,
-                        memo = memo.trim(),
-                        done = initial?.done ?: false,
-                        reminders = reminders,
-                    )
+                val repeating = freq != null
+                val new = MyDeadline(
+                    id = if (initial != null && initial.due == due) initial.id else System.currentTimeMillis(),
+                    title = title.trim(),
+                    due = due,
+                    memo = memo.trim(),
+                    done = if (repeating) false else initial?.done ?: false,
+                    reminders = reminders,
+                    repeat = freq?.let { f ->
+                        val days = if (f == MyRepeat.Freq.WEEKLY || f == MyRepeat.Freq.BIWEEKLY) weekdays else emptySet()
+                        MyRepeat(f, days, until)
+                    },
+                    // 회차별 완료·건너뛰기는 반복을 고쳐도 날짜 기준으로 그대로 둔다.
+                    doneDates = if (repeating) initial?.doneDates.orEmpty() else emptySet(),
+                    skipDates = if (repeating) initial?.skipDates.orEmpty() else emptySet(),
                 )
+                MyDeadlines.validateRepeat(new)?.let { error = it; return@WantedTextButton }
+                onSave(new)
             })
         },
         dismissButton = { WantedTextButton(text = "취소", onClick = onDismiss) },
     )
+}
+
+/** 반복: 없음/매일/매주/격주/매월, 매주·격주는 요일 여러 개, 끝 날짜(선택). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RepeatEditor(
+    freq: MyRepeat.Freq?,
+    weekdays: Set<DayOfWeek>,
+    until: LocalDate?,
+    date: LocalDate,
+    editingSeries: Boolean,
+    onFreq: (MyRepeat.Freq?) -> Unit,
+    onToggleWeekday: (DayOfWeek) -> Unit,
+    onPickUntil: () -> Unit,
+    onClearUntil: () -> Unit,
+) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Text("반복", style = t.body2Medium, color = c.foregroundNeutralPrimary)
+    Spacer(Modifier.height(6.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        WantedChip(text = "없음", isActive = freq == null, onClick = { onFreq(null) })
+        for (f in MyRepeat.Freq.values()) WantedChip(text = f.label, isActive = freq == f, onClick = { onFreq(f) })
+    }
+    if (freq == MyRepeat.Freq.WEEKLY || freq == MyRepeat.Freq.BIWEEKLY) {
+        Spacer(Modifier.height(8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (wd in DayOfWeek.values()) {
+                val name = WEEKDAYS[wd.value - 1]
+                WantedChip(text = name.toString(), isActive = wd in weekdays, onClick = { onToggleWeekday(wd) },
+                    modifier = Modifier.semantics { contentDescription = "${name}요일" + if (wd in weekdays) ", 선택됨" else "" })
+            }
+        }
+        if (weekdays.isEmpty()) Text("요일을 고르지 않으면 ${WEEKDAYS[date.dayOfWeek.value - 1]}요일마다 마감이에요.",
+            style = t.caption1Regular, color = c.foregroundNeutralSecondary, modifier = Modifier.padding(top = 4.dp))
+    }
+    if (freq == MyRepeat.Freq.MONTHLY && date.dayOfMonth > 28) {
+        Text("${date.dayOfMonth}일이 없는 달은 그달 마지막 날이 마감이에요.", style = t.caption1Regular,
+            color = c.foregroundNeutralSecondary, modifier = Modifier.padding(top = 4.dp))
+    }
+    if (freq != null) {
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            WantedButton(
+                text = until?.let { "%d/%02d/%02d까지".format(it.year, it.monthValue, it.dayOfMonth) } ?: "끝나는 날 없음",
+                type = ButtonType.ASSISTIVE,
+                size = ButtonSize.MEDIUM,
+                variant = ButtonVariant.OUTLINED,
+                onClick = onPickUntil,
+            )
+            if (until != null) WantedTextButton(text = "끝 날짜 지우기", onClick = onClearUntil)
+        }
+        if (editingSeries) Text("고치면 반복 전체에 적용돼요.", style = t.caption1Regular, color = c.foregroundNeutralSecondary,
+            modifier = Modifier.padding(top = 4.dp))
+    }
 }

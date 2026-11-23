@@ -31,6 +31,7 @@ import kr.snu.etlassistant.etl.TimetableChangeStore
 import kr.snu.etlassistant.etl.TimetableStore
 import kr.snu.etlassistant.notify.DeadlineAlarm
 import kr.snu.etlassistant.notify.MyDeadlineStore
+import kr.snu.etlassistant.notify.MyDeadlines
 import kr.snu.etlassistant.notify.NotifyScheduler
 import kr.snu.etlassistant.notify.SnapshotCache
 import kr.snu.etlassistant.notify.SnapshotFetcher
@@ -42,6 +43,8 @@ import java.util.concurrent.TimeUnit
 /** Codex와 알림 권한 없이 앱과 같은 로컬 데이터를 읽는 홈 화면 위젯. */
 object HomeWidgets {
     const val EXTRA_DEADLINE_ID = "widget_deadline_id"
+    /** 반복 내 마감 회차 날짜(epochDay). 없으면 한 번뿐인 마감. */
+    const val EXTRA_OCCURRENCE_DAY = "widget_occurrence_day"
     const val ACTION_COMPLETE = "kr.snu.etlassistant.widget.COMPLETE"
     private const val CLOCK_WORK = "home-widgets-clock"
     private const val SYNC_WORK = "home-widgets-sync"
@@ -173,8 +176,9 @@ object HomeWidgets {
                 row.setContentDescription(R.id.widget_item_complete, "${item.title} 완료로 표시")
                 row.setOnClickPendingIntent(R.id.widget_item_complete, PendingIntent.getBroadcast(context, 0,
                     Intent(context, DeadlineWidgetProvider::class.java).setAction(ACTION_COMPLETE)
-                        .setData(Uri.parse("youngmin-widget://complete/${item.mineId}"))
-                        .putExtra(EXTRA_DEADLINE_ID, item.mineId),
+                        .setData(Uri.parse("youngmin-widget://complete/${item.mineId}" + (item.mineDate?.let { "/$it" } ?: "")))
+                        .putExtra(EXTRA_DEADLINE_ID, item.mineId)
+                        .apply { item.mineDate?.let { putExtra(EXTRA_OCCURRENCE_DAY, it.toEpochDay()) } },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             }
             views.addView(R.id.widget_items, row)
@@ -247,8 +251,10 @@ class DeadlineWidgetProvider : HomeWidgetProvider() {
             val store = MyDeadlineStore(context)
             val id = intent.getLongExtra(HomeWidgets.EXTRA_DEADLINE_ID, Long.MIN_VALUE)
             val item = store.load().firstOrNull { it.id == id && !it.done } ?: return
-            // 항상 완료로 설정한다. 빠르게 두 번 눌러도 다시 미완료가 되지 않는다.
-            store.upsert(item.copy(done = true))
+            val occurrence = if (intent.hasExtra(HomeWidgets.EXTRA_OCCURRENCE_DAY))
+                java.time.LocalDate.ofEpochDay(intent.getLongExtra(HomeWidgets.EXTRA_OCCURRENCE_DAY, 0L)) else null
+            // 항상 완료로 설정한다. 빠르게 두 번 눌러도 다시 미완료가 되지 않는다. 반복 마감은 그 회차만.
+            store.upsert(MyDeadlines.setDone(item, occurrence, true, java.time.Instant.now()))
             NotifyScheduler.apply(context)
             DeadlineAlarm.rearm(context)
             return
