@@ -49,7 +49,15 @@ object CodexRunner {
 
     fun init(context: Context) {
         app = context.applicationContext
-        log.mirror = File(app.filesDir, "phase0.log")
+        val logFile = File(app.filesDir, "phase0.log")
+        // 0.2.8까지의 로그 파일은 크기 제한이 없었고 로그인 주소·기기 코드를 그대로 남겼다. 한 번만 지우고 새로 시작한다.
+        val redactedMark = File(app.filesDir, "phase0.log.redacted")
+        if (!redactedMark.exists()) {
+            logFile.delete()
+            File(logFile.path + ".1").delete()
+            try { redactedMark.createNewFile() } catch (_: IOException) {}
+        }
+        log.mirror = logFile
     }
 
     val isRunning: Boolean get() = busy.get()
