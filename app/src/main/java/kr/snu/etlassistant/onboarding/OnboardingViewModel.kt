@@ -60,6 +60,8 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     var quietEnabled by mutableStateOf(false)
     var quietStart by mutableStateOf(23 * 60)
     var quietEnd by mutableStateOf(7 * 60)
+    /** 받은 파일 자동 정리 기간. 화면의 기본 선택은 2일이고 "다음"을 눌러야 저장된다(그 전에는 지우지 않는다). */
+    var cleanupPeriod by mutableStateOf(kr.snu.etlassistant.files.DownloadCleanup.period(app) ?: kr.snu.etlassistant.files.CleanupPeriod.DEFAULT)
     /** 마감 알림 시점(안내에서는 보여 주기만 하고, 바꾸는 것은 설정 화면에서). */
     val deadlineWindows: List<Int> = NotifySettingsStore(app).load().deadlineWindowsMinutes
 
@@ -174,6 +176,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
             )
         )
         NotifyScheduler.apply(app)
+        kr.snu.etlassistant.files.DownloadCleanup.setPeriod(app, cleanupPeriod)
         // 첫 확인을 바로 해서 공지 기준선을 잡는다(그래야 이후의 새 공지만 알린다).
         if (deadlineAlerts || announcementAlerts) NotifyScheduler.checkNow(app)
     }

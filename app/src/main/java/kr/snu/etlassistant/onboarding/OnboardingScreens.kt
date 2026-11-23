@@ -611,6 +611,12 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
                     onClick = { a.pickTime(vm.quietEnd) { vm.quietEnd = it } })
             }
         }
+        Spacer(Modifier.height(20.dp))
+        Text(kr.snu.etlassistant.files.CLEANUP_QUESTION, style = t.body1Bold, color = c.foregroundNeutralPrimary)
+        Spacer(Modifier.height(4.dp))
+        Text(kr.snu.etlassistant.files.CLEANUP_DESC, style = t.body2Regular, color = c.foregroundNeutralSecondary)
+        Spacer(Modifier.height(10.dp))
+        kr.snu.etlassistant.files.CleanupChoices(vm.cleanupPeriod) { vm.cleanupPeriod = it }
     }
 }
 

@@ -85,6 +85,8 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         ready = true
         // 수식 글꼴을 처음 읽는 비용을 화면 밖에서 미리 치른다(첫 수식 답에서 화면이 멈칫하지 않게)
         Thread({ runCatching { MathRender.warmUp() } }, "math-warmup").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+        // 받은 파일 자동 정리(하루 한 번, 기간을 고른 경우만)
+        Thread({ kr.snu.etlassistant.files.DownloadCleanup.runIfDue(applicationContext) }, "download-cleanup").apply { isDaemon = true }.start()
         enableEdgeToEdge()
         val actions = ChatActions(
             onSend = { onSendClicked() },
@@ -132,7 +134,8 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
                 if (!CodexSession.deleteConversation(id)) toast("답변이 끝난 뒤에 지울 수 있어요")
                 refreshChats()
             },
-            attachments = AttachmentActions(onOpen = { openAttachment(it) }, onShare = { shareAttachment(it) }),
+            attachments = AttachmentActions(onOpen = { openAttachment(it) }, onShare = { shareAttachment(it) },
+                onRedownload = { vm.setInput(AttachmentLogic.redownloadPrompt(it.name, kr.snu.etlassistant.files.GeneratedFilesLogic.isGeneratedPath(it.shownPath))) }),
         )
         setContent { ChatRoot(vm, actions) }
         applyPrefill(intent)
