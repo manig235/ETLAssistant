@@ -494,8 +494,22 @@ class TimetableChangeStore(context: Context) {
 /** 주간 시간표 캐시(앱 내부 SharedPreferences). */
 class TimetableStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("timetable", Context.MODE_PRIVATE)
-    @Synchronized fun load(): TimetableLogic.Weekly? = TimetableLogic.fromJson(prefs.getString("weekly", null))
-    @Synchronized fun save(w: TimetableLogic.Weekly) { prefs.edit().putString("weekly", TimetableLogic.toJson(w)).apply() }
+    @Synchronized fun loadCatalog(): TimetableLogic.Weekly? = TimetableLogic.fromJson(prefs.getString("weekly", null))
+    @Synchronized fun customCourses(): List<TimetableLogic.CourseMeetings> =
+        TimetableLogic.fromJson(prefs.getString("custom", null))?.courses.orEmpty().mapNotNull(CustomTimetableLogic::normalize)
+    @Synchronized fun withCustom(w: TimetableLogic.Weekly?): TimetableLogic.Weekly? = CustomTimetableLogic.merge(w, customCourses())
+    @Synchronized fun load(): TimetableLogic.Weekly? = withCustom(loadCatalog())
+    @Synchronized fun save(w: TimetableLogic.Weekly) {
+        prefs.edit().putString("weekly", TimetableLogic.toJson(w.copy(courses = w.courses.filter { it.courseId >= 0 }))).apply()
+    }
+    @Synchronized fun saveCustom(course: TimetableLogic.CourseMeetings) {
+        val valid = requireNotNull(CustomTimetableLogic.normalize(course))
+        saveCustomList(customCourses().filter { it.courseId != valid.courseId } + valid)
+    }
+    @Synchronized fun deleteCustom(id: Long) { saveCustomList(customCourses().filter { it.courseId != id }) }
+    private fun saveCustomList(courses: List<TimetableLogic.CourseMeetings>) {
+        prefs.edit().putString("custom", TimetableLogic.toJson(TimetableLogic.Weekly("", 0, courses, emptyList()))).apply()
+    }
 }
 
 object Timetable {
@@ -506,9 +520,9 @@ object Timetable {
     fun weekly(etl: EtlClient, store: TimetableStore, nowMs: Long = System.currentTimeMillis(), force: Boolean = false): TimetableLogic.Weekly {
         val list = EtlLogic.currentCourses(etl.getAll("/api/v1/courses?enrollment_state=active&include[]=term&include[]=syllabus_body&per_page=100"))
         val ids = list.map { it.optLong("id") }.sorted().joinToString(",")
-        val cached = store.load()
+        val cached = store.loadCatalog()
         if (!force && cached != null && cached.metadataVersion >= 2 && cached.ids == ids &&
-            nowMs >= cached.fetchedAt && nowMs - cached.fetchedAt < CACHE_MS) return cached
+            nowMs >= cached.fetchedAt && nowMs - cached.fetchedAt < CACHE_MS) return store.withCustom(cached)!!
 
         val refs = list.map { TimetableLogic.catalogRef(it.str("syllabus_body")) }
         val asked = refs.indices.filter { refs[it] != null }
@@ -531,7 +545,9 @@ object Timetable {
                 },
             )
         }
-        return TimetableLogic.Weekly(ids, nowMs, courses, errors).also { store.save(it) }
+        val result = TimetableLogic.Weekly(ids, nowMs, courses, errors)
+        store.save(result)
+        return store.withCustom(result)!!
     }
 
     /** 캐시가 하루 안이면 네트워크 없이 그대로, 아니면 [weekly]로 새로 받는다(알림 확인·브리핑용). */

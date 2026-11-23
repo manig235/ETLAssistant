@@ -133,6 +133,7 @@ eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussi
   `etl_grades`, `etl_files`(파일 탭+모듈+과제·공지 첨부/본문 링크+내 제출, 받지 않음), `etl_download`의 동영상 거부·변하지 않은 파일 재사용,
   `etl_get`의 쪽지 읽음 방지(`auto_mark_as_read=false`)·목록 잘라 보내기. 로직은 `etl/Queries.kt`.
 - 시간표 보강·휴강: 앱 "시간표" 화면(`TimetableActivity`, `TimetableChangeStore`)에서 넣는다(AI도 `timetable_change_add`로 넣을 수 있다).
+- 0.2.5부터 시간표 상단 +로 반복 수업을 직접 추가·수정·삭제한다. 음수 과목 ID를 쓰며 `TimetableStore`의 `custom` 키에 수강편람 캐시와 별도로 저장한다. `load()`와 `Timetable.weekly()`가 합친 결과를 돌려주므로 시간표·내 일정·AI 조회·브리핑에서 함께 읽는다. eTL 전송은 없다. 수강편람 원본 캐시는 `loadCatalog()`로 읽으며 갱신해도 직접 추가한 수업은 유지한다.
 - 알림(`notify/Watch.kt`): 새 과제·마감 변경·성적(설정 `changeAlerts`, 기본 켬, 첫 확인은 기준선만), 보강·휴강 공지 표시, 수업 N분 전 알림
   (`classAlerts`, 기본 끔, 5/10/15/30분). 제시간 알람은 마감·수업 중 이른 시각에 건다.
 - 알림 기록(`NotifyHistory`, 90일·300개, `NotifyHistoryActivity`): 게시한 모든 알림을 `NotificationPoster.post`에서 남긴다.

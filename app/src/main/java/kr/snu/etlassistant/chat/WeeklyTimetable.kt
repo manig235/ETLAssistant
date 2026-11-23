@@ -73,7 +73,11 @@ private fun courseColor(id: Long) = courseColors[Math.floorMod(id.hashCode(), co
 /** 실제 수업 데이터로 시간에 비례한 블록과 강의 상세 정보를 표시한다. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun WeeklyTimetable(weekly: TimetableLogic.Weekly, modifier: Modifier = Modifier) {
+internal fun WeeklyTimetable(
+    weekly: TimetableLogic.Weekly,
+    modifier: Modifier = Modifier,
+    onEditCustom: ((TimetableLogic.CourseMeetings) -> Unit)? = null,
+) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
     val grid = remember(weekly) { TimetableGridLogic.build(weekly.courses) }
@@ -161,17 +165,23 @@ internal fun WeeklyTimetable(weekly: TimetableLogic.Weekly, modifier: Modifier =
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.size(9.dp).clip(CircleShape).background(courseColor(course.courseId).first))
                     Spacer(Modifier.width(7.dp))
-                    Text("수업 정보", style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+                    Text(if (course.courseId < 0) "직접 추가한 수업" else "수업 정보", style = t.caption1Regular, color = c.foregroundNeutralSecondary)
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(TimetableLogic.shortName(course.name), style = t.title2Bold, color = c.foregroundNeutralPrimary)
                 Spacer(Modifier.height(24.dp))
-                CourseDetailRow(Icons.Outlined.PersonOutline, "교수님", course.professor?.takeIf { it.isNotBlank() } ?: "교수 정보를 확인하지 못했어요")
+                CourseDetailRow(Icons.Outlined.PersonOutline, "교수님", course.professor?.takeIf { it.isNotBlank() }
+                    ?: if (course.courseId < 0) "등록된 교수 정보가 없어요" else "교수 정보를 확인하지 못했어요")
                 CourseDetailRow(Icons.Outlined.LocationOn, "강의실", course.meetings.map { TimetableGridLogic.roomLabel(it.room) }.distinct().joinToString("\n"))
                 CourseDetailRow(Icons.Outlined.Schedule, "수업 시간", course.meetings
                     .sortedWith(compareBy({ TimetableLogic.WEEKDAYS.indexOf(it.day) }, { it.start }))
                     .joinToString("\n") { "${it.day}요일  ${it.start} – ${it.end}" })
                 Spacer(Modifier.height(20.dp))
+                if (course.courseId < 0 && onEditCustom != null) {
+                    WantedButton(text = "수정 · 삭제", modifier = Modifier.fillMaxWidth(), type = ButtonType.ASSISTIVE,
+                        size = ButtonSize.LARGE, variant = ButtonVariant.OUTLINED, onClick = { selectedId = null; onEditCustom(course) })
+                    Spacer(Modifier.height(8.dp))
+                }
                 WantedButton(text = "확인", modifier = Modifier.fillMaxWidth(), type = ButtonType.PRIMARY,
                     size = ButtonSize.LARGE, variant = ButtonVariant.SOLID, onClick = { selectedId = null })
                 Spacer(Modifier.height(24.dp))

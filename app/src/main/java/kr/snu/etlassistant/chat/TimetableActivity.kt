@@ -30,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,7 +66,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /**
- * 시간표: 수강편람에서 가져온 주간 수업과 사용자가 넣는 보강·휴강(ttokttok-pet의 timetable.md).
+ * 시간표: 수강편람의 주간 수업·직접 추가한 반복 수업·보강과 휴강.
  * 보강·휴강은 AI 답변(etl_timetable), 브리핑의 "오늘 수업", 수업 알림에 반영된다.
  */
 class TimetableActivity : AppCompatActivity() {
@@ -83,7 +83,8 @@ class TimetableActivity : AppCompatActivity() {
             TimetableScreen(
                 weekly = weekly, changes = changeList, loading = loading,
                 onBack = { finish() },
-                onRefresh = { refresh(force = true) },
+                onSaveCustom = { store.saveCustom(it); reload() },
+                onDeleteCustom = { store.deleteCustom(it); reload() },
                 onAdd = { changes.add(it); reload() },
                 onDelete = { changes.delete(it.id); reload() },
                 pickDate = { initial, done ->
@@ -99,7 +100,7 @@ class TimetableActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         reload()
-        val cached = weekly
+        val cached = store.loadCatalog()
         val now = System.currentTimeMillis()
         if (cached == null || cached.metadataVersion < 2 || now < cached.fetchedAt || now - cached.fetchedAt >= Timetable.CACHE_MS) {
             refresh(force = false)
@@ -116,7 +117,6 @@ class TimetableActivity : AppCompatActivity() {
         if (loading) return
         val token = EtlService.tokens(this).load()
         if (token.isNullOrEmpty()) {
-            toast("eTL 토큰을 먼저 저장해야 시간표를 가져올 수 있어요")
             return
         }
         loading = true
@@ -144,12 +144,13 @@ class TimetableActivity : AppCompatActivity() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TimetableScreen(
+internal fun TimetableScreen(
     weekly: TimetableLogic.Weekly?,
     changes: List<TimetableLogic.Change>,
     loading: Boolean,
     onBack: () -> Unit,
-    onRefresh: () -> Unit,
+    onSaveCustom: (TimetableLogic.CourseMeetings) -> Unit,
+    onDeleteCustom: (Long) -> Unit,
     onAdd: (TimetableLogic.Change) -> Unit,
     onDelete: (TimetableLogic.Change) -> Unit,
     pickDate: (LocalDate, (LocalDate) -> Unit) -> Unit,
@@ -159,12 +160,16 @@ private fun TimetableScreen(
         val c = DesignSystemTheme.colors
         val t = DesignSystemTheme.typography
         var adding by remember { mutableStateOf(false) }
+        var editingCustom by rememberSaveable { mutableStateOf(false) }
+        var editingCustomId by rememberSaveable { mutableStateOf<Long?>(null) }
         Column(Modifier.fillMaxSize().background(c.backgroundNeutralPrimary).systemBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "뒤로", tint = c.foregroundNeutralPrimary) }
                 Text("시간표", style = t.title2Bold, color = c.foregroundNeutralPrimary, modifier = Modifier.padding(start = 4.dp).weight(1f))
                 if (loading) WantedCircularProgressIndicator()
-                else IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, contentDescription = "수강편람에서 다시 가져오기", tint = c.foregroundNeutralSecondary) }
+                IconButton(onClick = { editingCustomId = null; editingCustom = true }) {
+                    Icon(Icons.Outlined.Add, contentDescription = "수업 직접 추가", tint = c.foregroundBrandPrimary)
+                }
             }
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                 Spacer(Modifier.height(8.dp))
@@ -175,13 +180,13 @@ private fun TimetableScreen(
                 Spacer(Modifier.height(8.dp))
                 val w = weekly
                 if (w == null) {
-                    Text(if (loading) "가져오는 중…" else "아직 가져오지 않았어요. 오른쪽 위 새로고침을 누르세요.",
+                    Text(if (loading) "가져오는 중…" else "오른쪽 위 + 버튼으로 수업을 추가해 보세요. eTL을 연결하면 수강 중인 수업도 자동으로 가져와요.",
                         style = t.body2Regular, color = c.foregroundNeutralSecondary, modifier = Modifier.padding(horizontal = 16.dp))
                 } else {
                     if (TimetableGridLogic.build(w.courses).blocks.isEmpty()) {
-                        Text("수강편람에서 수업 시간을 찾지 못했어요.", style = t.body2Regular, color = c.foregroundNeutralSecondary,
+                        Text("수업 시간이 없어요. 오른쪽 위 + 버튼으로 직접 추가할 수 있어요.", style = t.body2Regular, color = c.foregroundNeutralSecondary,
                             modifier = Modifier.padding(horizontal = 16.dp))
-                    } else WeeklyTimetable(w)
+                    } else WeeklyTimetable(w, onEditCustom = { editingCustomId = it.courseId; editingCustom = true })
                     if (w.errors.isNotEmpty()) {
                         Text("일부 정보를 확인하지 못했어요\n" + w.errors.joinToString("\n") { "· $it" },
                             style = t.caption1Regular, color = c.foregroundNeutralSecondary,
@@ -224,6 +229,15 @@ private fun TimetableScreen(
                 onDismiss = { adding = false },
                 onSave = { onAdd(it); adding = false },
                 pickDate = pickDate,
+                pickTime = pickTime,
+            )
+        }
+        if (editingCustom) {
+            CustomCourseDialog(
+                course = weekly?.courses?.firstOrNull { it.courseId == editingCustomId && it.courseId < 0 },
+                onDismiss = { editingCustom = false },
+                onSave = { onSaveCustom(it); editingCustom = false },
+                onDelete = { onDeleteCustom(it); editingCustom = false },
                 pickTime = pickTime,
             )
         }
