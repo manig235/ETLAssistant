@@ -617,6 +617,8 @@ private fun NotifyStep(vm: OnboardingViewModel, a: OnboardingActions) {
         Text(kr.snu.etlassistant.files.CLEANUP_DESC, style = t.body2Regular, color = c.foregroundNeutralSecondary)
         Spacer(Modifier.height(10.dp))
         kr.snu.etlassistant.files.CleanupChoices(vm.cleanupPeriod) { vm.cleanupPeriod = it }
+        Spacer(Modifier.height(6.dp))
+        Text(kr.snu.etlassistant.files.CLEANUP_KEEP_HINT, style = t.caption1Regular, color = c.foregroundNeutralTertiary)
     }
 }
 

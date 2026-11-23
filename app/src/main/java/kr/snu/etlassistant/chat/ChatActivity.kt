@@ -67,6 +67,16 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     }
     private val importer = Executors.newSingleThreadExecutor()
 
+    // ---- 파일 카드 "드라이브에 저장"(시스템 문서 선택기, files/SaveCopy) ----
+    /** 선택기에서 돌아올 때 저장할 첨부. 프로세스가 다시 만들어져도 잃지 않게 상태에 남긴다. */
+    private var pendingSave: Attachment? = null
+    private val createDocument = registerForActivityResult(kr.snu.etlassistant.files.CreateDocumentContract()) { uri ->
+        val a = pendingSave
+        pendingSave = null
+        if (uri != null && a != null) saveCopy(a, uri)
+    }
+    private val saver = Executors.newSingleThreadExecutor()
+
     /** 스트리밍 중에는 변경이 아주 잦으므로 묶어서(약 70ms) 한 번에 다시 그린다. */
     private val flush = Runnable {
         flushPosted = false
@@ -76,6 +86,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_Phase0)
         super.onCreate(savedInstanceState)
+        pendingSave = savedInstanceState?.getString(STATE_PENDING_SAVE)?.let { runCatching { Attachment.fromJson(org.json.JSONObject(it)) }.getOrNull() }
         // 처음 쓰는 사람(안내를 끝내지 않았고 eTL 토큰도 없음)은 첫 실행 안내로 보낸다.
         if (!OnboardingLogic.shouldSkip(OnboardingPrefs(this).completed, EtlService.tokens(this).hasToken())) {
             startActivity(Intent(this, OnboardingActivity::class.java))
@@ -135,7 +146,8 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
                 refreshChats()
             },
             attachments = AttachmentActions(onOpen = { openAttachment(it) }, onShare = { shareAttachment(it) },
-                onRedownload = { vm.setInput(AttachmentLogic.redownloadPrompt(it.name, kr.snu.etlassistant.files.GeneratedFilesLogic.isGeneratedPath(it.shownPath))) }),
+                onRedownload = { vm.setInput(AttachmentLogic.redownloadPrompt(it.name, kr.snu.etlassistant.files.GeneratedFilesLogic.isGeneratedPath(it.shownPath))) },
+                onSaveCopy = { saveAttachmentCopy(it) }, saveCopyLabel = kr.snu.etlassistant.files.SaveCopy.label(this)),
         )
         setContent { ChatRoot(vm, actions) }
         applyPrefill(intent)
@@ -297,6 +309,47 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingSave?.let { outState.putString(STATE_PENDING_SAVE, it.toJson().toString()) }
+    }
+
+    /** 시스템 문서 선택기를 연다(Drive가 있으면 그 안의 위치도 고를 수 있다). 지난번 저장한 위치에서 시작한다. */
+    private fun saveAttachmentCopy(a: Attachment) {
+        pendingSave = a
+        try {
+            createDocument.launch(kr.snu.etlassistant.files.CreateDocumentContract.Input(
+                kr.snu.etlassistant.files.SaveCopyLogic.fileName(a.name),
+                kr.snu.etlassistant.files.SaveCopyLogic.mimeFor(a.name, a.mime),
+                kr.snu.etlassistant.files.SaveCopy.initialUri(this),
+            ))
+        } catch (_: ActivityNotFoundException) {
+            pendingSave = null
+            toast("파일을 저장할 수 있는 앱이 없어요")
+        }
+    }
+
+    /** 고른 곳에 원본 바이트를 그대로 쓴다(뒤에서). 원본이 정리돼 없으면 만들어진 빈 문서를 지우고 다시 받기를 안내한다. */
+    private fun saveCopy(a: Attachment, dest: Uri) {
+        if (a.size >= kr.snu.etlassistant.files.SaveCopyLogic.BIG_BYTES) toast("저장하는 중이에요…")
+        val app = applicationContext
+        saver.execute {
+            val result = runCatching { kr.snu.etlassistant.files.SaveCopy.copy(app, a.path, a.uri, dest) }
+            val msg = result.fold(
+                onSuccess = {
+                    kr.snu.etlassistant.files.SaveCopy.rememberLocation(app, dest)
+                    "저장했어요"
+                },
+                onFailure = { e ->
+                    runCatching { android.provider.DocumentsContract.deleteDocument(app.contentResolver, dest) }
+                    if (e is java.io.FileNotFoundException) "원본 파일이 정리돼 저장하지 못했어요. 비서에게 다시 받아 달라고 해 주세요"
+                    else "저장하지 못했어요(${e.javaClass.simpleName})"
+                },
+            )
+            main.post { Toast.makeText(app, msg, Toast.LENGTH_SHORT).show() }
+        }
+    }
+
     private fun shareAttachment(a: Attachment) {
         val uri = shareableUri(a) ?: return toast("파일이 정리되어 더는 없어요")
         val send = Intent(Intent.ACTION_SEND)
@@ -436,6 +489,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
 
     companion object {
         const val EXTRA_PREFILL = "prefill"
+        private const val STATE_PENDING_SAVE = "pendingSave"
         private const val KEY_NOTIFY_BANNER_DISMISSED = "notifyBannerDismissedAt"
     }
 }

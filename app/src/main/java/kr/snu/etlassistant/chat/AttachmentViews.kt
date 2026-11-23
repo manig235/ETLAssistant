@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
@@ -70,6 +71,10 @@ class AttachmentActions(
     val onShare: (Attachment) -> Unit,
     /** 지워진(자동 정리 등) 폰 파일 카드의 "다시 받기": 입력창을 채운다. null이면 버튼을 숨긴다. */
     val onRedownload: ((Attachment) -> Unit)? = null,
+    /** 시스템 문서 선택기로 고른 곳(Drive 등)에 사본 저장. null이면 버튼을 숨긴다. */
+    val onSaveCopy: ((Attachment) -> Unit)? = null,
+    /** "드라이브에 저장"(Drive 앱이 있을 때) 또는 "다른 곳에 저장". */
+    val saveCopyLabel: String = "다른 곳에 저장",
 )
 
 private fun Attachment.exists(): Boolean = path?.let { File(it).isFile } == true || uri != null
@@ -258,10 +263,16 @@ private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
             }
         }
         val redownload = actions.onRedownload
+        val saveCopy = actions.onSaveCopy
         if (!exists && a.shownPath != null && redownload != null) {
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 CardAction(Icons.Outlined.Refresh, if (generated) "다시 만들기" else "다시 받기") { redownload(a) }
+            }
+        } else if (exists && saveCopy != null) {
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                CardAction(Icons.Outlined.CloudUpload, actions.saveCopyLabel) { saveCopy(a) }
             }
         }
     }

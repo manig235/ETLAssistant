@@ -24,6 +24,7 @@ import com.wanted.android.wanted.design.theme.DesignSystemTheme
 /** 고르기 화면 공통 설명. */
 const val CLEANUP_QUESTION = "받은 강의자료를 폰에 얼마나 둘까요?"
 const val CLEANUP_DESC = "비서가 폰 Download/etl에 받아 둔 eTL 파일을 고른 기간이 지나면 지워요. 비서가 만든 파일(영민이가 만든 파일 폴더)은 지우지 않아요."
+const val CLEANUP_KEEP_HINT = "계속 두고 싶은 자료는 파일 카드에서 '드라이브에 저장'을 누르세요."
 
 /** 기간 칩(2일 · 7일 · 30일 · 정리 안 함). [selected]가 null이면 아무것도 고르지 않은 상태. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -47,6 +48,7 @@ fun DownloadCleanupSettingsContent() {
     Text("받은 강의자료 자동 정리", style = t.body2Medium, color = c.foregroundNeutralPrimary)
     Spacer(Modifier.height(4.dp))
     Text(CLEANUP_DESC, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
+    Text(CLEANUP_KEEP_HINT, style = t.caption1Regular, color = c.foregroundNeutralSecondary)
     Spacer(Modifier.height(10.dp))
     CleanupChoices(selected) {
         selected = it
@@ -88,7 +90,7 @@ fun CleanupPrompt() {
                 Spacer(Modifier.height(12.dp))
                 CleanupChoices(selected) { selected = it }
                 Spacer(Modifier.height(8.dp))
-                Text("설정 → 받은 파일에서 언제든 바꿀 수 있어요.", style = t.caption1Regular, color = c.foregroundNeutralTertiary)
+                Text("$CLEANUP_KEEP_HINT 설정 → 받은 파일에서 언제든 바꿀 수 있어요.", style = t.caption1Regular, color = c.foregroundNeutralTertiary)
             }
         },
         confirmButton = {
