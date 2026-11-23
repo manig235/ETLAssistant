@@ -185,6 +185,10 @@ object EtlLogic {
         val warnings: MutableList<String>,
     )
 
+    /** 늦은 제출 문구. 제출 직후 점검([SubmissionCheck])은 이것만 있으면 알리지 않는다(사용자가 이미 안다). */
+    const val LATE_FLAGGED = "지각 제출로 표시됨"
+    const val LATE_AFTER_DUE = "마감 후 제출됨"
+
     /** 첨부 파일 검사를 뺀 제출 판정. a = 과제, s = submissions/self. */
     fun evaluateSubmission(a: JSONObject, s: JSONObject, now: Instant): Evaluation {
         val due = parseInstant(s.str("cached_due_date") ?: a.str("due_at"))
@@ -202,9 +206,9 @@ object EtlLogic {
             }
         }
         if (s.optBoolean("late", false)) {
-            problems += "지각 제출로 표시됨"
+            problems += LATE_FLAGGED
         } else if (submitted && due != null && subAt != null && subAt.isAfter(due)) {
-            problems += "마감 후 제출됨"
+            problems += LATE_AFTER_DUE
         }
         if (s.optBoolean("missing", false)) problems += "eTL에 '누락'으로 표시됨"
         if (s.optBoolean("excused", false)) warnings += "면제(excused) 처리됨"

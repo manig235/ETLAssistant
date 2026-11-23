@@ -41,13 +41,19 @@ object NotifyRunner {
                 stateStore.update { s -> reminders.forEach { n -> n.firedKeys.forEach { s.fired[it] = now.toEpochMilli() } } }
             }
             runCatching { DeadlineAlarm.scheduleEarlier(app, MyDeadlines.nextReminderAt(mine, now, stateStore.load().fired.keys)) }
-            val fetched = fetchWithFallback(app, token, now, announcementDays = 2)
+            // 과목별 알림 끄기·숨기기: 그 과목은 알리지 않고 중복 방지 기록만 남긴다([CourseMute]).
+            val courses = CourseFilterStore(app).load()
+            val watchStore = WatchStore(app)
+            val watchBefore = watchStore.load()
+            // 제출 직후 점검: 새 제출인데 과제 목록에 첨부 목록이 없으면 그 제출만 `submissions/self`로 더 받는다.
+            val needDetail: (AssignmentItem) -> Boolean = { a ->
+                settings.submitAlerts && !courses.muted(a.courseId) && AssignmentWatch.isNewSubmission(watchBefore, a)
+            }
+            val fetched = fetchWithFallback(app, token, now, announcementDays = 2, needDetail)
             val failure = fetched.failure
             // eTL을 실제로 조회했는가. 아니면(토큰 없음, 연결 실패) 공지 기준선·새 과제/변경 비교를 하지 않는다.
             val etlOk = !token.isNullOrEmpty() && failure == null
             val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
-            // 과목별 알림 끄기·숨기기: 그 과목은 알리지 않고 중복 방지 기록만 남긴다([CourseMute]).
-            val courses = CourseFilterStore(app).load()
             // 토큰이 없을 때(내 마감만 확인) 공지 기준선을 잡으면, 나중에 토큰을 넣었을 때 기존 공지가 한꺼번에 알려진다.
             val plan = CourseMute.plan(snapshot, stateStore.load(), now, settings, courses)
                 .let { if (!etlOk) it.copy(markBaselineDone = false) else it }
@@ -56,12 +62,15 @@ object NotifyRunner {
             val local = now.atZone(zone)
             val quiet = Quiet.isQuiet(local.hour * 60 + local.minute, settings)
 
-            // 새 과제·마감 변경·성적(ttokttok-pet watch.js). 방해 금지 중에는 비교하지 않아 끝난 뒤 알린다.
-            val changes = if (settings.changeAlerts && etlOk && !quiet) {
-                val watchStore = WatchStore(app)
-                val (newState, notices) = AssignmentWatch.diff(watchStore.load(), snapshot, now, courses::muted)
+            // 새 과제·마감 변경·성적(ttokttok-pet watch.js)과 제출 직후 점검. 방해 금지 중에는 비교하지 않아 끝난 뒤 알린다.
+            val changes = if ((settings.changeAlerts || settings.submitAlerts) && etlOk && !quiet) {
+                val (newState, notices) = AssignmentWatch.diff(
+                    watchStore.load(), snapshot, now, courses::muted,
+                    changes = settings.changeAlerts, submits = settings.submitAlerts,
+                )
                 watchStore.save(newState)
-                notices
+                val fired = stateStore.load().fired.keys
+                notices.filter { n -> n.firedKeys.none { it in fired } }
             } else emptyList()
 
             // 수업 알림: 오늘·내일 시간표(하루 캐시, 보강·휴강 반영).
@@ -94,7 +103,7 @@ object NotifyRunner {
                 if (plan.markBaselineDone) s.announcementBaselineDone = true
                 s.lastCheckAt = nowMs
                 val counts = "마감 ${deadlines}건, 공지 ${anns}건" +
-                    (if (changes.isNotEmpty()) ", 과제·성적 ${changes.size}건" else "") + (if (classes.isNotEmpty()) ", 수업 ${classes.size}건" else "")
+                    (if (changes.isNotEmpty()) ", 과제·성적·제출 ${changes.size}건" else "") + (if (classes.isNotEmpty()) ", 수업 ${classes.size}건" else "")
                 s.lastResult = when {
                     failure != null -> "실패 · ${reasonOf(failure)}" +
                         (fetched.cachedAt?.let { " · ${SnapshotFallback.ageLabel(it, now)} 받아 둔 과제로 마감 ${deadlines}건" } ?: "")
@@ -112,9 +121,31 @@ object NotifyRunner {
             logErrors(snapshot.errors, fetched.cachedAt)
             log("확인 완료: 마감 $deadlines, 공지 $anns, 조회 오류 ${snapshot.errors.size}")
             kr.snu.etlassistant.calendar.CalendarExport.syncIfEnabled(app) // 캘린더로 내보내기(켜져 있을 때만, 네트워크 없음, 예외를 던지지 않음)
+            // 새 강의자료: 마지막 단계로, 4시간에 한 번만. 실패해도 이번 확인 결과에는 영향이 없다.
+            if (settings.newFileAlerts && etlOk && !quiet && token != null) {
+                runCatching { checkNewFiles(app, token, fetched.snapshot.courses, courses, settings, now) }
+                    .onFailure { log("새 강의자료 확인 실패: ${reasonOf(it)}") }
+            }
             // 연결 실패면 받아 둔 정보로 보낼 것은 보냈지만, 새 공지·변경을 보려고 다시 시도한다(중복은 fired 키가 막는다).
             if (failure != null) Outcome.RETRY else Outcome.SUCCESS
         }
+    }
+
+    /** 과목마다 차례로 파일 목록 첫 쪽을 보고(GET), 새 파일을 과목별로 묶어 알린다. 처음 보는 과목은 기준선만. */
+    private fun checkNewFiles(app: Context, token: String, current: List<CourseRef>, filter: CourseFilter, settings: NotifySettings, now: Instant) {
+        if (current.isEmpty()) return
+        val store = NewFilesStore(app)
+        val before = store.load()
+        val nowMs = now.toEpochMilli()
+        if (!NewFiles.due(before, nowMs)) return
+        val results = NewFilesCheck.fetch(EtlClient(token), NewFiles.toCheck(before, current, nowMs))
+        val (after, notices) = NewFiles.apply(before, nowMs, current, results, filter::muted)
+        store.save(after)
+        notices.forEach { NotificationPoster.post(app, it, settings) }
+        val denied = results.values.count { it == NewFiles.Outcome.Denied || it == NewFiles.Outcome.AuthRejected }
+        val failed = results.values.count { it == NewFiles.Outcome.Failed }
+        log("새 강의자료 확인: 과목 ${results.size}개, 알림 ${notices.size}건" +
+            (if (denied > 0) ", 파일 탭 막힘 $denied" else "") + (if (failed > 0) ", 실패 $failed" else ""))
     }
 
     /**
@@ -185,12 +216,18 @@ object NotifyRunner {
      * 토큰이 없으면(내 마감만 있는 경우) eTL을 조회하지 않고 빈 결과를 쓴다. 조회에 성공한 과목은 [SnapshotCache]에 저장하고
      * ("내 일정" 화면과 다음 폴백이 쓴다), 실패한 과목·전체 실패는 저장해 둔 과제로 메운다.
      */
-    private fun fetchWithFallback(app: Context, token: String?, now: Instant, announcementDays: Int): Fetched {
+    private fun fetchWithFallback(
+        app: Context,
+        token: String?,
+        now: Instant,
+        announcementDays: Int,
+        needsSubmissionDetail: (AssignmentItem) -> Boolean = { false },
+    ): Fetched {
         if (token.isNullOrEmpty()) return Fetched(Snapshot(now, emptyList(), emptyList(), listOf("eTL 토큰 없음")), null, null)
         val cache = SnapshotCache(app)
         val before = runCatching { cache.load() }.getOrNull()
         val fresh = try {
-            SnapshotFetcher.fetch(EtlClient(token), now, announcementDays)
+            SnapshotFetcher.fetch(EtlClient(token), now, announcementDays, needsSubmissionDetail)
         } catch (e: EtlAuthException) {
             throw e
         } catch (e: EtlException) {

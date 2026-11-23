@@ -44,6 +44,8 @@ object NotifyHistoryLogic {
         Channel.CHANGE.id, NotificationPoster.LEGACY_CHANGE -> "과제·성적"
         Channel.CLASS.id -> "수업"
         Channel.UPDATE.id, NotificationPoster.LEGACY_UPDATE -> "업데이트"
+        Channel.SUBMIT.id -> "제출 확인"
+        Channel.NEW_FILES.id -> "강의자료"
         else -> "알림"
     }
 }

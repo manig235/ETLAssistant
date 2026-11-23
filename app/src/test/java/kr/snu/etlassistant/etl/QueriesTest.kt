@@ -71,7 +71,30 @@ class QueriesTest {
         assertEquals("조교", anns.getJSONObject(0).getString("author"))
         assertEquals("휴강 공지", Queries.announcementBadge("11/20 수업 안내", "이번 주 목요일은 휴강합니다"))
         assertEquals("보강 공지", Queries.announcementBadge("보강 안내", ""))
-        assertEquals("새 공지", Queries.announcementBadge("중간고사", "범위"))
+        assertEquals("시험 공지", Queries.announcementBadge("중간고사", "범위"))
+    }
+
+    @Test fun examAnnouncementDetection() {
+        val exam = { t: String, b: String -> Queries.isExamAnnouncement(t, b) }
+        assertTrue(exam("중간고사 안내", ""))
+        assertTrue(exam("기말 고사 장소 변경", ""))
+        assertTrue(exam("Quiz 2 공지", ""))
+        assertTrue(exam("Midterm exam room", ""))
+        assertTrue(exam("[자료구조] 퀴즈", ""))
+        assertTrue(exam("공지", "다음 주 화요일에 중간고사를 실시합니다. 장소: 302호"))
+        // 성적·채점 공지는 일정 공지가 아니다
+        assertFalse(exam("중간고사 성적 공개", "평균 70점"))
+        assertFalse(exam("Midterm grades released", ""))
+        assertTrue(exam("기말고사 일정 및 중간고사 성적 안내", ""))
+        // 본문에만 스치듯 나오면 아니다
+        assertFalse(exam("과제 3 안내", "이번 과제 내용은 시험에 반영됩니다"))
+        assertFalse(exam("Final project", "Submit your final report"))
+        assertFalse(exam("실험 보고서 제출", "실험 2 보고서"))
+        assertFalse(exam("중간고사 성적", "시험 범위 질문은 조교에게"))
+        // 제목의 시험이 보강보다 먼저, 본문에만 있으면 보강·휴강이 먼저
+        assertEquals("시험 공지", Queries.announcementBadge("중간고사 안내", "보강 일정과 같이 봐 주세요"))
+        assertEquals("보강 공지", Queries.announcementBadge("수업 안내", "보강은 시험 일정 뒤에 합니다"))
+        assertEquals("시험 공지", Queries.announcementBadge("공지", "퀴즈는 목요일 수업 시간에 봅니다"))
     }
 
     @Test fun readOnlyConversationsAndCap() {

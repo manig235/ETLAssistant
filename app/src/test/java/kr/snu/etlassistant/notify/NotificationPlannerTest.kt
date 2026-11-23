@@ -474,4 +474,29 @@ class NotificationPlannerTest {
         val list = listOf(asg(1, now.plus(Duration.ofMinutes(80))), asg(2, now.plus(Duration.ofMinutes(85))))
         assertTrue(plan(snap(list), set = set).notices.single().title.contains("1시간 30분 이내"))
     }
+
+    // ---- 시험 공지 -------------------------------------------------------------
+
+    @Test fun examAnnouncementGetsBadgeAndChatAction() {
+        val n = plan(snap(n = listOf(ann(1, course = "자료구조", title = "중간고사 안내", text = "10/20 10시, 301동 102호")))).notices.single()
+        assertEquals("자료구조 · 시험 공지", n.title)
+        assertEquals(NotificationPlanner.EXAM_ACTION, n.prefillAction)
+        assertEquals("자료구조 ‘중간고사 안내’ 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘", n.prefill)
+        // 본문 누르기는 그대로 eTL 원문
+        assertEquals("https://myetl.snu.ac.kr/a/1", n.url)
+        val plain = plan(snap(n = listOf(ann(2)))).notices.single()
+        assertNull(plain.prefill)
+        assertNull(plain.prefillAction)
+    }
+
+    @Test fun examSummaryNamesExamAnnouncementsOnly() {
+        val anns = listOf(
+            ann(1, title = "기말고사 장소"), ann(2, title = "과제 안내"), ann(3, title = "Quiz 3"), ann(4, title = "중간고사 일정"),
+        )
+        val n = plan(snap(n = anns)).notices.single()
+        assertTrue(n.bigText!!.contains("(시험 공지)"))
+        assertEquals(NotificationPlanner.EXAM_ACTION, n.prefillAction)
+        assertTrue(n.prefill!!.endsWith("외 1개 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘"))
+        assertFalse(n.prefill!!.contains("과제 안내"))
+    }
 }
