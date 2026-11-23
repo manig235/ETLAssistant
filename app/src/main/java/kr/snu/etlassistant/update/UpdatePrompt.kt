@@ -19,7 +19,7 @@ import com.wanted.android.wanted.design.theme.DesignSystemTheme
  *
  * 마지막 확인 결과([UpdateStore.latest])로 바로 띄우고, 뒤에서 확인이 끝나면([UpdateChecker.checkedTick]) 다시 본다.
  * "나중에"·"받기"·바깥 누름 모두 그 버전을 하루 미룬다([UpdateLogic.shouldPrompt]). 업데이트 알림을 꺼 두면 띄우지 않는다.
- * 받기는 Release 페이지(허용된 주소만)를 브라우저로 열 뿐 앱이 APK를 받지 않는다.
+ * 받기는 확인한 버전의 APK 직접 링크를 열어 브라우저에서 다운로드한다.
  */
 @Composable
 fun UpdatePrompt() {
@@ -34,6 +34,7 @@ fun UpdatePrompt() {
         )
         if (show) latest else null
     } ?: return
+    val downloadUrl = info.downloadUrl ?: return
 
     fun snooze() {
         store.snoozePrompt(info.tag)
@@ -53,11 +54,11 @@ fun UpdatePrompt() {
         confirmButton = {
             WantedTextButton(text = "받기", onClick = {
                 snooze()
-                if (UpdateLogic.isAllowedUrl(info.htmlUrl)) {
+                if (UpdateLogic.isAllowedDownloadUrl(downloadUrl)) {
                     val opened = runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.htmlUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }.isSuccess
-                    if (!opened) Toast.makeText(context, "링크를 열 앱이 없어요: ${info.htmlUrl}", Toast.LENGTH_LONG).show()
+                    if (!opened) Toast.makeText(context, "링크를 열 앱이 없어요: $downloadUrl", Toast.LENGTH_LONG).show()
                 }
             })
         },

@@ -16,11 +16,14 @@ data class ReleaseInfo(
     val notes: String,
     val apkName: String?,
     val apkSize: Long?,
-)
+) {
+    /** 확인한 버전의 APK 직접 다운로드 주소. 이전에 저장한 결과에는 파일 이름이 없어 배포 규칙으로 복원한다. */
+    val downloadUrl: String? get() = UpdateLogic.downloadUrl(tag, apkName)
+}
 
 /**
  * 업데이트 확인의 순수 로직(네트워크·안드로이드 없음, 단위 테스트 대상).
- * 응답은 GitHub이 주는 것이지만 그대로 믿지 않는다: 주소는 이 저장소 Release 페이지일 때만 열고, 길이는 자른다.
+ * 응답은 GitHub이 주는 것이지만 그대로 믿지 않는다: APK 주소는 이 저장소의 태그·파일 이름으로 만들고, 길이는 자른다.
  */
 object UpdateLogic {
     const val REPO_PAGE = "https://github.com/manig235/ETLAssistant/"
@@ -65,9 +68,33 @@ object UpdateLogic {
             (uri.rawPath ?: "").startsWith("/manig235/ETLAssistant/") && !(uri.rawPath ?: "").contains("..")
     }
 
+    private fun isApkName(name: String): Boolean = name.length <= 200 && !name.contains("..") &&
+        Regex("[A-Za-z0-9][A-Za-z0-9._-]*\\.apk", RegexOption.IGNORE_CASE).matches(name)
+
+    /** Release 페이지를 거치지 않고 확인한 태그에 고정된 APK를 연다. */
+    fun downloadUrl(tag: String, apkName: String?): String? {
+        if (tag != tag.trim() || parseVersion(tag) == null) return null
+        val version = tag.removePrefix("v").removePrefix("V")
+        val name = apkName ?: "youngmin-v$version.apk"
+        if (!isApkName(name)) return null
+        return "${REPO_PAGE}releases/download/$tag/$name"
+    }
+
+    /** 외부로 여는 업데이트 링크는 이 저장소의 APK asset 주소만 허용한다. */
+    fun isAllowedDownloadUrl(url: String?): Boolean {
+        if (!isAllowedUrl(url)) return false
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        if (uri.rawQuery != null || uri.rawFragment != null) return false
+        val prefix = "/manig235/ETLAssistant/releases/download/"
+        val path = uri.rawPath ?: return false
+        if (!path.startsWith(prefix)) return false
+        val parts = path.removePrefix(prefix).split('/')
+        return parts.size == 2 && downloadUrl(parts[0], parts[1]) == url
+    }
+
     /**
      * `releases/latest` 응답을 읽는다. 초안·사전 배포, 읽을 수 없는 태그, 허용되지 않은 주소면 null.
-     * apk는 이름이 .apk로 끝나는 첫 asset을 쓴다.
+     * apk는 안전한 파일 이름의 첫 asset을 쓴다. APK가 없으면 업데이트로 안내하지 않는다.
      */
     fun parseRelease(json: String): ReleaseInfo? {
         val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
@@ -82,13 +109,14 @@ object UpdateLogic {
             for (i in 0 until arr.length()) {
                 val a = arr.optJSONObject(i) ?: continue
                 val n = a.optString("name", "")
-                if (n.endsWith(".apk", ignoreCase = true)) {
-                    apkName = n.take(200)
+                if (isApkName(n)) {
+                    apkName = n
                     apkSize = a.optLong("size", -1L).takeIf { it > 0 }
                     break
                 }
             }
         }
+        if (apkName == null) return null
         return ReleaseInfo(
             tag = tag.take(40),
             version = tag.removePrefix("v").removePrefix("V"),

@@ -116,7 +116,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
             checkUpdate = ::checkUpdate,
             openUpdate = {
                 val url = state.updateUrl
-                if (url != null && UpdateLogic.isAllowedUrl(url)) {
+                if (url != null && UpdateLogic.isAllowedDownloadUrl(url)) {
                     if (runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isFailure) {
                         toast("링크를 열 앱이 없어요: $url", long = true)
                     }
@@ -196,7 +196,7 @@ class SettingsActivity : ComponentActivity(), CodexSession.Listener {
         state.updateAlerts = updateStore.enabled
         val latest = updateStore.latest?.takeIf { UpdateLogic.isNewer(it.tag, UpdateChecker.currentVersion(this)) }
         state.updateVersion = latest?.version
-        state.updateUrl = latest?.htmlUrl
+        state.updateUrl = latest?.downloadUrl
     }
 
     /** "업데이트 확인": 사용자가 직접 누른 것이라 알림 설정이 꺼져 있어도 확인하고, 알림 대신 화면에 결과를 보인다. */

@@ -53,14 +53,14 @@ class UpdateStore(context: Context) {
             return ReleaseInfo(
                 tag = tag, version = tag.removePrefix("v").removePrefix("V"), htmlUrl = url, name = "",
                 notes = prefs.getString("latestNotes", null).orEmpty(),
-                apkName = null, apkSize = prefs.getLong("latestSize", -1L).takeIf { it > 0 },
+                apkName = prefs.getString("latestApkName", null), apkSize = prefs.getLong("latestSize", -1L).takeIf { it > 0 },
             )
         }
         set(v) {
             val e = prefs.edit()
-            if (v == null) e.remove("latestTag").remove("latestUrl").remove("latestSize").remove("latestNotes")
+            if (v == null) e.remove("latestTag").remove("latestUrl").remove("latestSize").remove("latestNotes").remove("latestApkName")
             else e.putString("latestTag", v.tag).putString("latestUrl", v.htmlUrl).putLong("latestSize", v.apkSize ?: -1L)
-                .putString("latestNotes", v.notes.take(UpdateLogic.NOTES_MAX))
+                .putString("latestNotes", v.notes.take(UpdateLogic.NOTES_MAX)).putString("latestApkName", v.apkName)
             e.apply()
         }
 
@@ -77,7 +77,7 @@ class UpdateStore(context: Context) {
  * GitHub Release로 새 버전이 있는지 확인한다(사용자 결정 2026-11-22: Obtainium 없이 앱이 직접 알린다).
  *
  * 보내는 것은 `GET api.github.com/repos/manig235/ETLAssistant/releases/latest` 하나뿐이다. 토큰·계정·기기 정보는 보내지 않고
- * User-Agent도 일반 이름이다. 리다이렉트는 따라가지 않는다. 알림을 누르면 Release 페이지를 브라우저로 열 뿐 앱이 APK를 받지 않는다.
+ * User-Agent도 일반 이름이다. 리다이렉트는 따라가지 않는다. 받기를 누르면 APK 직접 링크를 열고 브라우저가 다운로드한다.
  */
 object UpdateChecker {
     private const val USER_AGENT = "youngmin-android"
@@ -194,14 +194,15 @@ object UpdateChecker {
         Quiet.isQuiet(t.hour * 60 + t.minute, NotifySettingsStore(context).load())
     }.getOrDefault(false)
 
-    /** 업데이트 알림을 띄운다. 누르면 Release 페이지(허용된 주소만)를 연다. @return 띄웠으면 true. */
+    /** 업데이트 알림을 띄운다. 누르면 확인한 버전의 APK 직접 링크를 연다. @return 띄웠으면 true. */
     @SuppressLint("MissingPermission")
     fun post(context: Context, info: ReleaseInfo): Boolean = runCatching {
-        if (!UpdateLogic.isAllowedUrl(info.htmlUrl) || !NotificationPoster.canPost(context)) return false
+        val downloadUrl = info.downloadUrl ?: return false
+        if (!UpdateLogic.isAllowedDownloadUrl(downloadUrl) || !NotificationPoster.canPost(context)) return false
         NotificationPoster.ensureChannels(context)
         val tag = "update:${info.tag}"
         val id = NotifySchedule.notificationId(tag)
-        val view = Intent(Intent.ACTION_VIEW, Uri.parse(info.htmlUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pi = PendingIntent.getActivity(context, id, view, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val title = UpdateLogic.notificationTitle(info)
         val text = UpdateLogic.notificationText(info)
@@ -217,7 +218,7 @@ object UpdateChecker {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         NotificationManagerCompat.from(context).notify(id, n)
-        NotifyHistory(context).record(Notice(Channel.UPDATE, title, text, url = info.htmlUrl, tag = tag))
+        NotifyHistory(context).record(Notice(Channel.UPDATE, title, text, url = downloadUrl, tag = tag))
         true
     }.getOrDefault(false)
 }

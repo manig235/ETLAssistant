@@ -119,7 +119,7 @@ class SettingsState {
 
     /** 업데이트 알림(GitHub Release 확인) 켬/끔. */
     var updateAlerts by mutableStateOf(true)
-    /** 지금보다 새 버전(예: "0.1.8")과 그 Release 페이지. 없으면 null. */
+    /** 지금보다 새 버전(예: "0.1.8")과 그 APK 직접 다운로드 링크. 없으면 null. */
     var updateVersion by mutableStateOf<String?>(null)
     var updateUrl by mutableStateOf<String?>(null)
     var updateChecking by mutableStateOf(false)
@@ -848,7 +848,7 @@ private fun AboutSection(s: SettingsState, a: SettingsActions) {
             HyperLink("건의사항 · 오류 제보", onClickLabel = "제보 안내 열기") { feedbackOpen = true }
             val newVersion = s.updateVersion
             if (newVersion != null && s.updateUrl != null) {
-                HyperLink(UpdateLogic.availableText(newVersion), onClickLabel = "Release 페이지 열기", onClick = a.openUpdate)
+                HyperLink(UpdateLogic.availableText(newVersion), onClickLabel = "업데이트 APK 받기", onClick = a.openUpdate)
             } else {
                 HyperLink(
                     if (s.updateChecking) "확인하는 중…" else "업데이트 확인",

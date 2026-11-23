@@ -52,6 +52,7 @@ class UpdateLogicTest {
         assertEquals("youngmin-v0.1.8.apk", r.apkName)
         assertEquals(164057719L, r.apkSize)
         assertEquals("바뀐 점", r.notes)
+        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.1.8/youngmin-v0.1.8.apk", r.downloadUrl)
     }
 
     @Test fun parseReleaseRejects() {
@@ -64,18 +65,59 @@ class UpdateLogicTest {
     }
 
     @Test fun parseReleaseWithoutApk() {
-        val r = UpdateLogic.parseRelease(release(assets = "[]"))!!
-        assertNull(r.apkName)
-        assertNull(r.apkSize)
-        assertEquals("눌러서 받아요", UpdateLogic.notificationText(r))
-        val noAssets = UpdateLogic.parseRelease("""{"tag_name":"v0.1.8","html_url":"https://github.com/manig235/ETLAssistant/releases/tag/v0.1.8","body":null}""")!!
-        assertNull(noAssets.apkName)
-        assertEquals("", noAssets.notes)
+        assertNull(UpdateLogic.parseRelease(release(assets = "[]")))
+        assertNull(UpdateLogic.parseRelease("""{"tag_name":"v0.1.8","html_url":"https://github.com/manig235/ETLAssistant/releases/tag/v0.1.8","body":null}"""))
+        val noNotes = UpdateLogic.parseRelease(release().replace("\"body\":\"바뀐 점\"", "\"body\":null"))!!
+        assertEquals("", noNotes.notes)
+    }
+
+    @Test fun downloadUsesConfirmedTagAndActualAssetName() {
+        val assets = """[{"name":"../evil.apk","size":1},{"name":"youngmin.apk","size":164057719,"browser_download_url":"https://evil.example/app.apk"}]"""
+        val r = UpdateLogic.parseRelease(release(assets = assets))!!
+        assertEquals("youngmin.apk", r.apkName)
+        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.1.8/youngmin.apk", r.downloadUrl)
+        assertTrue(UpdateLogic.isAllowedDownloadUrl(r.downloadUrl))
+        assertNull(UpdateLogic.parseRelease(release(assets = """[{"name":"../evil.apk"},{"name":"bad%2Fname.apk"},{"name":"notes.txt"}]""")))
+    }
+
+    @Test fun oldCachedReleaseWithoutAssetNameStillDownloads() {
+        val cached = info("v0.2.2").copy(apkName = null)
+        assertEquals("https://github.com/manig235/ETLAssistant/releases/download/v0.2.2/youngmin-v0.2.2.apk", cached.downloadUrl)
+        assertTrue(UpdateLogic.isAllowedDownloadUrl(cached.downloadUrl))
+    }
+
+    @Test fun directDownloadRejectsUnsafeTagsAndFiles() {
+        for (tag in listOf("nightly", "v0.2.3-beta", " v0.2.3", "v0.2.3\n", "v0.2.3/other")) {
+            assertNull(UpdateLogic.downloadUrl(tag, "youngmin.apk"))
+        }
+        for (name in listOf("../youngmin.apk", "a/b.apk", "a%2Fb.apk", "app.apk?redirect=x", "app.apk#x", "app apk.apk", "app.apk\n", "app.apk.sha256", "a".repeat(200) + ".apk")) {
+            assertNull(UpdateLogic.downloadUrl("v0.2.3", name))
+        }
+    }
+
+    @Test fun onlyRepositoryApkDownloadLinksAreAllowed() {
+        val root = "https://github.com/manig235/ETLAssistant/"
+        assertTrue(UpdateLogic.isAllowedDownloadUrl(root + "releases/download/v0.2.3/youngmin.apk"))
+        assertTrue(UpdateLogic.isAllowedDownloadUrl(root + "releases/download/v0.2.3/youngmin-v0.2.3.apk"))
+        for (url in listOf(
+            root + "releases/tag/v0.2.3",
+            root + "releases/latest/download/youngmin.apk",
+            root + "releases/download/v0.2.3/youngmin.apk.sha256",
+            root + "releases/download/v0.2.3/../youngmin.apk",
+            root + "releases/download/v0.2.3/%2e%2e.apk",
+            root + "releases/download/v0.2.3/youngmin.apk?next=https://evil.example",
+            root + "releases/download/v0.2.3/youngmin.apk#x",
+            "http://github.com/manig235/ETLAssistant/releases/download/v0.2.3/youngmin.apk",
+            "https://github.com/other/ETLAssistant/releases/download/v0.2.3/youngmin.apk",
+            "https://github.com:444/manig235/ETLAssistant/releases/download/v0.2.3/youngmin.apk",
+            "https://github.com.evil.example/manig235/ETLAssistant/releases/download/v0.2.3/youngmin.apk",
+        )) assertFalse(url, UpdateLogic.isAllowedDownloadUrl(url))
+        assertFalse(UpdateLogic.isAllowedDownloadUrl(null))
     }
 
     @Test fun notesAreTruncated() {
         val long = "가".repeat(UpdateLogic.NOTES_MAX + 500)
-        val json = """{"tag_name":"v0.1.8","html_url":"https://github.com/manig235/ETLAssistant/releases/tag/v0.1.8","body":"$long"}"""
+        val json = release().replace("바뀐 점", long)
         assertEquals(UpdateLogic.NOTES_MAX, UpdateLogic.parseRelease(json)!!.notes.length)
     }
 
