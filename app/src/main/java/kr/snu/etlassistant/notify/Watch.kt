@@ -61,8 +61,9 @@ object AssignmentWatch {
      * 지난 상태와 이번 조회를 비교해 새 과제, 마감 변경, 성적 등록 알림을 만든다.
      * 내 마감(강의 ID −1)은 보지 않는다. 이번에 못 본 과제(조회 실패한 강의 등)는 기록을 남겨 다음에 "새 과제"가 되지 않게 한다.
      * 과제가 하나도 오지 않고 오류만 있으면 상태를 바꾸지 않는다(빈 결과로 기준선을 다시 잡지 않는다).
+     * [muted]인 과목(과목별 알림 끄기)은 알리지 않지만 기록은 갱신한다(다시 켰을 때 그동안의 변경이 몰려오지 않게).
      */
-    fun diff(prev: WatchState, snapshot: Snapshot, now: Instant): Pair<WatchState, List<Notice>> {
+    fun diff(prev: WatchState, snapshot: Snapshot, now: Instant, muted: (Long) -> Boolean = { false }): Pair<WatchState, List<Notice>> {
         val items = snapshot.assignments.filter { it.courseId != MyDeadlines.COURSE_ID }
         if (items.isEmpty() && snapshot.errors.isNotEmpty()) return prev to emptyList()
         val first = !prev.initialized
@@ -94,6 +95,7 @@ object AssignmentWatch {
         }
         for ((k, r) in prev.records) if (k !in records) records[k] = r
         val state = WatchState(true, records)
+        events.removeAll { muted(it.item.courseId) }
         if (events.isEmpty()) return state to emptyList()
 
         val order = mapOf("마감 변경" to 0, "새 과제" to 1, "성적" to 2)

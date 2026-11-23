@@ -46,8 +46,10 @@ object NotifyRunner {
             // eTL을 실제로 조회했는가. 아니면(토큰 없음, 연결 실패) 공지 기준선·새 과제/변경 비교를 하지 않는다.
             val etlOk = !token.isNullOrEmpty() && failure == null
             val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
+            // 과목별 알림 끄기·숨기기: 그 과목은 알리지 않고 중복 방지 기록만 남긴다([CourseMute]).
+            val courses = CourseFilterStore(app).load()
             // 토큰이 없을 때(내 마감만 확인) 공지 기준선을 잡으면, 나중에 토큰을 넣었을 때 기존 공지가 한꺼번에 알려진다.
-            val plan = NotificationPlanner.plan(snapshot, stateStore.load(), now, settings)
+            val plan = CourseMute.plan(snapshot, stateStore.load(), now, settings, courses)
                 .let { if (!etlOk) it.copy(markBaselineDone = false) else it }
                 .let { p -> fetched.cachedAt?.let { at -> p.copy(notices = p.notices.map { staleMark(it, at, now) }) } ?: p }
             val zone = java.time.ZoneId.systemDefault()
@@ -57,7 +59,7 @@ object NotifyRunner {
             // 새 과제·마감 변경·성적(ttokttok-pet watch.js). 방해 금지 중에는 비교하지 않아 끝난 뒤 알린다.
             val changes = if (settings.changeAlerts && etlOk && !quiet) {
                 val watchStore = WatchStore(app)
-                val (newState, notices) = AssignmentWatch.diff(watchStore.load(), snapshot, now)
+                val (newState, notices) = AssignmentWatch.diff(watchStore.load(), snapshot, now, courses::muted)
                 watchStore.save(newState)
                 notices
             } else emptyList()
@@ -70,7 +72,7 @@ object NotifyRunner {
                     val w = Timetable.cachedOrFetch(etl, TimetableStore(app), now.toEpochMilli())
                     val ch = TimetableChangeStore(app).load()
                     val today = local.toLocalDate()
-                    listOf(TimetableLogic.day(w, today, ch), TimetableLogic.day(w, today.plusDays(1), ch))
+                    listOf(TimetableLogic.day(w, today, ch), TimetableLogic.day(w, today.plusDays(1), ch)).map(courses::alertDay)
                 } catch (e: EtlAuthException) {
                     throw e
                 } catch (_: Exception) {
@@ -103,7 +105,7 @@ object NotifyRunner {
             }
             // 다음 마감·수업 알림 시점에 맞춰 한 번 더 확인한다(주기 확인만으로는 확인 간격만큼 늦을 수 있다).
             val after = stateStore.load()
-            val nextDeadline = NotificationPlanner.nextDeadlineCheckAt(snapshot, after, now, settings)
+            val nextDeadline = NotificationPlanner.nextDeadlineCheckAt(courses.alertable(snapshot), after, now, settings)
             val nextClass = if (settings.classAlerts) ClassNotices.nextAt(classDays, now, zone, settings.classLeadMinutes, after.fired.keys) else null
             val nextReminder = MyDeadlines.nextReminderAt(mine, now, after.fired.keys)
             runCatching { DeadlineAlarm.schedule(app, listOfNotNull(nextDeadline, nextClass, nextReminder).minOrNull()) }
@@ -139,7 +141,8 @@ object NotifyRunner {
                 log("브리핑 미룸: 일부 조회가 연결 실패라 다시 시도")
                 return@guarded Outcome.RETRY
             }
-            val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
+            // 숨긴 과목은 브리핑에서 뺀다(알림만 끈 과목은 그대로 보인다). 오늘 수업은 시간표를 따른다.
+            val snapshot = CourseFilterStore(app).load().visible(MyDeadlines.merge(fetched.snapshot, mine, now))
             logErrors(snapshot.errors, fetched.cachedAt)
             val classes = if (token.isNullOrEmpty()) emptyList() else todayClassLines(app, token, now)
             // 브리핑은 방해 금지와 무관하게 정해진 시각에 보낸다.

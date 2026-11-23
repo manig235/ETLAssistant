@@ -18,6 +18,8 @@ import kr.snu.etlassistant.notify.Agenda
 import kr.snu.etlassistant.notify.DeadlineAlarm
 import kr.snu.etlassistant.notify.NotifyStateStore
 import kr.snu.etlassistant.notify.CachedSnapshot
+import kr.snu.etlassistant.notify.CourseFilter
+import kr.snu.etlassistant.notify.CourseFilterStore
 import kr.snu.etlassistant.notify.SnapshotCache
 import kr.snu.etlassistant.notify.SnapshotFetcher
 import android.app.TimePickerDialog
@@ -105,6 +107,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
     private var loading by mutableStateOf(false)
     private var filter by mutableStateOf(Agenda.Filter.ALL)
     private var hideDone by mutableStateOf(true)
+    private var courseFilter by mutableStateOf(CourseFilter())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,13 +122,15 @@ class MyDeadlinesActivity : AppCompatActivity() {
         }
         setContent {
             AgendaScreen(
-                schedule = Agenda.build(cached?.assignments.orEmpty(), mine, now, ZoneId.systemDefault(), filter, hideDone),
+                schedule = Agenda.build(courseFilter.visibleAssignments(cached?.assignments.orEmpty()), mine, now, ZoneId.systemDefault(), filter, hideDone),
                 now = now,
                 takenAt = cached?.takenAt,
                 hasToken = remember { !EtlService.tokens(this).load().isNullOrEmpty() },
                 loading = loading,
                 filter = filter,
                 hideDone = hideDone,
+                hiddenCourses = courseFilter.hiddenCount,
+                onHiddenCourses = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
                 alertsOn = remember { NotifySettingsStore(this).load().deadlineAlerts },
                 mineTotal = mine.size,
                 initialDeadline = remember { store.load().firstOrNull { it.id == intent.getLongExtra(kr.snu.etlassistant.widget.HomeWidgets.EXTRA_DEADLINE_ID, Long.MIN_VALUE) } },
@@ -159,6 +164,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
     private fun reload() {
         mine = store.load()
         cached = SnapshotCache(this).load()
+        courseFilter = CourseFilterStore(this).load()
     }
 
     /** eTL 과제를 새로 받아 저장한다(알림 확인과 같은 캐시). */
@@ -232,6 +238,8 @@ private fun AgendaScreen(
     loading: Boolean,
     filter: Agenda.Filter,
     hideDone: Boolean,
+    hiddenCourses: Int,
+    onHiddenCourses: () -> Unit,
     alertsOn: Boolean,
     mineTotal: Int,
     initialDeadline: MyDeadline?,
@@ -280,6 +288,8 @@ private fun AgendaScreen(
             FlowRow(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (f in Agenda.Filter.values()) WantedChip(text = f.label, isActive = filter == f, onClick = { onFilter(f) })
                 WantedChip(text = if (hideDone) "제출·완료 숨김" else "제출·완료 보기", isActive = !hideDone, onClick = { onHideDone(!hideDone) })
+                // 과목별 알림에서 숨긴 과목의 과제는 여기 보이지 않는다. 누르면 과목별 알림 화면으로 간다.
+                if (hiddenCourses > 0 && filter != Agenda.Filter.MINE) WantedChip(text = "숨긴 과목 ${hiddenCourses}개", onClick = onHiddenCourses)
             }
             Spacer(Modifier.height(8.dp))
 

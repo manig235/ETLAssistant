@@ -123,6 +123,10 @@
             android:exported="false" />
 
         <activity
+            android:name="kr.snu.etlassistant.chat.CourseAlertsActivity"
+            android:exported="false" />
+
+        <activity
             android:name="kr.snu.etlassistant.chat.MyDeadlinesActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

@@ -24,6 +24,8 @@ import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.etl.ApiKeyStore
 import kr.snu.etlassistant.etl.EtlService
 import kr.snu.etlassistant.notify.BatteryOpt
+import kr.snu.etlassistant.notify.CourseFilterLogic
+import kr.snu.etlassistant.notify.CourseFilterStore
 import kr.snu.etlassistant.notify.NotificationPoster
 import kr.snu.etlassistant.notify.NotifyScheduler
 import kr.snu.etlassistant.notify.NotifySettings
@@ -104,6 +106,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             },
             replayOnboarding = { startActivity(Intent(this, OnboardingActivity::class.java)) },
             openHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
+            openCourseAlerts = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
             openTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
             openMyDeadlines = { startActivity(Intent(this, MyDeadlinesActivity::class.java)) },
             addDeadlineWidget = { pinWidget(kr.snu.etlassistant.widget.DeadlineWidgetProvider::class.java) },
@@ -146,6 +149,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         syncSession()
         refreshSecrets()
         refreshNotifySettings()
+        state.courseAlertsSummary = CourseFilterLogic.summary(CourseFilterStore(this).load())
         refreshNotifyPermission()
         refreshNotifyStatusLines()
         refreshUpdate()

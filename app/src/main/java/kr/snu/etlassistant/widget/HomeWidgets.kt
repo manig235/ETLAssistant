@@ -30,6 +30,7 @@ import kr.snu.etlassistant.etl.TimetableLogic
 import kr.snu.etlassistant.etl.TimetableChangeStore
 import kr.snu.etlassistant.etl.TimetableStore
 import kr.snu.etlassistant.notify.DeadlineAlarm
+import kr.snu.etlassistant.notify.CourseFilterStore
 import kr.snu.etlassistant.notify.MyDeadlineStore
 import kr.snu.etlassistant.notify.NotifyScheduler
 import kr.snu.etlassistant.notify.SnapshotCache
@@ -87,7 +88,9 @@ object HomeWidgets {
         val manager = AppWidgetManager.getInstance(context)
         val now = Instant.now()
         val snapshot = SnapshotCache(context).load()
-        val items = DeadlineWidgetLogic.items(snapshot?.assignments.orEmpty(), MyDeadlineStore(context).load(), now)
+        // 숨긴 과목(과목별 알림 → 숨기기)의 과제는 빼고 보인다.
+        val assignments = CourseFilterStore(context).load().visibleAssignments(snapshot?.assignments.orEmpty())
+        val items = DeadlineWidgetLogic.items(assignments, MyDeadlineStore(context).load(), now)
         for (provider in deadlineProviders) ids(context, provider).forEach { id ->
             val compact = provider == CompactDeadlineWidgetProvider::class.java
             val size = size(context, manager.getAppWidgetOptions(id), 110, if (compact) 40 else 110)
