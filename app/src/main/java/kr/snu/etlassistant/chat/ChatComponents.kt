@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -59,11 +61,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -243,6 +247,16 @@ private fun SuggestionCard(icon: ImageVector, text: String, onClick: () -> Unit)
 private val BubbleRadius = 20.dp
 private val BubbleTail = 6.dp
 
+/**
+ * 사용자 말풍선 파랑. Montage blue_45(#005EEB, 라이트 테마의 surfaceBrandStrong)를 두 테마에 같이 쓴다.
+ * 흰 글씨 대비 5.5:1. surfaceBrandPrimary는 라이트 4.8:1, 다크(blue_60) 3.5:1이라 기준(4.5:1)에 못 미친다.
+ * 다크 배경(#1B1C1E)과도 3.1:1로 구분된다.
+ */
+private val UserBubbleBlue = Color(0xFF005EEB)
+
+/** 사용자 말풍선 안의 선택 띠. 앱 아이콘 배경과 같은 남색(colors.xml brand_navy). */
+private val UserSelectionNavy = Color(0xFF181B35)
+
 /** 한 줄의 대화. 사용자는 오른쪽 파랑, 어시스턴트는 왼쪽 회색, 안내문은 가운데 작은 글씨. */
 @Composable
 fun MessageRow(
@@ -278,18 +292,28 @@ fun MessageRow(
         )
         Role.USER -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             // 길게 누르면 시스템 텍스트 선택(부분 선택·복사). 전체 복사는 접근성 동작으로 남긴다.
-            SelectionContainer {
-            Text(
-                text,
-                style = t.body1ReadingRegular,
-                color = c.staticWhite,
-                modifier = Modifier
-                    .widthIn(max = maxBubbleWidth)
-                    .copyOnLongPress(text, onCopy)
-                    .clip(RoundedCornerShape(BubbleRadius, BubbleRadius, BubbleTail, BubbleRadius))
-                    .background(c.surfaceBrandPrimary)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+            // 기본 선택 색(브랜드 파랑)은 말풍선과 같아서 선택 범위·손잡이가 보이지 않는다.
+            // 선택 범위는 앱 남색 띠(흰 글씨 16.8:1, 말풍선 파랑과 3.1:1), 손잡이는 본문 글자색(라이트 검정·다크 흰색)으로
+            // 말풍선과 바깥 배경 모두에서 보이게 한다.
+            CompositionLocalProvider(
+                LocalTextSelectionColors provides TextSelectionColors(
+                    handleColor = c.foregroundNeutralPrimary,
+                    backgroundColor = UserSelectionNavy,
+                ),
+            ) {
+                SelectionContainer {
+                    Text(
+                        text,
+                        style = t.body1ReadingRegular,
+                        color = c.staticWhite,
+                        modifier = Modifier
+                            .widthIn(max = maxBubbleWidth)
+                            .copyOnLongPress(text, onCopy)
+                            .clip(RoundedCornerShape(BubbleRadius, BubbleRadius, BubbleTail, BubbleRadius))
+                            .background(UserBubbleBlue)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                }
             }
         }
         Role.ASSISTANT -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
