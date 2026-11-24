@@ -148,10 +148,13 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("path", "string", "예: /api/v1/users/self/todo"),
                 Triple("all", "boolean", "목록의 다음 쪽까지 모두 받기(최대 20쪽). 기본 false"),
                 required = listOf("path"))))
+        // 폰 안 쓰기: 비서가 쓴 마크다운을 PDF로(pdf/MakePdfTool.kt)
+        .put(kr.snu.etlassistant.pdf.MakePdfTool.spec(untrusted))
 
     override fun call(name: String, args: JSONObject): ToolResult {
         val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable", "etl_syllabus",
-            "my_deadline_add", "my_deadline_update", "my_deadline_delete", "timetable_change_add", "timetable_change_delete")
+            "my_deadline_add", "my_deadline_update", "my_deadline_delete", "timetable_change_add", "timetable_change_delete",
+            kr.snu.etlassistant.pdf.MakePdfTool.NAME)
         if (name !in known && name !in calendar.names) throw UnknownToolException(name)
         return try {
             val out: Any = when (name) {
@@ -180,6 +183,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "my_deadline_delete" -> myDeadlineDelete(args)
                 "timetable_change_add" -> timetableChangeAdd(args)
                 "timetable_change_delete" -> timetableChangeDelete(args)
+                kr.snu.etlassistant.pdf.MakePdfTool.NAME -> kr.snu.etlassistant.pdf.MakePdfTool(context, workspace).call(args)
                 "etl_boards" -> board().boards(id(args, "course_id"))
                 "etl_board_posts" -> board().posts(id(args, "course_id"), id(args, "board_id"), args.optInt("page", 1), args.optString("keyword", ""))
                 "etl_board_post" -> board().post(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"))

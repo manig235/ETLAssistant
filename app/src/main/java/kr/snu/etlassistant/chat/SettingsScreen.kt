@@ -211,6 +211,8 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
                 Spacer(Modifier.height(32.dp))
                 CalendarSection(s, a)
                 Spacer(Modifier.height(32.dp))
+                Section("받은 파일") { SettingsCard { kr.snu.etlassistant.files.DownloadCleanupSettingsContent() } }
+                Spacer(Modifier.height(32.dp))
                 ToneSection(s, a)
                 Spacer(Modifier.height(32.dp))
                 ModelSection(s, a)

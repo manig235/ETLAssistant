@@ -4,6 +4,7 @@ import kr.snu.etlassistant.chat.TimetableGridLogic
 import kr.snu.etlassistant.etl.EtlLogic
 import kr.snu.etlassistant.etl.TimetableLogic
 import kr.snu.etlassistant.notify.AssignmentItem
+import kr.snu.etlassistant.notify.CourseFilter
 import kr.snu.etlassistant.notify.MyDeadline
 import kr.snu.etlassistant.notify.MyDeadlines
 import java.time.DayOfWeek
@@ -91,11 +92,13 @@ object TimetableWidgetLogic {
     data class NextClass(val entry: Entry, val startsAt: Instant, val switchesAt: Instant)
 
     /** 시작 30분 뒤(더 짧은 수업은 종료 때) 다음 수업으로 넘긴다. 휴강은 제외한다. */
-    fun nextClass(weekly: TimetableLogic.Weekly?, changes: List<TimetableLogic.Change>, now: Instant): NextClass? {
+    fun nextClass(
+        weekly: TimetableLogic.Weekly?, changes: List<TimetableLogic.Change>, now: Instant, filter: CourseFilter = CourseFilter(),
+    ): NextClass? {
         val today = now.atZone(EtlLogic.KST).toLocalDate()
         return (0L..7L).asSequence().flatMap { offset ->
             val date = today.plusDays(offset)
-            TimetableLogic.day(weekly, date, changes).classes.asSequence().mapNotNull { row ->
+            filter.timetableDay(TimetableLogic.day(weekly, date, changes)).classes.asSequence().mapNotNull { row ->
                 val start = runCatching { date.atTime(LocalTime.parse(row.start)).atZone(EtlLogic.KST).toInstant() }.getOrNull()
                     ?: return@mapNotNull null
                 val end = runCatching { date.atTime(LocalTime.parse(row.end)).atZone(EtlLogic.KST).toInstant() }.getOrNull()
@@ -107,11 +110,12 @@ object TimetableWidgetLogic {
         }.minByOrNull { it.startsAt }
     }
 
-    fun week(weekly: TimetableLogic.Weekly?, changes: List<TimetableLogic.Change>, today: LocalDate): Week {
+    /** [filter]: 과목별 알림에서 "시간표에서도 숨기기"를 켠 과목은 뺀다. */
+    fun week(weekly: TimetableLogic.Weekly?, changes: List<TimetableLogic.Change>, today: LocalDate, filter: CourseFilter = CourseFilter()): Week {
         val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val entries = (0L..6L).flatMap { offset ->
             val date = monday.plusDays(offset)
-            val day = TimetableLogic.day(weekly, date, changes)
+            val day = filter.timetableDay(TimetableLogic.day(weekly, date, changes))
             day.classes.map { Entry(date, it, false) } + day.cancelled.map { Entry(date, it, true) }
         }
         // 같은 과목의 정규/보강 블록도 각각 배치한다. 원래 ID는 색상과 접근성 설명에 유지한다.

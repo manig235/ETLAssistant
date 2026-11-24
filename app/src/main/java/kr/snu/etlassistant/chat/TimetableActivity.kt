@@ -63,12 +63,14 @@ import kr.snu.etlassistant.etl.Timetable
 import kr.snu.etlassistant.etl.TimetableChangeStore
 import kr.snu.etlassistant.etl.TimetableLogic
 import kr.snu.etlassistant.etl.TimetableStore
+import kr.snu.etlassistant.notify.CourseFilterStore
 import java.time.LocalDate
 import java.time.LocalTime
 
 /**
  * 시간표: 수강편람의 주간 수업·직접 추가한 반복 수업·보강과 휴강.
  * 보강·휴강은 AI 답변(etl_timetable), 브리핑의 "오늘 수업", 수업 알림에 반영된다.
+ * 과목별 알림에서 "시간표·오늘 수업에서도 숨기기"를 켠 과목은 수업과 보강·휴강 모두 이 화면에 보이지 않는다(AI 도구에는 그대로).
  */
 class TimetableActivity : AppCompatActivity() {
     private val store by lazy { TimetableStore(this) }
@@ -90,6 +92,7 @@ class TimetableActivity : AppCompatActivity() {
         setIntent(intent)
         readDraft(intent)
     }
+    private var hiddenCourses by mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,6 +107,8 @@ class TimetableActivity : AppCompatActivity() {
                     draft = null
                     runCatching { startActivity(Intent(this, ChatActivity::class.java).putExtra(ChatActivity.EXTRA_PREFILL, d.prefill).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
                 },
+                hiddenCourses = hiddenCourses,
+                onHiddenCourses = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
                 onBack = { finish() },
                 onSaveCustom = { store.saveCustom(it); reload() },
                 onDeleteCustom = { store.deleteCustom(it); reload() },
@@ -130,9 +135,12 @@ class TimetableActivity : AppCompatActivity() {
     }
 
     private fun reload() {
-        weekly = store.load()
+        val filter = CourseFilterStore(this).load()
+        val all = store.load()
+        weekly = filter.timetableWeekly(all)
         val today = LocalDate.now(EtlLogic.KST)
-        changeList = changes.load().filter { !it.date.isBefore(today) }
+        changeList = filter.timetableChanges(changes.load().filter { !it.date.isBefore(today) }, all)
+        hiddenCourses = filter.timetableHiddenCount
     }
 
     private fun refresh(force: Boolean) {
@@ -170,6 +178,8 @@ internal fun TimetableScreen(
     weekly: TimetableLogic.Weekly?,
     changes: List<TimetableLogic.Change>,
     loading: Boolean,
+    hiddenCourses: Int,
+    onHiddenCourses: () -> Unit,
     onBack: () -> Unit,
     onSaveCustom: (TimetableLogic.CourseMeetings) -> Unit,
     onDeleteCustom: (Long) -> Unit,
@@ -198,6 +208,12 @@ internal fun TimetableScreen(
             }
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                 Spacer(Modifier.height(8.dp))
+                // 과목별 알림에서 시간표에서도 숨긴 과목이 있으면 알려 준다. 누르면 과목별 알림 화면으로 간다.
+                if (hiddenCourses > 0) {
+                    Row(Modifier.padding(start = 16.dp, bottom = 8.dp)) {
+                        WantedChip(text = "숨긴 과목 ${hiddenCourses}개", onClick = onHiddenCourses)
+                    }
+                }
                 val w = weekly
                 if (w == null) {
                     Text(if (loading) "가져오는 중…" else "오른쪽 위 + 버튼으로 수업을 추가해 보세요. eTL을 연결하면 수강 중인 수업도 자동으로 가져와요.",

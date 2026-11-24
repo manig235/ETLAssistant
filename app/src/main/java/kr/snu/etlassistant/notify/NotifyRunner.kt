@@ -183,7 +183,7 @@ object NotifyRunner {
                 log("브리핑 미룸: 일부 조회가 연결 실패라 다시 시도")
                 return@guarded Outcome.RETRY
             }
-            // 숨긴 과목은 브리핑에서 뺀다(알림만 끈 과목은 그대로 보인다). 오늘 수업은 시간표를 따른다.
+            // 숨긴 과목은 브리핑에서 뺀다(알림만 끈 과목은 그대로 보인다). 오늘 수업은 시간표를 따르고, 시간표에서도 숨긴 과목만 뺀다.
             val snapshot = CourseFilterStore(app).load().visible(MyDeadlines.merge(fetched.snapshot, mine, now))
             logErrors(snapshot.errors, fetched.cachedAt)
             val classes = if (token.isNullOrEmpty()) emptyList() else todayClassLines(app, token, now)
@@ -211,7 +211,8 @@ object NotifyRunner {
         val w = Timetable.cachedOrFetch(etl, TimetableStore(app), now.toEpochMilli())
         val date = now.atZone(java.time.ZoneId.systemDefault()).toLocalDate()
         val events = try { Timetable.calendarClasses(etl, w.courses, date) } catch (e: EtlAuthException) { throw e } catch (_: Exception) { emptyList() }
-        val day = TimetableLogic.day(w, date, TimetableChangeStore(app).load(), events)
+        // 과목별 알림에서 "시간표·오늘 수업에서도 숨기기"를 켠 과목은 뺀다(수업·휴강 줄 모두).
+        val day = CourseFilterStore(app).load().timetableDay(TimetableLogic.day(w, date, TimetableChangeStore(app).load(), events))
         TimetableLogic.briefLines(day.classes) + day.cancelled.map { "• ${it.start} ${it.course} 휴강" + (it.note?.let { n -> " ($n)" } ?: "") }
     } catch (e: EtlAuthException) {
         throw e

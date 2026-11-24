@@ -122,6 +122,11 @@ fun ChatRoot(vm: ChatViewModel, a: ChatActions) {
         ChatScreen(vm, a)
         // 새 버전이 있으면 앞에 팝업(하루 한 번까지, update/UpdatePrompt).
         kr.snu.etlassistant.update.UpdatePrompt()
+        // 채팅을 열 때 뜨는 창은 한 실행에 하나: 업데이트 팝업 > 받은 파일 정리 선택 > 등록 안 한 공지 시트(나머지는 다음 기회로).
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val updating = androidx.compose.runtime.remember { kr.snu.etlassistant.update.updatePromptPending(context) }
+        // 받은 파일 자동 정리 기간을 아직 고르지 않았으면 한 번 묻는다(files/CleanupUi).
+        if (!updating) kr.snu.etlassistant.files.CleanupPrompt()
         if (vm.pendingSheet) PendingNoticesSheet(vm)
     }
 }

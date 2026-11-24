@@ -51,6 +51,23 @@ object AttachmentLogic {
         else -> "${bytes}B"
     }
 
+    /** 파일 카드가 가리키는 파일의 상태. */
+    enum class Availability { OK, CLEANED, DELETED }
+
+    /**
+     * 작업 폴더 사본이나 폰 사본 중 하나라도 있으면 [Availability.OK]. 둘 다 없으면 자동 정리로 지운 것([cleaned])인지에 따라
+     * "자동 정리됨" / "지워짐".
+     */
+    fun availability(workspaceExists: Boolean, phoneUri: String?, phoneAlive: Boolean, cleaned: Boolean): Availability = when {
+        workspaceExists || (phoneUri != null && phoneAlive) -> Availability.OK
+        cleaned -> Availability.CLEANED
+        else -> Availability.DELETED
+    }
+
+    /** 지워진 파일 카드의 "다시 받기"가 입력창에 채우는 글(보내지는 않는다). 비서가 만든 파일이면 다시 만들어 달라고 한다. */
+    fun redownloadPrompt(name: String, generated: Boolean): String =
+        if (generated) "\"$name\" 다시 만들어줘" else "\"$name\" 파일 다시 받아줘"
+
     /** 파일 카드의 아이콘 종류. */
     enum class FileKind { PDF, IMAGE, SLIDES, SHEET, DOC, HWP, ARCHIVE, CODE, OTHER }
 
