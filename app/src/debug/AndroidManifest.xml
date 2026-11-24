@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 디버그 빌드 전용(release에는 합쳐지지 않는다). adb 셸만 보낼 수 있게 DUMP 권한으로 막는다. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver android:name="kr.snu.etlassistant.debug.TestNotifyReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+    </application>
+</manifest>

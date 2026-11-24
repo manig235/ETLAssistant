@@ -279,4 +279,13 @@ AI 없이 앱 코드(WorkManager)만으로 마감·공지를 알린다. 코드�
   요청 코드는 알림 ID ^ 고정값(항목마다 다름), FLAG_IMMUTABLE. 내 일정은 위젯·캘린더 "앱에서 열기"와 같은 `EXTRA_DEADLINE_ID`로 그 항목의 창을 연다(반복 회차 ID는 `MyDeadlines.findByItemId`로 원래 항목).
   내 마감만 묶인 알림은 내 일정(항목 창 없음), eTL 과제와 섞인 묶음은 지금처럼 eTL. 브리핑은 그대로 채팅, eTL 항목은 eTL. 판정은 순수 함수 `NoticeRouting.tap`.
 - 테스트: `SubmitOkAndAgendaTapTest`(정상→조용한 알림, 문제→기존 알림과 같은 키, 늦음만→늦은 제출 표시, 설정 꺼짐·과목 끄기→없음, 중복·다시 제출, 기준선·첨부 미확인 미루기, 파일 수 캐시, 알림 종류별 터치 경로, 반복 회차 ID 찾기).
-  기기 미확인: LOW 채널이 삼성에서 상태 표시줄 아이콘 없이 조용히 쌓이는지, 알림에서 내 일정 → 뒤로 → 채팅 흐름.
+  기기 확인(S22, 2026-11-24, 아래 확인용 알림으로): `submit_ok`는 중요도 LOW로 팝업 없이 알림창의 조용한 알림 쪽에 쌓이고, 누르면 `LearningXOpenActivity` → LearningX 앱(로그인 전이면 SNU 로그인 화면)으로 그 과제를 연다.
+  내 마감 알림(`deadline`, HIGH)은 팝업으로 뜨고, 누르면 채팅 위에 내 일정 + 그 항목의 "내 마감 고치기" 창, 취소 → 뒤로 → 채팅. 아직 미확인: 상태 표시줄 아이콘 표시 여부.
+- **확인용 알림(디버그 빌드 전용)**: `app/src/debug/`의 `TestNotifyReceiver`(exported, `android.permission.DUMP`로 adb 셸만 보낼 수 있음, release 매니페스트에는 없음)가 실제 코드 경로로 알림을 띄운다.
+  ```
+  adb shell am broadcast -n kr.snu.etlassistant.phase0/kr.snu.etlassistant.debug.TestNotifyReceiver --es what submit_ok --es assignment 305954:392608
+  adb shell am broadcast -n kr.snu.etlassistant.phase0/kr.snu.etlassistant.debug.TestNotifyReceiver --es what mine [--el mine_id N] [--ez force true] [--ez create_temp true]
+  ```
+  `submit_ok`는 받아 둔 과제 캐시의 제출된 과제(생략하면 가장 최근 정상 제출)를 "지난 확인 때 제출 전"으로 바꾼 기준선으로 `AssignmentWatch.diff`에 넣고, `mine`은 가까운 미완료 내 마감에 1분 전 알림 시각을 붙여 `MyDeadlines.reminderNotices`로 만든다.
+  미완료 항목이 없으면 `force`로 저장된 항목을 알림 안에서만 "2시간 뒤·미완료"로 바꾸고(저장 안 함), `create_temp`는 "테스트 마감 (지워도 돼요)"를 만든다(`--es what cleanup`으로 지움).
+  둘 다 `NotificationPoster.post`로 게시해 알림 기록에는 남지만, 기준선(`WatchStore`)과 중복 방지 키(`NotifyState`)는 쓰지 않는다. 결과는 `am broadcast` 출력의 data에 나온다. 네트워크·eTL 요청 없음.
