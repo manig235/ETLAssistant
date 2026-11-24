@@ -374,7 +374,7 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   - 대화 삭제는 `thread/delete`(rollout + Codex 내부 DB) 후 남은 rollout 파일도 지운다(`codex/ThreadPurge`, codex-home의 sessions·archived_sessions만, 링크 안 따라감). 실패분은 `AppSettings.pendingThreadDeletes`로 다음 시작 때 재시도, 시작 때 목록에 없는 archived_sessions 정리.
   - 로그(`phase0.log`)는 1MB에서 `.1`로 한 번 회전하고, 모든 줄을 `LogRedact`로 가린다(URL 쿼리·사용자 정보, 기기 코드, Bearer·JWT·sk- 키).
   - 설정 "eTL 연결 해제"(`etl/EtlDisconnect`): 토큰 + eTL 캐시(etl_snapshot, notify_watch, timetable.weekly, 계획서 첨부, 게시판 세션). 대화·받은 파일·알림 기록·내 마감은 남긴다.
-  - 로컬 CONNECT 프록시는 프로세스마다 새 Basic 자격 증명을 요구하고 `http://user:pass@127.0.0.1:port`로 넘긴다. **기기에서 Codex가 자격 증명을 보내는지 아직 확인하지 못했다**(안 보내면 채팅 전체가 막힘).
+  - 로컬 CONNECT 프록시는 프로세스마다 새 Basic 자격 증명을 요구하고 `http://user:pass@127.0.0.1:port`로 넘긴다. Codex가 이 자격 증명을 보내 채팅이 동작하는 것을 기기(S22, 2026-11-24)에서 확인했다.
   - code-mode host는 private stdio 파이프만 사용한다. 원래 인증이 없던 loopback gRPC 포트는 열지 않는다.
 - 캘린더 일정(공유 캘린더의 남이 쓴 글 포함)은 신뢰하지 않는 데이터다(AGENTS.md "캘린더"). 비서가 일정을 읽으면 그 내용은 사용자 ChatGPT 계정으로 OpenAI에 간다(스위치 켤 때 안내).
   비서의 캘린더 쓰기는 사용자가 직접 요청했을 때만, 고른 캘린더 안만, 매번 채팅 한 줄 + 되돌리기 기록. 앱이 직접 보내는 네트워크는 없다(구글 캘린더는 계정 동기화가 올린다).
