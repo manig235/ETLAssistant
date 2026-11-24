@@ -214,7 +214,7 @@ class CalendarExportActivity : AppCompatActivity() {
             withPermission(CalendarExport.PERMISSIONS) { loadGoogleCalendars() }
             return
         }
-        if (!s.enabled) { CalendarExport.saveSettings(this, next); reload(); return }
+        if (!s.enabled) { background({ CalendarExport.switchTarget(this, next) }) { it?.let(::toast) }; return }
         withPermission(CalendarExport.PERMISSIONS) { background({ CalendarExport.switchTarget(this, next.copy(enabled = true)) ?: "옮겼어요" }) { toast(it) } }
     }
 
@@ -225,7 +225,7 @@ class CalendarExportActivity : AppCompatActivity() {
         pendingEnable = false
         if (s.enabled && s.target == CalendarTarget.GOOGLE && s.googleCalendarId == c.id) return
         val next = s.copy(target = CalendarTarget.GOOGLE, googleCalendarId = c.id, googleCalendarName = c.name)
-        if (!turnOn) { CalendarExport.saveSettings(this, next); reload(); return }
+        if (!turnOn) { background({ CalendarExport.switchTarget(this, next) }) { it?.let(::toast) }; return }
         background({ CalendarExport.switchTarget(this, next.copy(enabled = true)) ?: "\"${c.name}\" 캘린더에 넣어요" }) { toast(it) }
     }
 

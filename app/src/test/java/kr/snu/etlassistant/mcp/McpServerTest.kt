@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Test
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.Socket
 
 class McpServerTest {
 
@@ -17,6 +18,8 @@ class McpServerTest {
         override fun tools() = JSONArray().put(JSONObject().put("name", "echo").put("inputSchema", JSONObject().put("type", "object")))
         override fun call(name: String, args: JSONObject): ToolResult = when (name) {
             "echo" -> ToolResult("echo:" + args.optString("x"))
+            "image" -> ToolResult("이미지", images = listOf(ToolImage("image/jpeg", "AQID")))
+            "failed-image" -> ToolResult("실패했습니다", isError = true, images = listOf(ToolImage("image/jpeg", "AQID")))
             "fail" -> ToolResult("실패했습니다", isError = true)
             "boom" -> throw IllegalStateException("내부 비밀 정보")
             else -> throw UnknownToolException(name)
@@ -117,6 +120,21 @@ class McpServerTest {
         assertEquals(false, result.getBoolean("isError"))
     }
 
+    @Test fun imageToolReturnsNativeMcpImageBlockAlongsideText() {
+        val result = rpc("tools/call", JSONObject().put("name", "image")).getJSONObject("result")
+        val content = result.getJSONArray("content")
+        assertEquals(2, content.length())
+        assertEquals("text", content.getJSONObject(0).getString("type"))
+        assertEquals("이미지", content.getJSONObject(0).getString("text"))
+        val image = content.getJSONObject(1)
+        assertEquals("image", image.getString("type"))
+        assertEquals("image/jpeg", image.getString("mimeType"))
+        assertEquals("AQID", image.getString("data"))
+        assertEquals(false, result.getBoolean("isError"))
+        assertEquals(1, rpc("tools/call", JSONObject().put("name", "failed-image"))
+            .getJSONObject("result").getJSONArray("content").length())
+    }
+
     @Test fun toolErrorsAreResultsNotProtocolErrors() {
         val r = rpc("tools/call", JSONObject().put("name", "fail"))
         assertEquals(true, r.getJSONObject("result").getBoolean("isError"))
@@ -181,6 +199,67 @@ class McpServerTest {
         assertTrue(text.startsWith("HTTP/1.1 200"))
         assertTrue(text.contains("\"id\":7"))
         sock.close()
+    }
+
+    private fun rawStatus(headers: String, body: String = "", authenticated: Boolean = true, endInput: Boolean = false): String =
+        Socket("127.0.0.1", server.port).use { socket ->
+            socket.soTimeout = 2000
+            val auth = if (authenticated) "Authorization: Bearer ${server.secret}\r\n" else ""
+            socket.getOutputStream().write(("POST /mcp HTTP/1.1\r\nHost: localhost\r\n$auth$headers\r\n$body").toByteArray())
+            if (endInput) socket.shutdownOutput()
+            socket.getInputStream().bufferedReader().readLine().orEmpty()
+        }
+
+    @Test fun authenticationAndOriginAreCheckedWithoutReadingBody() {
+        // 본문이 전혀 도착하지 않아도 인증 거부를 즉시 보낸다.
+        assertTrue(rawStatus("Content-Length: 1048576\r\n", authenticated = false).startsWith("HTTP/1.1 401"))
+        assertTrue(rawStatus("Transfer-Encoding: chunked\r\n", authenticated = false).startsWith("HTTP/1.1 401"))
+        assertTrue(rawStatus("Origin: https://evil.example\r\nContent-Length: 100\r\n").startsWith("HTTP/1.1 403"))
+    }
+
+    @Test fun negativeAndMalformedChunksCannotCrashServer() {
+        for (body in listOf("-1\r\n", "+1\r\n", "xyz\r\n", "1\r\nx!\r\n", "0\r\n")) {
+            assertTrue(body, rawStatus("Transfer-Encoding: chunked\r\n", body, endInput = true).startsWith("HTTP/1.1 4"))
+            assertTrue(rpc("ping").has("result"))
+        }
+        assertTrue(rawStatus("Transfer-Encoding: chunked\r\n", "7fffffff\r\n").startsWith("HTTP/1.1 413"))
+        assertTrue(rawStatus("Transfer-Encoding: chunked\r\n", "ffffffffffffffff\r\n").startsWith("HTTP/1.1 413"))
+    }
+
+    @Test fun rejectsAmbiguousOrInvalidBodyFraming() {
+        for (headers in listOf(
+            "Content-Length: invalid\r\n", "Content-Length: -1\r\n", "Content-Length: +1\r\n",
+            "Content-Length: 1\r\nContent-Length: 1\r\n",
+            "Content-Length: 0\r\nTransfer-Encoding: chunked\r\n",
+            "Transfer-Encoding: gzip, chunked\r\n", "Bad Header: x\r\n"
+        )) {
+            assertTrue(headers, rawStatus(headers).startsWith("HTTP/1.1 400"))
+        }
+        assertTrue(rawStatus("Content-Length: 2147483648\r\n").startsWith("HTTP/1.1 413"))
+    }
+
+    @Test fun limitsHeadersBodyAndChunkTrailers() {
+        assertTrue(rawStatus("X-Pad: ${"x".repeat(17 * 1024)}\r\n").startsWith("HTTP/1.1 431"))
+        assertTrue(rawStatus("Content-Length: 1048577\r\n").startsWith("HTTP/1.1 413"))
+        val trailers = "0\r\n" + (1..4).joinToString("") { "X-Trailer: ${"x".repeat(9000)}\r\n" } + "\r\n"
+        assertTrue(rawStatus("Transfer-Encoding: chunked\r\n", trailers).startsWith("HTTP/1.1 431"))
+    }
+
+    @Test fun connectionLimitRejectsExcessAndStopClosesIdleSockets() {
+        val sockets = (1..McpServer.MAX_CONNECTIONS).map { Socket("127.0.0.1", server.port) }
+        try {
+            Socket("127.0.0.1", server.port).use { excess ->
+                excess.soTimeout = 2000
+                assertEquals(-1, excess.getInputStream().read())
+            }
+            server.stop()
+            sockets.forEach {
+                it.soTimeout = 2000
+                assertEquals(-1, it.getInputStream().read())
+            }
+        } finally {
+            sockets.forEach { it.close() }
+        }
     }
 
     private fun readLine(inp: java.io.InputStream): String {

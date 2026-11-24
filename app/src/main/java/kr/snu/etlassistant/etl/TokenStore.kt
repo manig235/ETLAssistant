@@ -27,7 +27,9 @@ open class SecretStore(context: Context, private val alias: String, private val 
         cipher.init(Cipher.ENCRYPT_MODE, secretKey())
         val ct = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
         val blob = cipher.iv + ct
-        prefs.edit().putString(blobKey, Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
+        if (!prefs.edit().putString(blobKey, Base64.encodeToString(blob, Base64.NO_WRAP)).commit()) {
+            throw java.io.IOException("암호화한 로그인 정보를 저장하지 못했어요")
+        }
     }
 
     /** 저장된 토큰. 없거나 복호화에 실패하면 null(키가 바뀐 경우 등). */
@@ -45,7 +47,9 @@ open class SecretStore(context: Context, private val alias: String, private val 
     }
 
     fun clear() {
-        prefs.edit().remove(blobKey).apply()
+        // Destroy the decryption key too: even a failed preferences commit cannot revive a logged-out secret.
+        KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null); deleteEntry(alias) }
+        if (!prefs.edit().remove(blobKey).commit()) throw java.io.IOException("로그인 정보를 지우지 못했어요")
     }
 
     private fun secretKey(): SecretKey {
@@ -77,3 +81,6 @@ class TokenStore(context: Context) : SecretStore(context, "etl_token_key", "toke
 
 /** 사용자가 직접 넣는 OpenAI API 키(고급 옵션). Codex에는 환경변수로만 넘기고 auth.json에는 남기지 않는다. */
 class ApiKeyStore(context: Context) : SecretStore(context, "openai_api_key_key", "apikey_blob")
+
+/** 앱이 관리하는 ChatGPT OAuth grant. Codex에는 access token만 메모리로 전달한다. */
+class ChatGptSecretStore(context: Context) : SecretStore(context, "chatgpt_oauth_key", "chatgpt_oauth_blob")

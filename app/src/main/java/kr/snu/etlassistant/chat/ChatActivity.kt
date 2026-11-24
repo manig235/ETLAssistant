@@ -20,6 +20,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.FileProvider
+import kr.snu.etlassistant.notify.LearningXOpenActivity
 import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.etl.EtlService
@@ -234,7 +235,51 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     override fun onResume() {
         super.onResume()
         // 알림 설정이나 권한 창에서 돌아오면 바로 다시 판정한다(켜면 배너가 사라진다).
-        if (ready) updateBanner()
+        if (ready) {
+            updateBanner()
+            approvalHost = kr.snu.etlassistant.etl.AiWriteApproval.attachHost()
+            kr.snu.etlassistant.etl.AiWriteApproval.listeners.add(approvalChanged)
+            showWriteApproval()
+        }
+    }
+
+    private var approvalHost: String? = null
+    private var approvalDialog: androidx.appcompat.app.AlertDialog? = null
+    private var approvalRequestId: String? = null
+    private val approvalChanged: () -> Unit = { main.post { showWriteApproval() } }
+
+    /** 모델의 '승인했다'는 글은 쓰지 않고, 현재 화면에서 누른 버튼만 한 번의 변경을 승인한다. */
+    private fun showWriteApproval() {
+        val host = approvalHost ?: return
+        if (isFinishing || isDestroyed) return
+        val request = kr.snu.etlassistant.etl.AiWriteApproval.pending().firstOrNull()
+        if (request?.id == approvalRequestId) return
+        approvalDialog?.dismiss()
+        approvalDialog = null
+        approvalRequestId = request?.id
+        if (request == null) return
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(request.operation)
+            .setMessage(request.details + "\n\n이 변경을 적용할까요? 취소하면 변경하지 않아요.")
+            .setNegativeButton("취소") { _, _ -> kr.snu.etlassistant.etl.AiWriteApproval.decide(host, request.id, false) }
+            .setPositiveButton("변경 승인") { _, _ ->
+                kr.snu.etlassistant.etl.AiWriteApproval.decide(host, request.id, true)
+            }
+            .setOnCancelListener { kr.snu.etlassistant.etl.AiWriteApproval.decide(host, request.id, false) }
+            .create()
+        approvalDialog = dialog
+        dialog.show()
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).filterTouchesWhenObscured = true
+    }
+
+    override fun onPause() {
+        kr.snu.etlassistant.etl.AiWriteApproval.listeners.remove(approvalChanged)
+        approvalHost?.let { kr.snu.etlassistant.etl.AiWriteApproval.detachHost(it) }
+        approvalHost = null
+        approvalDialog?.dismiss()
+        approvalDialog = null
+        approvalRequestId = null
+        super.onPause()
     }
 
     override fun onStop() {
@@ -417,10 +462,10 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         Toast.makeText(this, "복사했어요", Toast.LENGTH_SHORT).show()
     }
 
-    /** 답변 속 링크(http/https만 남겨 둔 것)를 브라우저로 연다. */
+    /** 답변 속 링크(http/https만 남겨 둔 것). eTL은 LearningX에서 연다. */
     private fun openLink(url: String) {
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            startActivity(LearningXOpenActivity.intent(this, url))
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, "링크를 열 수 있는 앱이 없어요", Toast.LENGTH_SHORT).show()
         }

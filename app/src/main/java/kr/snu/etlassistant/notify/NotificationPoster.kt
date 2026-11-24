@@ -71,16 +71,16 @@ object NotificationPoster {
 
     /** 알림을 띄운다. 예외를 던지지 않으며, 권한이 없으면 아무것도 하지 않는다. */
     @SuppressLint("MissingPermission")
-    fun post(context: Context, notice: Notice, settings: NotifySettings) {
+    fun post(context: Context, notice: Notice, settings: NotifySettings): Boolean =
         runCatching {
-            if (!canPost(context)) return
+            if (!canPost(context)) return false
             val id = NotifySchedule.notificationId(notice.tag)
 
-            // eTL 콘텐츠는 펼치지 않고 알림 본문을 눌러도 같은 원문으로 이동한다.
+            // eTL 콘텐츠는 LearningX에서 같은 원문으로 이동한다(미설치면 웹).
             val url = NoticeText.safeUrl(notice.url)
             val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             val etlIntent = url?.let {
-                PendingIntent.getActivity(context, id, Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags)
+                PendingIntent.getActivity(context, id, LearningXOpenActivity.intent(context, it), flags)
             }
             // 채팅 입력창 채우기(보내지는 않는다). 요청 코드를 알림마다 달리 해 다른 알림의 문구로 덮이지 않게 한다.
             val chatIntent = PendingIntent.getActivity(context, id xor CHAT_REQUEST_SALT, chatOpen(context, notice.prefill), flags)
@@ -131,7 +131,7 @@ object NotificationPoster {
             }
 
             NotificationManagerCompat.from(context).notify(id, b.build())
-            NotifyHistory(context).record(notice)
-        }
-    }
+            runCatching { NotifyHistory(context).record(notice) }
+            true
+        }.getOrDefault(false)
 }

@@ -154,7 +154,6 @@ object CalendarExport {
                 val id = s.googleCalendarId
                 if (id == null || googleCalendars(cr).none { it.id == id }) {
                     saveSettings(app, s.copy(enabled = false))
-                    clearMapping(app)
                     val msg = "고른 구글 캘린더를 찾지 못해 내보내기를 껐어요. 캘린더를 다시 골라 주세요."
                     setResult(app, null, msg)
                     return msg
@@ -251,16 +250,18 @@ object CalendarExport {
         if (!hasPermission(app)) return "캘린더 권한이 필요해요"
         return try {
             val cr = app.contentResolver
-            when (s.target) {
-                CalendarTarget.LOCAL -> {
-                    val id = findLocalCalendar(cr) ?: createLocalCalendar(cr) ?: return "\"$DISPLAY_NAME\" 캘린더를 만들지 못했어요"
-                    if (loadMapping(app)?.calendarId != id) clearMapping(app)
-                }
+            val targetId = when (s.target) {
+                CalendarTarget.LOCAL -> findLocalCalendar(cr) ?: createLocalCalendar(cr) ?: return "\"$DISPLAY_NAME\" 캘린더를 만들지 못했어요"
                 CalendarTarget.GOOGLE -> {
                     val id = s.googleCalendarId ?: return "내보낼 구글 캘린더를 골라 주세요"
                     if (googleCalendars(cr).none { it.id == id }) return "고른 구글 캘린더를 찾지 못했어요"
-                    if (loadMapping(app)?.calendarId != id) clearMapping(app)
+                    id
                 }
+            }
+            // A disabled export can still own events after permission loss or failed cleanup.
+            // Never discard that mapping to start a different export.
+            if (loadMapping(app)?.calendarId?.let { it != targetId } == true) {
+                cleanup(app, settings(app))?.let { return it }
             }
             saveSettings(app, s.copy(enabled = true))
             clearNote(app)
@@ -293,39 +294,38 @@ object CalendarExport {
     fun switchTarget(context: Context, next: CalendarExportSettings): String? {
         val app = context.applicationContext
         val cur = settings(app)
-        if (cur.enabled) cleanup(app, cur)
-        saveSettings(app, next.copy(enabled = false))
-        return if (cur.enabled || next.enabled) enable(app, next) else null
+        return CalendarCleanupPolicy.switchTarget(
+            cleanup = { if (cur.enabled || loadMapping(app) != null) cleanup(app, cur) else null },
+            activate = {
+                saveSettings(app, next.copy(enabled = false))
+                if (cur.enabled || next.enabled) enable(app, next) else null
+            },
+        )
     }
 
-    private fun cleanup(app: Context, s: CalendarExportSettings): String? {
-        if (!hasPermission(app)) { clearMapping(app); return "캘린더 권한이 없어 넣은 일정을 지우지 못했어요" }
-        return try {
+    private fun cleanup(app: Context, s: CalendarExportSettings): String? = CalendarCleanupPolicy.cleanup(
+        permitted = hasPermission(app),
+        delete = {
             val cr = app.contentResolver
             val mapping = loadMapping(app)
-            when (s.target) {
-                CalendarTarget.LOCAL -> {
-                    (mapping?.calendarId?.takeIf { calendarExists(cr, it) } ?: findLocalCalendar(cr))?.let { id ->
-                        cr.delete(syncAdapter(Calendars.CONTENT_URI), "${Calendars._ID}=?", arrayOf(id.toString()))
-                    }
-                }
-                CalendarTarget.GOOGLE -> {
-                    val ids = mapping?.takeIf { it.calendarId == s.googleCalendarId }?.entries?.values
-                        ?.filter { !it.tombstone }?.map { it.eventId }.orEmpty()
-                    if (ids.isNotEmpty()) {
-                        val ops = ArrayList(ids.map { ContentProviderOperation.newDelete(eventUri(it, local = false)).build() })
-                        cr.applyBatch(CalendarContract.AUTHORITY, ops)
-                    }
+            val localId = findLocalCalendar(cr)
+            // The mapping, including when export is off, owns the actual old target.
+            // Looking at only today's selection could abandon events after a failed disable.
+            val id = mapping?.calendarId ?: localId?.takeIf { s.target == CalendarTarget.LOCAL }
+            if (id != null && id == localId) {
+                cr.delete(syncAdapter(Calendars.CONTENT_URI), "${Calendars._ID}=?", arrayOf(id.toString()))
+                check(!calendarExists(cr, id, requireResult = true)) { "Calendar was not deleted" }
+            } else {
+                val ids = mapping?.entries?.values?.filter { !it.tombstone }?.map { it.eventId }.orEmpty()
+                if (ids.isNotEmpty()) {
+                    val ops = ArrayList(ids.map { ContentProviderOperation.newDelete(eventUri(it, local = false)).build() })
+                    cr.applyBatch(CalendarContract.AUTHORITY, ops)
+                    check(liveRows(cr, mapping!!.calendarId, ids, requireResult = true).isEmpty()) { "Events were not deleted" }
                 }
             }
-            clearMapping(app)
-            null
-        } catch (_: SecurityException) {
-            "캘린더 권한이 없어 넣은 일정을 지우지 못했어요"
-        } catch (e: Exception) {
-            "넣은 일정을 다 지우지 못했어요(${e.javaClass.simpleName})"
-        }
-    }
+        },
+        forget = { clearMapping(app) },
+    )
 
     // ---- CalendarContract -------------------------------------------------------
 
@@ -358,8 +358,11 @@ object CalendarExport {
         return out.sortedWith(compareBy({ !it.name.contains(DISPLAY_NAME) }, { it.account }, { it.name }))
     }
 
-    private fun calendarExists(cr: ContentResolver, id: Long): Boolean =
-        cr.query(Calendars.CONTENT_URI, arrayOf(Calendars._ID), "${Calendars._ID}=?", arrayOf(id.toString()), null)?.use { it.count > 0 } == true
+    private fun calendarExists(cr: ContentResolver, id: Long, requireResult: Boolean = false): Boolean {
+        val cursor = cr.query(Calendars.CONTENT_URI, arrayOf(Calendars._ID), "${Calendars._ID}=?", arrayOf(id.toString()), null)
+        if (requireResult) checkNotNull(cursor) { "Calendar query failed" }
+        return cursor?.use { it.count > 0 } == true
+    }
 
     private fun findLocalCalendar(cr: ContentResolver): Long? = cr.query(
         Calendars.CONTENT_URI,
@@ -401,16 +404,18 @@ object CalendarExport {
     }
 
     /** [ids] 중 [calendarId]에 아직 있는(DELETED=0) 일정과 그 지금 모양(제목·시각·장소). */
-    private fun liveRows(cr: ContentResolver, calendarId: Long, ids: List<Long>): Map<Long, CalRow> {
+    private fun liveRows(cr: ContentResolver, calendarId: Long, ids: List<Long>, requireResult: Boolean = false): Map<Long, CalRow> {
         val out = mutableMapOf<Long, CalRow>()
         ids.distinct().chunked(400).forEach { chunk ->
-            cr.query(
+            val cursor = cr.query(
                 Events.CONTENT_URI,
                 ROW_PROJECTION,
                 "${Events.CALENDAR_ID}=? AND ${Events.DELETED}=0 AND ${Events._ID} IN (${chunk.joinToString(",")})",
                 arrayOf(calendarId.toString()),
                 null,
-            )?.use { c -> while (c.moveToNext()) row(c).let { out[it.eventId] = it } }
+            )
+            if (requireResult) checkNotNull(cursor) { "Event query failed" }
+            cursor?.use { c -> while (c.moveToNext()) row(c).let { out[it.eventId] = it } }
         }
         return out
     }

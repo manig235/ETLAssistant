@@ -92,7 +92,7 @@ object ChatTitles {
  * 대화 목록 저장소. `dir/index.json`에 색인, `dir/{id}.json`에 대화마다 메시지를 둔다.
  * 빈 대화(아직 아무것도 보내지 않은 대화)는 색인에 넣지 않는다. 여러 스레드에서 부르므로 잠근다.
  */
-class ChatStore(private val dir: File) {
+class ChatStore(private val dir: File, private val attachmentRoot: File? = null) {
     private val items = mutableListOf<ChatMeta>()
 
     @Synchronized
@@ -148,9 +148,15 @@ class ChatStore(private val dir: File) {
     fun delete(id: String): ChatMeta? {
         val i = items.indexOfFirst { it.id == id }
         if (i < 0) return null
+        val attachments = attachmentRoot?.let { kr.snu.etlassistant.files.WorkFiles.attachments(fileFor(id)) }
         val removed = items.removeAt(i)
         fileFor(id).delete()
         save()
+        if (attachmentRoot != null && attachments != null) {
+            // 저장 실패로 남은 대화도 참조에 포함해 다른 대화의 파일을 잘못 지우지 않는다.
+            val others = dir.listFiles()?.filter { it.extension == "json" && it.name != INDEX && it.name != "$id.json" }
+            if (others != null) kr.snu.etlassistant.files.WorkFiles.deleteUnshared(attachmentRoot, attachments, others)
+        }
         return removed
     }
 

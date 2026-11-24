@@ -6,6 +6,49 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Keep checksum-verified upstream downloads intact. Package a reproducible .rodata-only
+// helper-basename change so Codex can own its helper over private stdio pipes on Android.
+val privateCodexRuntime = layout.buildDirectory.dir("generated/privateCodexRuntime")
+val preparePrivateCodexRuntime by tasks.registering(Exec::class) {
+    val upstream = layout.projectDirectory.dir("src/main/jniLibs/arm64-v8a")
+    val script = rootProject.layout.projectDirectory.file("scripts/prepare-codex-runtime.py")
+    inputs.file(script)
+    inputs.file(upstream.file("libcodex.so"))
+    inputs.file(upstream.file("libcodex-code-mode-host.so"))
+    outputs.dir(privateCodexRuntime)
+    commandLine("python3", "-I", script.asFile.absolutePath,
+        "--codex", upstream.file("libcodex.so").asFile.absolutePath,
+        "--host", upstream.file("libcodex-code-mode-host.so").asFile.absolutePath,
+        "--destination", privateCodexRuntime.get().dir("jni/arm64-v8a").asFile.absolutePath,
+        "--metadata", privateCodexRuntime.get().file("assets/codex-runtime.json").asFile.absolutePath,
+        "--android-only")
+}
+
+// Bundle the maintained document verbatim; policy edits automatically invalidate this task.
+abstract class BundlePrivacyPolicy : DefaultTask() {
+    @get:InputFile
+    abstract val sourceFile: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun bundle() {
+        val destination = outputDirectory.file("privacy-policy.md").get().asFile
+        destination.parentFile.mkdirs()
+        sourceFile.get().asFile.copyTo(destination, overwrite = true)
+    }
+}
+
+val bundlePrivacyPolicy = tasks.register<BundlePrivacyPolicy>("bundlePrivacyPolicy") {
+    sourceFile.set(rootProject.layout.projectDirectory.file("docs/privacy-policy.md"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/privacyPolicyAssets"))
+}
+
+androidComponents.onVariants { variant ->
+    variant.sources.assets?.addGeneratedSourceDirectory(bundlePrivacyPolicy, BundlePrivacyPolicy::outputDirectory)
+}
+
 // release 서명 키. 저장소 밖 ~/.android/youngmin-release.properties(storeFile, storePassword, keyAlias, keyPassword)에서 읽는다.
 // 경로는 gradle 속성 youngmin.signing.props 또는 환경변수 YOUNGMIN_SIGNING_PROPS로 바꿀 수 있다.
 // 파일이 없어도 debug 빌드와 단위 테스트는 된다. release APK·AAB를 만들 때만 오류로 멈춘다(debug 키로 넘어가지 않는다).
@@ -20,14 +63,19 @@ val releaseSigning: Properties? = releaseSigningFile.takeIf { it.isFile }?.let {
 
 android {
     namespace = "kr.snu.etlassistant.phase0"
+    sourceSets.getByName("main") {
+        jniLibs.setSrcDirs(listOf(privateCodexRuntime.map { it.dir("jni") }))
+        assets.srcDir(privateCodexRuntime.map { it.dir("assets") })
+    }
     compileSdk = 36
 
     defaultConfig {
         applicationId = "kr.snu.etlassistant.phase0"
+        testInstrumentationRunner = "kr.snu.etlassistant.security.SecuritySmokeInstrumentation"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.3.0"
+        versionCode = 20
+        versionName = "0.3.1"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -70,11 +118,14 @@ android {
         jniLibs {
             // extractNativeLibs=true: 설치 시 libcodex.so를 nativeLibraryDir에 실제 파일로 풀어 둔다.
             useLegacyPackaging = true
-            // 공식 바이너리를 그대로 쓴다(strip하지 않음).
+            // 검증한 .rodata 경로 변환 외에는 바꾸지 않는다(기록한 SHA와 일치하도록 strip하지 않음).
             keepDebugSymbols += "**/libcodex.so"
+            keepDebugSymbols += "**/libcodex-modehost.so"
         }
     }
 }
+
+tasks.named("preBuild") { dependsOn(preparePrivateCodexRuntime) }
 
 kotlin {
     compilerOptions {

@@ -84,7 +84,7 @@ data class Notice(
     val text: String,
     /** 펼쳤을 때 보이는 긴 본문. null이면 [text]만. */
     val bigText: String? = null,
-    /** 본문 터치와 "eTL에서 열기"가 여는 주소(https://myetl.snu.ac.kr/… 만). null이면 앱으로 이동. */
+    /** 본문 터치와 "eTL에서 열기"가 LearningX로 여는 주소(https://myetl.snu.ac.kr/… 만, 미설치면 웹). null이면 앱으로 이동. */
     val url: String? = null,
     /** 같은 키의 알림은 갱신(교체)된다. 정수 알림 ID는 이 키의 해시로 만든다. */
     val tag: String,
@@ -196,7 +196,7 @@ data class NotifySettings(
         val DEFAULT_DEADLINE_WINDOWS: List<Int> = listOf(3 * DAY, DAY, 3 * HOUR, 10)
         /** 추가 대화상자의 빠른 버튼(분). 이 밖의 값은 "직접 추가"로 넣는다. */
         val DEADLINE_WINDOW_PRESETS: List<Int> = listOf(10, 30, HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY)
-        /** 직접 추가할 수 있는 범위. 제시간 알람의 지연(최대 약 45초)과 주기 확인을 생각해 10분보다 짧게는 받지 않는다. */
+        /** 직접 추가할 수 있는 범위. 백그라운드 알람·주기 확인의 지연을 고려해 10분보다 짧게는 받지 않는다. */
         const val MIN_WINDOW_MINUTES = 10
         const val MAX_WINDOW_MINUTES = 14 * DAY
         /** 시점 개수 상한(알람과 중복 방지 키가 끝없이 늘지 않게). */

@@ -82,7 +82,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_search_files", "강의 파일을 이름으로 검색한다.",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("term", "string", "검색어(2글자 이상)"),
                 required = listOf("course_id", "term"))))
-        .put(tool("etl_download", "eTL 파일을 내려받아 ① 비서가 읽을 수 있는 작업 폴더(etl-files/)에 저장하고 ② 기본적으로 폰의 Download/etl/에도 사본을 저장한다. 파일을 읽거나 채점·요약만 할 거라면 save_to_phone=false로 폰 사본을 건너뛴다. 돌려주는 workspace_path를 etl_read_file, etl_render_pages에 넘긴다. 게시판 글의 첨부파일은 etl_board_post가 준 file_id와 함께 course_id, board_id, post_id를 넘긴다(숨김 폴더에 있어 그래야 받을 수 있다).",
+        .put(tool("etl_download", "eTL 파일을 내려받아 ① 비서가 읽을 수 있는 작업 폴더(etl-files/)에 저장하고 ② 기본적으로 폰의 Download/etl/에도 사본을 저장한다. 파일을 읽거나 채점·요약만 할 거라면 save_to_phone=false로 폰 사본을 건너뛴다. 돌려주는 workspace_path를 etl_read_file, etl_render_pages 또는 etl_view_image에 넘긴다. 게시판 글의 첨부파일은 etl_board_post가 준 file_id와 함께 course_id, board_id, post_id를 넘긴다(숨김 폴더에 있어 그래야 받을 수 있다).",
             schema(Triple("file_id_or_url", "string", "파일 ID 또는 eTL 파일 URL(…/files/<id>)"),
                 Triple("save_to_phone", "boolean", "폰의 Download/etl/에도 저장할지. 기본 true"),
                 Triple("course_id", "integer", "게시판 첨부일 때만: 과목 ID"),
@@ -93,7 +93,9 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf) 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("max_chars", "integer", "텍스트 최대 글자 수. 기본 20000, 최대 60000"),
                 required = listOf("path"))))
-        .put(tool("etl_render_pages", "PDF의 쪽을 이미지(PNG)로 만든다. 돌려준 경로의 이미지를 이미지 보기 기능으로 열어 내용(손글씨, 수식, 스캔본 포함)을 확인한다. 한 번에 최대 ${EtlFiles.MAX_RENDER_PAGES}쪽.",
+        .put(tool(WorkspaceImage.NAME, "작업 폴더 etl-files/ 안의 PNG·JPEG·WebP 이미지 하나를 연다. etl_render_pages가 돌려준 rendered[].path나 첨부 이미지의 상대 경로를 쓴다. 앱 작업 폴더 밖의 파일은 읽을 수 없다. 원본은 최대 20MB·6400만 픽셀이고 큰 이미지는 줄여서 돌려준다. 사진 메타데이터는 제거한다. code mode에서는 반환 content 중 type=image 블록을 image(...)로 출력해야 볼 수 있다. base64는 text나 로그로 출력하지 않는다.",
+            schema(Triple("path", "string", "etl-files/ 안의 상대 경로(예: etl-files/render/123-p1.png)"), required = listOf("path"))))
+        .put(tool("etl_render_pages", "PDF의 쪽을 이미지(PNG)로 만든다. 돌려준 rendered[].path를 etl_view_image에 넘겨 내용(손글씨, 수식, 스캔본 포함)을 확인한다. 한 번에 최대 ${EtlFiles.MAX_RENDER_PAGES}쪽.",
             schema(Triple("path", "string", "etl_download가 돌려준 workspace_path 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("pages", "string", "쪽 번호(1부터). 예: \"1-3,5\". 비우면 앞쪽부터"),
                 required = listOf("path"))))
@@ -152,10 +154,12 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(kr.snu.etlassistant.pdf.MakePdfTool.spec(untrusted))
 
     override fun call(name: String, args: JSONObject): ToolResult {
-        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable", "etl_syllabus",
+        val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", WorkspaceImage.NAME, "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable", "etl_syllabus",
             "my_deadline_add", "my_deadline_update", "my_deadline_delete", "timetable_change_add", "timetable_change_delete",
             kr.snu.etlassistant.pdf.MakePdfTool.NAME)
         if (name !in known && name !in calendar.names) throw UnknownToolException(name)
+        if (name == WorkspaceImage.NAME) return WorkspaceImage.view(workspace, args.optString("path", ""))
+        val secrets = listOfNotNull(tokenStore.load())
         return try {
             val out: Any = when (name) {
                 in calendar.names -> calendar.call(name, args)
@@ -191,9 +195,10 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_syllabus" -> syllabus(client(), id(args, "course_id"), (if (args.has("attachment") && !args.isNull("attachment")) args.optInt("attachment", -1) else null))
                 else -> getRaw(client(), args.optString("path", ""), args.optBoolean("all", false))
             }
-            ToolResult(out.toString(), detail = logDetail(name, args, null))
+            ToolResult(EtlLogic.modelText(out, secrets), detail = EtlLogic.modelText(logDetail(name, args, null), secrets))
         } catch (e: EtlException) {
-            ToolResult(e.message ?: "eTL 오류", isError = true, detail = logDetail(name, args, e.kind))
+            ToolResult(EtlLogic.modelText(e.message ?: "eTL 오류", secrets), isError = true,
+                detail = EtlLogic.modelText(logDetail(name, args, e.kind), secrets))
         }
     }
 
@@ -203,7 +208,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
      */
     private fun logDetail(name: String, args: JSONObject, kind: String?): String {
         val what = when (name) {
-            "etl_get" -> args.optString("path", "").take(160)
+            "etl_get" -> args.optString("path", "").substringBefore('?').take(160)
             "etl_assignments" -> (if (args.has("status")) "status=" + args.optString("status") else args.optString("range", "this_week")) +
                 (if (args.has("days")) " days=${args.optInt("days")}" else "") + if (args.has("course_id")) " course=${args.optLong("course_id")}" else ""
             "etl_digest" -> "days=${args.optInt("days", 7)}"
@@ -364,7 +369,10 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             sourceAnnouncementId = optId(args, "source_announcement_id"))
         MyDeadlines.validateRepeat(d)?.let { throw EtlException(it) }
         MyDeadlines.validateExam(d)?.let { throw EtlException(it) }
-        store.upsert(d)
+        AiWriteApproval.execute("${d.kind.label} 추가", deadlinePreview(d)) {
+            MyDeadlines.validate(d.title, d.memo, store.load().size)?.let { throw EtlException(it) }
+            store.upsert(d)
+        }
         rescheduleNotify()
         EtlEvents.notice((if (exam) "📝 시험 추가: " else "📌 내 마감에 추가: ") + MyDeadlines.line(d) +
             (if (reminders.isNotEmpty()) " · 🔔 ${MyDeadlines.reminderLabel(d)}" else "") + " · 서랍 → 내 일정에서 고치거나 지울 수 있어요")
@@ -418,8 +426,11 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 what = (if (done) "완료 표시" else "완료 취소") + "(${kr.snu.etlassistant.notify.Agenda.dateLabel(date)} 회차)"
             }
         }
-        if (new.id != old.id) store.delete(old.id)
-        store.upsert(new)
+        AiWriteApproval.execute("${new.kind.label} $what", "변경 전\n${deadlinePreview(old)}\n\n변경 후\n${deadlinePreview(new)}") {
+            if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회한 뒤 요청해 주세요.")
+            if (new.id != old.id) store.delete(old.id)
+            store.upsert(new)
+        }
         rescheduleNotify()
         EtlEvents.notice((if (exam) "📝 시험 $what: " else "📌 내 마감 $what: ") + MyDeadlines.line(new) + (if (new.reminders.isNotEmpty()) " · 🔔 ${MyDeadlines.reminderLabel(new)}" else ""))
         return deadlineJson(new)
@@ -432,12 +443,18 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val date = occurrenceArg(args)
         if (date != null && old.repeat != null) {
             if (!MyDeadlines.matches(old, date)) throw EtlException("$date 는 이 반복 마감의 회차가 아닙니다. my_deadlines의 occurrence를 쓰세요")
-            store.upsert(MyDeadlines.skip(old, date, Instant.now()))
+            AiWriteApproval.execute("반복 일정 한 회차 삭제", "${deadlinePreview(old)}\n\n삭제할 회차: $date (다른 회차는 유지)", destructive = true) {
+                if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회해 주세요.")
+                store.upsert(MyDeadlines.skip(old, date, Instant.now()))
+            }
             rescheduleNotify()
             EtlEvents.notice("🗑 내 마감에서 한 회차 지움: ${old.title} · ${kr.snu.etlassistant.notify.Agenda.dateLabel(date)}")
             return JSONObject().put("ok", true).put("deleted", old.title).put("occurrence", date.toString())
         }
-        store.delete(idv)
+        AiWriteApproval.execute("${old.kind.label} 삭제", deadlinePreview(old) + if (old.repeat != null) "\n\n반복 일정 전체를 삭제해요." else "", destructive = true) {
+            if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회해 주세요.")
+            store.delete(idv)
+        }
         EtlEvents.notice("🗑 내 마감에서 지움: ${MyDeadlines.line(old)}")
         return JSONObject().put("ok", true).put("deleted", old.title)
     }
@@ -459,7 +476,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             room = str(args, "room")?.trim()?.take(40)?.ifEmpty { null }, note = str(args, "note")?.trim()?.take(100)?.ifEmpty { null },
             sourceAnnouncementId = optId(args, "source_announcement_id"),
         )
-        TimetableChangeStore(context).add(ch)
+        AiWriteApproval.execute("시간표에 $kind 추가", changePreview(ch)) { TimetableChangeStore(context).add(ch) }
         rescheduleNotify()
         val wd = TimetableLogic.weekdayOf(date)
         EtlEvents.notice("🗓 시간표에 $kind 추가: ${date.monthValue}/${date.dayOfMonth}($wd) ${ch.course}" +
@@ -471,10 +488,42 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val store = TimetableChangeStore(context)
         val idv = id(args, "id")
         val old = store.load().firstOrNull { it.id == idv } ?: throw EtlException("보강·휴강에서 id $idv 를 찾을 수 없습니다. etl_timetable(week=true)로 확인하세요.")
-        store.delete(idv)
+        AiWriteApproval.execute("시간표에서 ${old.kind} 삭제", changePreview(old), destructive = true) {
+            if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 시간표가 바뀌었어요. 다시 조회해 주세요.")
+            store.delete(idv)
+        }
         EtlEvents.notice("🗑 시간표에서 ${old.kind} 지움: ${old.date.monthValue}/${old.date.dayOfMonth} ${old.course}")
         return JSONObject().put("ok", true)
     }
+
+    private fun deadlinePreview(d: MyDeadline): String = buildString {
+        appendLine(MyDeadlines.line(d))
+        val format = java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm").withZone(EtlLogic.KST)
+        appendLine("${if (d.isExam) "시작" else "마감"}: ${format.format(d.due)} (한국 시간)")
+        d.end?.let { appendLine("끝: ${format.format(it)} (한국 시간)") }
+        d.repeat?.until?.let { appendLine("반복 끝 날짜: $it") }
+        val export = kr.snu.etlassistant.calendar.CalendarExport.settings(context)
+        if (export.enabled && export.includeMine) {
+            val destination = if (export.target == kr.snu.etlassistant.calendar.CalendarTarget.LOCAL) "이 폰의 영민이 캘린더"
+                else "구글 캘린더 ‘${export.googleCalendarName}’(계정 서버에 동기화)"
+            appendLine("자동 연동: $destination 에도 반영돼요.")
+        }
+        if (d.course.isNotBlank()) appendLine("과목: ${d.course}")
+        if (d.location.isNotBlank()) appendLine("장소: ${d.location}")
+        if (d.supplies.isNotBlank()) appendLine("준비물: ${d.supplies}")
+        if (d.memo.isNotBlank()) appendLine("메모: ${d.memo}")
+        appendLine("알림: " + MyDeadlines.reminderLabel(d).ifEmpty { "직접 지정한 알림 없음" })
+        appendLine("완료: " + if (d.done) "완료함" else "미완료")
+        if (d.doneDates.isNotEmpty()) appendLine("완료 회차: ${d.doneDates.sorted().joinToString()}")
+        if (d.skipDates.isNotEmpty()) appendLine("건너뛴 회차: ${d.skipDates.sorted().joinToString()}")
+    }.trim()
+
+    private fun changePreview(ch: TimetableLogic.Change): String = buildString {
+        appendLine("${ch.course} · ${ch.kind} · ${ch.date}")
+        appendLine("시간: ${ch.start ?: "그날 전체"}${ch.end?.let { "~$it" }.orEmpty()} (한국 시간)")
+        ch.room?.let { appendLine("장소: $it") }
+        ch.note?.let { appendLine("메모: $it") }
+    }.trim()
 
     /** 폰 안의 '내 마감'. eTL에 요청하지 않는다. */
     private fun myDeadlines(args: JSONObject): JSONObject {
@@ -913,7 +962,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         }
         val expected = if (meta.has("size") && !meta.isNull("size")) meta.optLong("size") else null
         // 채팅 화면에 파일 카드로 보여 준다(앱 안에서만 전달하고, 모델에게 주는 결과에는 content URI를 넣지 않는다).
-        EtlEvents.fileSaved(EtlEvents.SavedFile(meta.str("display_name") ?: name, mime, result.bytes, stored, phoneUri, savedTo))
+        EtlEvents.fileSaved(EtlEvents.SavedFile(meta.str("display_name") ?: name, mime, result.bytes, stored, phoneUri, savedTo, referenceOnly = !saveToPhone))
         return JSONObject()
             .put("id", fid)
             .put("name", meta.str("display_name"))
@@ -978,7 +1027,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             arr.put(JSONObject().put("page", r.page).put("path", EtlFiles.relPath(workspace, r.file)).put("width", r.width).put("height", r.height))
         }
         return JSONObject().put("path", EtlFiles.relPath(workspace, f)).put("pages_total", total).put("rendered", arr)
-            .put("note", "이미지 보기 기능으로 rendered[].path의 파일을 열어 확인하세요. 더 보려면 pages를 바꿔 다시 호출하세요")
+            .put("note", "etl_view_image에 rendered[].path를 넘겨 확인하세요. code mode에서는 결과 content의 image 블록을 image(...)로 출력하세요. 더 보려면 pages를 바꿔 다시 호출하세요")
     }
 
     /** MediaStore(API 29+)로 Download/etl/에 저장한다. 낮은 버전은 앱 전용 다운로드 폴더. */

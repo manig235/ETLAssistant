@@ -17,6 +17,42 @@ class CalendarToolLogicTest {
     private fun kst(s: String): Instant = LocalDateTime.parse(s).atZone(seoul).toInstant()
     private val now = kst("2026-11-25T15:30") // 수요일
 
+    @Test fun reviewShowsCompleteTitleAccountYearLocationAndMemo() {
+        val title = "긴 제목".repeat(30)
+        val wh = CalendarToolLogic.parseWhen("2026-12-31 23:30", "2027-01-01 00:30", false)
+        val backup = CalendarToolLogic.Backup(4, 7, title, wh.dtStart, wh.dtEnd, false, "Asia/Seoul", "301동", "검토할 메모")
+        val text = CalendarToolLogic.reviewDetails("학교", "student@example.com", backup)
+        assertTrue(text.contains(title))
+        assertTrue(text.contains("student@example.com"))
+        assertTrue(text.contains("2026-12-31 23:30"))
+        assertTrue(text.contains("2027-01-01 00:30"))
+        assertTrue(text.contains("301동"))
+        assertTrue(text.contains("검토할 메모"))
+        val allDay = CalendarToolLogic.parseWhen("2026-12-31", "2027-01-01", true)
+        val allDayText = CalendarToolLogic.reviewDetails("학교", "account", backup.copy(dtStart = allDay.dtStart, dtEnd = allDay.dtEnd, allDay = true))
+        assertTrue(allDayText.contains("2026-12-31 ~ 2027-01-01 (종일, 끝 날짜 포함)"))
+    }
+
+    @Test fun undoRestoresIdentityAndUsesUniqueHistoryIds() {
+        val original = CalendarToolLogic.Backup(42, 7, "원래 제목", 1, 2, false, "Asia/Seoul", "", "")
+        val add = CalendarToolLogic.Change(10, 10, CalendarToolLogic.Action.ADD, 42, "학교", "추가", null)
+        val update = CalendarToolLogic.Change(11, 11, CalendarToolLogic.Action.UPDATE, 42, "학교", "수정", original)
+        val delete = CalendarToolLogic.Change(12, 12, CalendarToolLogic.Action.DELETE, 42, "학교", "삭제", original)
+        val history = listOf(delete, update, add)
+        assertFalse(CalendarToolLogic.canUndo(history, update))
+        assertTrue(CalendarToolLogic.canUndo(history, delete))
+        val restored = CalendarToolLogic.finishUndo(history, delete.id, 90)
+        assertTrue(restored.first().undone)
+        assertTrue(restored.all { it.eventId == 90L })
+        assertEquals(90L, restored[1].before!!.eventId)
+        assertTrue(CalendarToolLogic.canUndo(restored, restored[1]))
+        val unedited = CalendarToolLogic.finishUndo(restored, update.id)
+        assertTrue(CalendarToolLogic.canUndo(unedited, unedited[2]))
+        assertEquals(13L, CalendarToolLogic.nextChangeId(history, Instant.ofEpochMilli(10)))
+        assertEquals(100L, CalendarToolLogic.nextChangeId(history, Instant.ofEpochMilli(100)))
+        assertEquals(restored, CalendarToolLogic.changesFromJson(CalendarToolLogic.changesToJson(restored)))
+    }
+
     @Test fun windows() {
         val today = CalendarToolLogic.window(null, null, null, null, now)
         assertEquals(kst("2026-11-25T00:00"), today.start)

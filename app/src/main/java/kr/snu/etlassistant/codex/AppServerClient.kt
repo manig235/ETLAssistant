@@ -19,6 +19,7 @@ class AppServerClient(
     private val p: Process,
     private val onNotification: (method: String, params: JSONObject) -> Unit,
     private val onServerRequest: (method: String, params: JSONObject?) -> Unit,
+    private val refreshChatGptTokens: ((JSONObject, (JSONObject?) -> Unit) -> Unit)? = null,
     private val onClosed: () -> Unit,
 ) {
     private val writer = p.outputStream.bufferedWriter(Charsets.UTF_8)
@@ -65,7 +66,10 @@ class AppServerClient(
                 throw IOException("$method 전송 실패")
             }
             val res = f.get(timeoutSec, TimeUnit.SECONDS)
-            res.optJSONObject("error")?.let { throw IOException(it.optString("message", "$method 오류")) }
+            res.optJSONObject("error")?.let {
+                // Never reflect a credential-bearing method's server error (which could echo input).
+                throw IOException(if (method == "account/login/start") "ChatGPT 로그인을 비서에 적용하지 못했어요" else it.optString("message", "$method 오류"))
+            }
             return res.optJSONObject("result") ?: JSONObject()
         } catch (e: TimeoutException) {
             throw IOException("$method 응답 시간 초과")
@@ -101,7 +105,22 @@ class AppServerClient(
         val method = m.optString("method", "")
         when {
             hasId && method.isNotEmpty() -> {
-                // 승인 정책을 never로 쓰므로 서버 요청은 오지 않아야 한다. 오면 거절하고 알린다.
+                if (method == "account/chatgptAuthTokens/refresh" && refreshChatGptTokens != null) {
+                    val answered = java.util.concurrent.atomic.AtomicBoolean()
+                    val requestId = m.get("id")
+                    val reply: (JSONObject?) -> Unit = { result ->
+                        if (answered.compareAndSet(false, true) && !closed) runCatching {
+                            send(JSONObject().put("id", requestId).apply {
+                                if (result != null) put("result", result)
+                                else put("error", JSONObject().put("code", -32001).put("message", "ChatGPT login refresh failed; sign in again"))
+                            })
+                        }
+                    }
+                    try { refreshChatGptTokens.invoke(m.optJSONObject("params") ?: JSONObject(), reply) }
+                    catch (_: Exception) { reply(null) }
+                    return
+                }
+                // Other server requests (including approvals) remain unsupported and denied.
                 try {
                     send(JSONObject().put("id", m.get("id"))
                         .put("error", JSONObject().put("code", -32601).put("message", "unsupported by this client")))

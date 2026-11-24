@@ -1,7 +1,6 @@
 package kr.snu.etlassistant.chat
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
@@ -42,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.wanted.android.wanted.design.actions.button.textbutton.WantedTextButton
 import com.wanted.android.wanted.design.theme.DesignSystemTheme
 import kr.snu.etlassistant.notify.HistoryEntry
+import kr.snu.etlassistant.notify.LearningXOpenActivity
 import kr.snu.etlassistant.notify.NotifyHistory
 import kr.snu.etlassistant.notify.NotifyHistoryLogic
 import java.time.Instant
@@ -60,7 +60,7 @@ class NotifyHistoryActivity : AppCompatActivity() {
             HistoryScreen(
                 items = items,
                 onBack = { finish() },
-                onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
+                onOpen = { url -> runCatching { startActivity(LearningXOpenActivity.intent(this, url)) } },
                 onClear = { store.clear(); reload() },
                 registered = registered,
                 // 시험·과제 공지의 "내 일정에 등록": 미리 채운 추가 창. 이미 넣었으면 그 항목을 고치기로 연다.

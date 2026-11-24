@@ -11,6 +11,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.temporal.TemporalAdjusters
+import java.time.format.DateTimeFormatter
 
 /**
  * 비서 캘린더 도구(calendar_events / calendar_add / calendar_update / calendar_delete)의 순수 로직(2026-11-24):
@@ -164,6 +165,23 @@ object CalendarToolLogic {
         emptyList()
     }
 
+    fun nextChangeId(list: List<Change>, now: Instant): Long = maxOf(now.toEpochMilli(), (list.maxOfOrNull { it.id } ?: 0L) + 1)
+
+    /** Undo one event in reverse order so undoing an older edit cannot overwrite a newer edit. */
+    fun canUndo(list: List<Change>, change: Change): Boolean =
+        !change.undone && list.firstOrNull { !it.undone && it.eventId == change.eventId }?.id == change.id
+
+    /** Recreating a deleted row changes its provider ID. Keep earlier undo entries attached to that row. */
+    fun finishUndo(list: List<Change>, id: Long, restoredEventId: Long? = null): List<Change> {
+        val selected = list.firstOrNull { it.id == id } ?: return list
+        return list.map { c ->
+            val linked = if (restoredEventId != null && c.eventId == selected.eventId) {
+                c.copy(eventId = restoredEventId, before = c.before?.copy(eventId = restoredEventId))
+            } else c
+            if (linked.id == id) linked.copy(undone = true) else linked
+        }
+    }
+
     /** 새 기록을 앞에 두고 오래된 것([UNDO_KEEP])과 [UNDO_MAX]개 넘는 것을 버린다. */
     fun addChange(list: List<Change>, c: Change, now: Instant): List<Change> =
         (listOf(c) + list).filter { it.at >= now.minus(UNDO_KEEP).toEpochMilli() }.take(UNDO_MAX)
@@ -185,6 +203,19 @@ object CalendarToolLogic {
         "${NoticeText.cut(NoticeText.clean(title), 60)} · ${whenLabel(allDay, dtStart, dtEnd)}" + (location.takeIf { it.isNotBlank() }?.let { " · ${NoticeText.cut(it, 40)}" } ?: "")
 
     fun describe(b: Backup): String = describe(b.title, b.allDay, b.dtStart, b.dtEnd, b.location)
+
+    /** Approval shows the complete write, including the year, account and content that a short notice omits. */
+    fun reviewDetails(calendarName: String, account: String, b: Backup): String {
+        val time = if (b.allDay) {
+            val start = Instant.ofEpochMilli(b.dtStart).atZone(ZoneOffset.UTC).toLocalDate()
+            val end = Instant.ofEpochMilli(b.dtEnd).atZone(ZoneOffset.UTC).toLocalDate().minusDays(1)
+            "$start ~ $end (종일, 끝 날짜 포함)"
+        } else {
+            val format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            "${format.format(Instant.ofEpochMilli(b.dtStart).atZone(ZONE))} ~ ${format.format(Instant.ofEpochMilli(b.dtEnd).atZone(ZONE))} (한국 시각)"
+        }
+        return "캘린더: $calendarName ($account)\n제목: ${b.title}\n시각: $time\n장소: ${b.location.ifEmpty { "없음" }}\n메모: ${b.description.ifEmpty { "없음" }}"
+    }
 
     /** 채팅 알림 한 줄(바뀌기 전 → 뒤). */
     fun notice(action: Action, calendarName: String, before: Backup?, after: String?): String {

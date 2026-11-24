@@ -35,14 +35,20 @@ import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -67,7 +73,7 @@ import kotlinx.coroutines.withContext
 import kr.snu.etlassistant.chat.AttachmentLogic.FileKind
 import java.io.File
 
-/** 첨부를 누르면 열고, 길게 누르면 공유한다. */
+/** 첨부를 누르면 연다. 파일은 옆 아이콘으로, 사진은 길게 눌러 공유한다. */
 class AttachmentActions(
     val onOpen: (Attachment) -> Unit,
     val onShare: (Attachment) -> Unit,
@@ -85,7 +91,6 @@ private fun Attachment.exists(): Boolean = path?.let { File(it).isFile } == true
  * 메시지에 붙은 첨부 묶음. 사진은 미리보기, 그 밖의 파일은 카드로 보인다.
  * [alignEnd]면 오른쪽(사용자), 아니면 왼쪽(비서).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AttachmentGroup(
     attachments: List<Attachment>,
@@ -94,11 +99,53 @@ fun AttachmentGroup(
     actions: AttachmentActions,
     modifier: Modifier = Modifier,
 ) {
+    val references = if (alignEnd) emptyList() else attachments.filter { it.referenceOnly || it.pagePreview }
+    val visible = attachments.filter { it !in references }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val c = DesignSystemTheme.colors
+    Column(
+        modifier.fillMaxWidth(),
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (visible.isNotEmpty()) AttachmentContents(visible, alignEnd, maxWidth, actions)
+        if (references.isNotEmpty()) {
+            Row(
+                Modifier
+                    .widthIn(max = maxWidth)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(role = SemRole.Button, onClickLabel = if (expanded) "참고 자료 접기" else "참고 자료 펼치기") { expanded = !expanded }
+                    .semantics { stateDescription = if (expanded) "펼쳐짐" else "접힘" }
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = c.foregroundNeutralTertiary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text("참고 자료 ${references.size}개", style = DesignSystemTheme.typography.caption1Regular, color = c.foregroundNeutralTertiary)
+            }
+            if (expanded) AttachmentContents(references, false, maxWidth, actions)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AttachmentContents(
+    attachments: List<Attachment>,
+    alignEnd: Boolean,
+    maxWidth: Dp,
+    actions: AttachmentActions,
+) {
     val pages = attachments.filter { it.isImage && it.pagePreview }
     val images = attachments.filter { it.isImage && !it.pagePreview }
     val files = attachments.filter { !it.isImage }
     Column(
-        modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth(),
         horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -209,7 +256,6 @@ private fun rememberPhoneAlive(uri: String?): Boolean {
     return alive
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
     val c = DesignSystemTheme.colors
@@ -233,44 +279,51 @@ private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
             a.shownPath != null -> add(if (generated) "내 폰 Download/etl/${GeneratedFilesLogic.SUBDIR}" else "내 폰 Download/etl")
         }
     }.joinToString(" · ")
-    Column(
-        Modifier
-            .widthIn(max = maxWidth)
-            .clip(RoundedCornerShape(16.dp))
-            .background(c.surfaceNeutralSecondary)
-            .clickable(enabled = exists, role = SemRole.Button, onClickLabel = "열기") { actions.onOpen(a) }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+    Row(
+        Modifier.widthIn(max = maxWidth),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(c.surfaceBrandSubtle),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(iconOf(AttachmentLogic.kindOf(a.name, a.mime)), contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(22.dp))
+        Column(
+            Modifier
+                .weight(1f, fill = false)
+                .clip(RoundedCornerShape(16.dp))
+                .background(c.surfaceNeutralSecondary)
+                .clickable(enabled = exists, role = SemRole.Button, onClickLabel = "열기") { actions.onOpen(a) }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(c.surfaceBrandSubtle),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(iconOf(AttachmentLogic.kindOf(a.name, a.mime)), contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f, fill = false)) {
+                    Text(a.name, style = t.body2Medium, color = c.foregroundNeutralPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(detail, style = t.caption1Regular, color = c.foregroundNeutralSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f, fill = false)) {
-                Text(a.name, style = t.body2Medium, color = c.foregroundNeutralPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = t.caption1Regular, color = c.foregroundNeutralSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val redownload = actions.onRedownload
+            if (!exists && a.shownPath != null && redownload != null) {
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CardAction(Icons.Outlined.Refresh, if (generated) "다시 만들기" else "다시 받기") { redownload(a) }
+                }
             }
         }
-        val redownload = actions.onRedownload
-        val saveCopy = actions.onSaveCopy
-        if (!exists && a.shownPath != null && redownload != null) {
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                CardAction(Icons.Outlined.Refresh, if (generated) "다시 만들기" else "다시 받기") { redownload(a) }
-            }
-        } else if (exists) {
-            // 열기 · 공유 · 드라이브에 저장(전에는 공유가 길게 누르기에만 있었다).
-            Spacer(Modifier.height(6.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                CardAction(Icons.AutoMirrored.Outlined.OpenInNew, "열기") { actions.onOpen(a) }
-                CardAction(Icons.Outlined.Share, "공유") { actions.onShare(a) }
-                if (saveCopy != null) CardAction(Icons.Outlined.CloudUpload, actions.saveCopyLabel) { saveCopy(a) }
+        if (exists) {
+            IconButton(onClick = { actions.onShare(a) }) {
+                Icon(
+                    Icons.Outlined.Share,
+                    contentDescription = "공유",
+                    tint = c.foregroundBrandPrimary,
+                    modifier = Modifier.size(22.dp),
+                )
             }
         }
     }

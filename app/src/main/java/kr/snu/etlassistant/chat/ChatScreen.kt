@@ -221,6 +221,7 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                                 onLink = a.onLink,
                                 attachments = m.attachments,
                                 attachmentActions = a.attachments,
+                                showCopy = m.status != "streaming",
                             )
                         }
                     }

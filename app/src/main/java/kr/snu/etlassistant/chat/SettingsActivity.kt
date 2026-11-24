@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import kr.snu.etlassistant.notify.LearningXOpenActivity
 import kr.snu.etlassistant.codex.AppSettings
 import kr.snu.etlassistant.codex.CodexSession
 import kr.snu.etlassistant.codex.SessionEvent
@@ -86,6 +87,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             saveEtlToken = ::saveEtlToken,
             clearEtlToken = ::clearEtlToken,
             openEtlSettings = {
+                // 토큰 발급은 웹 전용이다. LearningX의 프로필 설정에는 액세스 토큰 메뉴가 없다.
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myetl.snu.ac.kr/profile/settings")))
             },
             updateNotify = ::updateNotify,
@@ -93,6 +95,11 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             requestNotifyPermission = {
                 if (Build.VERSION.SDK_INT >= 33) notifyPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else openAppNotificationSettings()
+            },
+            requestExactAlarms = {
+                if (!kr.snu.etlassistant.notify.DeadlineAlarm.openExactAlarmSettings(this)) {
+                    toast("시스템 설정에서 영민이의 알람 및 리마인더를 허용해 주세요.", long = true)
+                }
             },
             requestBatteryExemption = {
                 BatteryOpt.request(this)
@@ -106,6 +113,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             },
             replayOnboarding = { startActivity(Intent(this, OnboardingActivity::class.java)) },
             openHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
+            openPrivacyPolicy = { startActivity(PrivacyPolicyActivity.intent(this)) },
             openCourseAlerts = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
             openCalendarExport = { startActivity(Intent(this, kr.snu.etlassistant.calendar.CalendarExportActivity::class.java)) },
             openTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
@@ -132,7 +140,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             openUpdate = {
                 val url = state.updateUrl
                 if (url != null && UpdateLogic.isAllowedDownloadUrl(url)) {
-                    if (runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isFailure) {
+                    if (runCatching { startActivity(LearningXOpenActivity.intent(this, url)) }.isFailure) {
                         toast("링크를 열 앱이 없어요: $url", long = true)
                     }
                 }
@@ -157,6 +165,11 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         refreshUpdate()
         state.modelChoice = CodexSession.modelChoice
         maybeLoadModels()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshNotifyPermission()
     }
 
     private fun pinWidget(provider: Class<out android.appwidget.AppWidgetProvider>) {
@@ -344,7 +357,14 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
     }
 
     private fun refreshNotifyPermission() {
+        val couldPost = state.notifyPermitted
         state.notifyPermitted = NotificationPoster.canPost(this)
+        val exactWasAllowed = state.exactAlarmsAllowed
+        state.exactAlarmsAllowed = kr.snu.etlassistant.notify.DeadlineAlarm.canScheduleExact(this)
+        // A grant broadcast rebuilds alarms too; resume also catches returning from access settings.
+        if (exactWasAllowed != state.exactAlarmsAllowed || (!couldPost && state.notifyPermitted)) {
+            kr.snu.etlassistant.notify.DeadlineAlarm.rearm(this)
+        }
         state.batteryUnrestricted = BatteryOpt.isIgnoring(this)
         state.powerSave = BatteryOpt.isPowerSaveMode(this) && !BatteryOpt.isIgnoring(this)
     }

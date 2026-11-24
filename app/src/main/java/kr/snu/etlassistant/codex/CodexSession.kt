@@ -212,12 +212,15 @@ object CodexSession {
     private val tracker = ActivityTracker() // 메인 스레드에서만
 
     @Volatile private var client: AppServerClient? = null
-    @Volatile private var host: CodexRunner.Host? = null
     @Volatile private var proc: Process? = null
     @Volatile private var currentTurnId: String? = null
     @Volatile private var loginId: String? = null
     private var turnHold = false
     private var loginHold = false
+    private lateinit var chatGptAuth: ChatGptAuthManager
+    // Serialize vault commits, token installation and logout; network calls never hold a UI lock.
+    private val authMutations = Executors.newSingleThreadExecutor { r -> Thread(r, "codex-auth").apply { isDaemon = true } }
+    private val loginStateLock = Any()
     private val idleStop = Runnable { if (isIdle()) stopIfIdle() }
 
     private fun isIdle() = listeners.isEmpty() && !busy && loginId == null
@@ -238,7 +241,8 @@ object CodexSession {
     fun init(context: Context) {
         app = context.applicationContext
         AppSettings.init(app)
-        chats = ChatStore(File(app.filesDir, "chats")).also { it.load() }
+        chatGptAuth = ChatGptAuthManager(app)
+        chats = ChatStore(File(app.filesDir, "chats"), kr.snu.etlassistant.files.WorkFileCleanup.root(app)).also { it.load() }
         // 예전 형식(chat.json 하나 + 스레드 하나)이 있으면 첫 대화로 옮긴다.
         chats.migrateLegacy(File(app.filesDir, "chat.json"), AppSettings.legacyThreadId, System.currentTimeMillis())?.let {
             AppSettings.currentChatId = it
@@ -253,7 +257,7 @@ object CodexSession {
             override fun onFilesSaved(files: List<EtlEvents.SavedFile>, pagePreview: Boolean) {
                 if (!busy) return
                 val atts = files.map { f ->
-                    Attachment(f.name, f.mime, f.size, f.file.absolutePath, f.phoneUri, f.shownPath, pagePreview)
+                    Attachment(f.name, f.mime, f.size, f.file.absolutePath, f.phoneUri, f.shownPath, pagePreview, referenceOnly = pagePreview || f.referenceOnly)
                 }
                 main.post { model.addFiles(atts) }
             }
@@ -358,23 +362,32 @@ object CodexSession {
 
     private fun startBlocking() {
         val workspace = File(app.filesDir, "workspace").apply { mkdirs() }
-        val h = CodexRunner.startHost(workspace) ?: throw IOException("code-mode host를 시작하지 못했어요")
-        host = h
-        val prep = CodexRunner.prepare(CodexRunner.appServerArgs(h), options(), "채팅 세션")
+        val prep = CodexRunner.prepare(CodexRunner.appServerArgs(), options(), "채팅 세션")
             ?: throw IOException("Codex 실행 파일을 준비하지 못했어요")
         val p = prep.pb.start()
         proc = p
         CodexRunner.pump(p.errorStream, "err")
 
         val holder = arrayOfNulls<AppServerClient>(1)
-        val c = AppServerClient(p, ::onNotification, ::onServerRequest) { onClosed(holder[0]) }
+        val c = AppServerClient(p, ::onNotification, ::onServerRequest, refreshChatGptTokens = { params, reply ->
+            calls.execute {
+                try {
+                    if (client !== holder[0] || AppSettings.authMode != AppSettings.AUTH_CHATGPT) { reply(null); return@execute }
+                    val previous = params.optString("previousAccountId").takeIf { it.isNotBlank() && it != "null" }
+                    reply(chatGptAuth.credentials(forceRefresh = true, previousAccountId = previous)?.externalParams())
+                } catch (_: Exception) { reply(null) }
+            }
+        }) { onClosed(holder[0]) }
         holder[0] = c
         c.start()
         c.request("initialize", JSONObject()
             .put("clientInfo", JSONObject().put("name", "etl-android").put("title", "영민이").put("version", "0.1.0"))
-            .put("capabilities", JSONObject().put("experimentalApi", false)))
+            .put("capabilities", JSONObject().put("experimentalApi", true)))
         c.notify("initialized")
         client = c
+        authMutations.submit {
+            if (client === c && AppSettings.authMode == AppSettings.AUTH_CHATGPT) chatGptAuth.credentials()?.let { installChatGptCredentials(c, it) }
+        }.get(90, java.util.concurrent.TimeUnit.SECONDS)
         refreshAccountBlocking()
         setState(SessionState.READY)
         CodexRunner.log.line("[session] 준비됨")
@@ -389,13 +402,13 @@ object CodexSession {
     }
 
     private fun teardown() {
+        kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
+        if (::chatGptAuth.isInitialized) chatGptAuth.cancelLogin()
         val old = client
         client = null // 먼저 비워서, 닫힘 콜백이 이 클라이언트를 현재 것으로 착각하지 않게 한다
         old?.close()
         proc?.destroy()
         proc = null
-        host?.stop()
-        host = null
         EtlService.stopServer()
         currentTurnId = null
         loginId = null
@@ -450,60 +463,107 @@ object CodexSession {
 
     fun loginDeviceCode() = startLogin(LoginKind.DEVICE_CODE)
 
+    private fun installChatGptCredentials(c: AppServerClient, credentials: ChatGptCredentials) {
+        c.request("account/login/start", credentials.externalParams().put("type", "chatgptAuthTokens"), 30)
+    }
+
     private fun startLogin(kind: LoginKind) {
         val c = client ?: return
+        val attempt = chatGptAuth.newLogin()
+        val id = java.util.UUID.randomUUID().toString()
+        loginId = id
+        lastLogin = null
+        main.post { if (loginId == id) acquireLoginHold() }
         calls.execute {
             try {
-                val r = c.request("account/login/start",
-                    JSONObject().put("type", if (kind == LoginKind.BROWSER) "chatgpt" else "chatgptDeviceCode"))
-                loginId = r.optString("loginId").takeIf { it.isNotEmpty() }
-                val url = if (kind == LoginKind.BROWSER) r.optString("authUrl") else r.optString("verificationUrl")
-                val code = if (kind == LoginKind.DEVICE_CODE) r.optString("userCode").takeIf { it.isNotEmpty() } else null
-                if (url.isEmpty()) throw IOException("로그인 주소를 받지 못했어요")
-                val prompt = SessionEvent.LoginPrompt(kind, url, code)
-                lastLogin = prompt
-                main.post { acquireLoginHold() }
-                emit(prompt)
-                if (code != null) copyToClipboard(code)
-                CodexRunner.openUrl(url)
-            } catch (e: IOException) {
-                emit(SessionEvent.LoginDone(false, e.message))
+                val prompt: (String, String?) -> Unit = { url, code ->
+                    attempt.check()
+                    if (loginId != id || client !== c) throw IOException("로그인을 취소했어요")
+                    val event = SessionEvent.LoginPrompt(kind, url, code)
+                    lastLogin = event
+                    emit(event)
+                    if (code != null) copyToClipboard(code)
+                    // OAuth URLs contain state and PKCE data. Open directly without CodexRunner's URL logging.
+                    main.post { runCatching { app.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+                }
+                val credentials = if (kind == LoginKind.BROWSER) ChatGptOAuth.browser(attempt, prompt) else ChatGptOAuth.device(attempt, prompt)
+                authMutations.execute finish@ {
+                    var installed = false
+                    try {
+                        if (loginId != id || client !== c || !chatGptAuth.finishLogin(attempt, credentials)) return@finish
+                        if (loginId == id && client === c) {
+                            installChatGptCredentials(c, credentials)
+                            installed = true
+                        }
+                        val confirmed = synchronized(loginStateLock) {
+                            if (!installed || loginId != id || client !== c || !chatGptAuth.confirmLogin(attempt)) false
+                            else { loginId = null; lastLogin = null; true }
+                        }
+                        if (!confirmed) {
+                            if (installed && client === c) runCatching { c.request("account/logout", JSONObject(), 30) }
+                            chatGptAuth.rollbackLogin(attempt)
+                            if (client === c) restart() // Reinstall the previous encrypted grant after clearing a canceled install.
+                            return@finish
+                        }
+                        main.post { releaseLoginHold(); if (!isVisible) notifyLoginDone() }
+                        emit(SessionEvent.LoginDone(true, null))
+                        refreshAccount()
+                    } catch (_: Exception) {
+                        runCatching { chatGptAuth.rollbackLogin(attempt) }
+                        // A timed-out installation may still have reached the server. Destroy that process.
+                        if (client === c) restart()
+                        if (loginId == id) {
+                            loginId = null
+                            lastLogin = null
+                            main.post { releaseLoginHold() }
+                            emit(SessionEvent.LoginDone(false, "로그인을 저장하거나 적용하지 못했어요. 다시 시도해 주세요."))
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                if (loginId != id) return@execute
+                chatGptAuth.cancelLogin()
+                loginId = null
+                lastLogin = null
+                main.post { releaseLoginHold() }
+                emit(SessionEvent.LoginDone(false, "로그인하지 못했어요. 네트워크를 확인하고 다시 시도하거나 기기 코드 로그인을 사용해 주세요."))
             }
         }
     }
 
     fun cancelLogin() {
-        val id = loginId
-        val c = client
-        loginId = null
-        lastLogin = null
-        if (id == null || c == null) {
-            // 취소할 로그인이 이미 없다(끝났거나 세션이 멈춤). 화면에 남은 진행 표시만 지워서 빠져나올 수 있게 한다.
-            main.post { releaseLoginHold() }
-            emit(SessionEvent.LoginIdle)
-            return
+        synchronized(loginStateLock) {
+            chatGptAuth.cancelLogin()
+            loginId = null
+            lastLogin = null
         }
-        calls.execute {
-            try {
-                c.request("account/login/cancel", JSONObject().put("loginId", id), 15)
-            } catch (_: IOException) {
-            }
-            main.post { releaseLoginHold() }
-            emit(SessionEvent.LoginDone(false, "취소했어요"))
-        }
+        main.post { releaseLoginHold() }
+        emit(SessionEvent.LoginIdle)
     }
 
     fun logout() {
-        val c = client ?: return
-        calls.execute {
-            try {
-                c.request("account/logout", JSONObject(), 30)
-            } catch (_: IOException) {
+        // Clear local encrypted credentials even when app-server is stopped or failed.
+        synchronized(loginStateLock) {
+            chatGptAuth.cancelLogin()
+            loginId = null
+            lastLogin = null
+        }
+        authMutations.execute {
+            val previous = try { chatGptAuth.clear() }
+            catch (_: Exception) {
+                emit(SessionEvent.LoginDone(false, "저장된 로그인을 지우지 못했어요. 다시 시도해 주세요."))
+                stop()
+                return@execute
             }
-            try {
-                refreshAccountBlocking()
-            } catch (_: IOException) {
-            }
+            val c = client
+            if (c != null) runCatching { c.request("account/logout", JSONObject(), 30) }
+            account = AccountInfo(AccountInfo.Kind.NONE)
+            emit(SessionEvent.Account(account!!))
+            emit(SessionEvent.LoginIdle)
+            main.post { releaseLoginHold() }
+            // Destroy an unresponsive server too; it must not retain the previous access token.
+            restart()
+            if (previous != null) calls.execute { runCatching { ChatGptOAuth.revoke(previous) } }
         }
     }
 
@@ -561,6 +621,7 @@ object CodexSession {
     }
 
     fun interrupt() {
+        kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
         val c = client ?: return
         val thread = chats.get(chatId)?.threadId ?: return
         val turn = currentTurnId ?: return
@@ -720,6 +781,7 @@ object CodexSession {
             }
             "item/started", "item/completed" -> p.optJSONObject("item")?.let { item(it, method == "item/completed") }
             "turn/completed" -> {
+                kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
                 val turn = p.optJSONObject("turn")
                 val status = turn?.optString("status") ?: "?"
                 val err = turn?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() && it != "null" }
@@ -736,12 +798,15 @@ object CodexSession {
                 }
             }
             "error" -> {
+                kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
                 if (!p.optBoolean("willRetry", false)) {
                     val msg = p.optJSONObject("error")?.optString("message").orEmpty()
                     if (msg.isNotEmpty()) main.post { model.addNotice(msg) }
                 }
             }
             "account/login/completed" -> {
+                // External-token installation has no interactive login ID. App-owned OAuth emits its own result.
+                if (p.isNull("loginId")) { refreshAccount(); return }
                 val ok = p.optBoolean("success", false)
                 val err = p.optString("error").takeIf { it.isNotEmpty() && it != "null" }
                 loginId = null

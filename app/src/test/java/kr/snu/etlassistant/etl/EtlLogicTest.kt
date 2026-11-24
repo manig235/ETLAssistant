@@ -12,6 +12,54 @@ import java.time.Instant
 
 class EtlLogicTest {
 
+    @Test fun modelBoundaryRemovesCredentialsInNestedResultsAndReflectedErrors() {
+        val secret = "synthetic-test-credential-123"
+        val original = JSONObject().put("title", "과제").put("access_token", secret)
+            .put("items", JSONArray().put(JSONObject().put("url", "https://files.example/a?X-Amz-Signature=signature-secret&download=1")))
+            .put("body", "서버 응답: $secret")
+        val output = EtlLogic.modelText(original, listOf(secret))
+        assertFalse(output.contains(secret)); assertFalse(output.contains("signature-secret"))
+        assertEquals("과제", JSONObject(output).getString("title"))
+        assertEquals(secret, original.getString("access_token"))
+        assertEquals("오류: ***", EtlLogic.modelText("오류: $secret", listOf(secret)))
+    }
+
+    @Test fun modelBoundaryRedactsBeforeJsonEscapesCredentials() {
+        val secret = "synthetic\\\"credential"
+        val output = JSONObject(EtlLogic.modelText(JSONObject().put("body", "reflected $secret").put(secret, "value"), listOf(secret)))
+        assertEquals("reflected ***", output.getString("body"))
+        assertFalse(output.has(secret))
+        assertEquals("value", output.getString("***"))
+    }
+
+    @Test fun modelBoundaryRedactsSignedParametersInsideHtmlLinks() {
+        for (separator in listOf("&amp;", "&#38;", "&#038;", "&#x26;", "&#X026;", "&amp;amp;")) {
+            val original = JSONObject().put("description",
+                "<a href='https://files.example/a?download=1${separator}X-Amz-Signature=SECRET'>강의 자료</a>")
+            val result = JSONObject(EtlLogic.modelText(original)).getString("description")
+            assertFalse(separator, result.contains("SECRET"))
+            assertTrue(result.contains("X-Amz-Signature=***"))
+            assertTrue(result.endsWith("'>강의 자료</a>"))
+        }
+        val entityValue = "<a href=\"https://myetl.snu.ac.kr/files/1?download=1&amp;verifier=&#x53;ECRET\">자료</a>"
+        val result = EtlLogic.modelText(entityValue)
+        assertFalse(result.contains("ECRET"))
+        assertFalse(result.contains("&#x53;"))
+        assertTrue(result.endsWith("\">자료</a>"))
+    }
+
+    @Test fun modelBoundaryRedactsStructuredSignaturesAndTokenFields() {
+        val input = JSONObject().put("nested", JSONObject()
+            .put("verifier", "VERIFIER_SECRET").put("sessionToken", "SESSION_SECRET")
+            .put("Signature", "SIGNATURE_SECRET").put("X-Amz-Credential", "CREDENTIAL_SECRET")
+            .put("download_frd_token", "DOWNLOAD_SECRET").put("api-key", "API_SECRET")
+            .put("title", "강의 자료"))
+        val output = EtlLogic.modelText(input)
+        assertFalse(output.contains("SECRET"))
+        assertEquals("강의 자료", JSONObject(output).getJSONObject("nested").getString("title"))
+        assertEquals("VERIFIER_SECRET", input.getJSONObject("nested").getString("verifier"))
+    }
+
     private val now = Instant.parse("2026-11-19T00:00:00Z")
 
     private fun course(id: Int, name: String, term: String?, restricted: Boolean = false) = JSONObject()

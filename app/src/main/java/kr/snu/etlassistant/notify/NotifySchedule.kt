@@ -68,41 +68,21 @@ object NotifySchedule {
     fun authFailureDue(lastFiredMillis: Long?, nowMillis: Long, intervalMillis: Long = 24L * HOUR_MILLIS): Boolean =
         lastFiredMillis == null || nowMillis - lastFiredMillis >= intervalMillis
 
-    // ---- 마감 알람(권한 없는 알람의 지연 줄이기) ----------------------------------
+    /** A single wake at the target; idle quotas cannot be bypassed with a chain of alarms. */
+    data class AlarmRequest(val atMillis: Long, val exact: Boolean)
 
-    /**
-     * 마지막 알람을 목표 시각에 직접 거는 거리. 시스템 지연은 남은 시간의 75%라 최대 45초.
-     * 삼성 기기는 권한 없는 알람을 거의 항상 창 끝에 울린다(2026-11-21 실측: 3분 39초 앞에 건 마지막 알람이 2분 44초 늦게 울림).
-     * 처음에는 8분이었는데, 그러면 "내가 정한 알림"이 최대 6분 늦었다.
-     */
-    const val ALARM_FINAL_MILLIS = 60_000L
-    /** 시스템이 권한 없는 알람을 늦출 수 있는 최대 폭. */
-    private const val ALARM_MAX_WINDOW_MILLIS = HOUR_MILLIS
+    fun nextAlarm(nowMillis: Long, targetMillis: Long, exactAllowed: Boolean): AlarmRequest =
+        AlarmRequest(maxOf(nowMillis, targetMillis), exactAllowed)
 
     /** 재부팅·시간 변경 뒤 저장된 알람 목표를 어떻게 다시 걸지. */
     enum class Rearm { NONE, ARM, FIRE_NOW }
 
-    /** 목표가 없으면 NONE, 아직 오지 않았으면 ARM(다시 다가가기), 꺼져 있던 사이 지났으면 FIRE_NOW(바로 확인해 늦게라도 보낸다). */
-    fun rearmAction(targetMillis: Long, nowMillis: Long): Rearm = when {
+    /** 목표가 없으면 NONE, 아직 오지 않았으면 ARM(다시 예약), 꺼져 있던 사이 지났으면 FIRE_NOW(바로 확인해 늦게라도 보낸다). */
+    fun rearmAction(targetMillis: Long, nowMillis: Long, deliverPersonalNow: Boolean = false): Rearm = when {
+        deliverPersonalNow -> Rearm.FIRE_NOW // A denied post may have left no stored alarm target.
         targetMillis <= 0L -> Rearm.NONE
         targetMillis > nowMillis -> Rearm.ARM
         else -> Rearm.FIRE_NOW
     }
 
-    /**
-     * 권한 없는 알람(`setAndAllowWhileIdle`)은 [trigger, trigger + min(남은 시간 × 0.75, 1시간)] 사이 아무 때나 울린다.
-     * 목표가 멀면 중간 알람으로 다가가며(그때는 네트워크 없이 다시 걸기만 한다) 마지막 몇 분 안에서만 목표에 맞춘다.
-     * 중간 알람은 지연이 최대여도 목표를 넘지 않게 잡는다.
-     * @return (다음 알람 시각, 이 알람이 목표 시각의 확인인가)
-     */
-    fun nextAlarm(nowMillis: Long, targetMillis: Long): Pair<Long, Boolean> {
-        val left = targetMillis - nowMillis
-        return when {
-            left <= ALARM_FINAL_MILLIS -> targetMillis to true
-            // 멀면 지연 폭(최대 1시간)보다 조금 더 앞에 건다: 가장 늦어도 목표 5분 전.
-            left > 2 * ALARM_MAX_WINDOW_MILLIS -> (targetMillis - ALARM_MAX_WINDOW_MILLIS - 5 * 60_000L) to false
-            // 가까우면 남은 시간의 절반 뒤: 가장 늦어도 now + 0.5 × 1.75 × left < 목표.
-            else -> (nowMillis + left / 2) to false
-        }
-    }
 }

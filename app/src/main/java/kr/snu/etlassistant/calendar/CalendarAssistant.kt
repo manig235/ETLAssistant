@@ -7,6 +7,7 @@ import android.provider.CalendarContract
 import android.provider.CalendarContract.Attendees
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
+import kr.snu.etlassistant.etl.AiWriteApproval
 import kr.snu.etlassistant.etl.EtlEvents
 import kr.snu.etlassistant.etl.EtlException
 import org.json.JSONArray
@@ -79,12 +80,19 @@ class CalendarAssistant(private val context: Context) {
             "calendar_events" -> events(s, args)
             "calendar_add" -> add(s, args)
             "calendar_update" -> update(s, args)
-            else -> delete(s, args)
+            "calendar_delete" -> delete(s, args)
+            else -> throw EtlException("알 수 없는 캘린더 도구예요")
         }
     } catch (e: CalendarToolLogic.ArgException) {
         throw EtlException(e.message ?: "인자 오류")
     } catch (_: SecurityException) {
         throw EtlException("캘린더 권한이 없어요. 설정 → 캘린더 연동에서 다시 켜 달라고 안내하세요.")
+    }
+
+    private fun verifySettings(expected: CalendarReadSettings) {
+        if (CalendarReader.settings(app) != expected || !CalendarReader.canWrite(app)) {
+            throw EtlException("캘린더 설정이나 권한이 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
+        }
     }
 
     private fun str(args: JSONObject, key: String): String? = if (!args.has(key) || args.isNull(key)) null else args.optString(key)
@@ -121,7 +129,8 @@ class CalendarAssistant(private val context: Context) {
         val wh = CalendarToolLogic.parseWhen(str(args, "start"), str(args, "end"), if (args.has("all_day")) args.optBoolean("all_day") else null)
         val location = CalendarToolLogic.cleanLocation(str(args, "location"))
         val memo = CalendarToolLogic.cleanMemo(str(args, "memo"))
-        val cal = writableCalendar(s, str(args, "calendar"))
+        val calendarName = str(args, "calendar")
+        val cal = writableCalendar(s, calendarName)
         val v = ContentValues().apply {
             put(Events.CALENDAR_ID, cal.id)
             put(Events.TITLE, title)
@@ -133,7 +142,12 @@ class CalendarAssistant(private val context: Context) {
             put(Events.EVENT_LOCATION, location)
             put(Events.DESCRIPTION, memo)
         }
-        val id = app.contentResolver.insert(Events.CONTENT_URI, v)?.lastPathSegment?.toLongOrNull() ?: throw EtlException("일정을 넣지 못했어요")
+        val proposed = CalendarToolLogic.Backup(0, cal.id, title, wh.dtStart, wh.dtEnd, wh.allDay, wh.timezone, location, memo)
+        val id = AiWriteApproval.execute("캘린더 일정 추가", CalendarToolLogic.reviewDetails(cal.name, cal.account, proposed)) {
+            verifySettings(s)
+            if (writableCalendar(s, calendarName) != cal) throw EtlException("캘린더가 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
+            app.contentResolver.insert(Events.CONTENT_URI, v)?.lastPathSegment?.toLongOrNull() ?: throw EtlException("일정을 넣지 못했어요")
+        }
         val after = CalendarToolLogic.describe(title, wh.allDay, wh.dtStart, wh.dtEnd, location)
         CalendarUndo.record(app, CalendarToolLogic.Action.ADD, id, cal.name, after, null)
         EtlEvents.notice(CalendarToolLogic.notice(CalendarToolLogic.Action.ADD, cal.name, null, after))
@@ -192,7 +206,13 @@ class CalendarAssistant(private val context: Context) {
             put(Events.EVENT_LOCATION, location)
             put(Events.DESCRIPTION, memo)
         }
-        if (app.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), v, null, null) <= 0) throw EtlException("일정을 고치지 못했어요")
+        val proposed = CalendarToolLogic.Backup(eventId, cal.id, title, wh.dtStart, wh.dtEnd, wh.allDay, wh.timezone, location, memo)
+        val review = "변경 전\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, before)}\n\n변경 후\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, proposed)}"
+        AiWriteApproval.execute("캘린더 일정 수정", review, destructive = true) {
+            verifySettings(s)
+            if (editable(s, eventId) != (before to cal)) throw EtlException("검토하는 동안 일정이 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
+            if (app.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), v, null, null) <= 0) throw EtlException("일정을 고치지 못했어요")
+        }
         val after = CalendarToolLogic.describe(title, wh.allDay, wh.dtStart, wh.dtEnd, location)
         CalendarUndo.record(app, CalendarToolLogic.Action.UPDATE, eventId, cal.name, after, before)
         EtlEvents.notice(CalendarToolLogic.notice(CalendarToolLogic.Action.UPDATE, cal.name, before, after))
@@ -220,7 +240,11 @@ class CalendarAssistant(private val context: Context) {
     private fun delete(s: CalendarReadSettings, args: JSONObject): JSONObject {
         val eventId = args.optLong("event_id", 0L).takeIf { it > 0 } ?: throw EtlException("event_id가 필요합니다")
         val (before, cal) = editable(s, eventId)
-        if (app.contentResolver.delete(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), null, null) <= 0) throw EtlException("일정을 지우지 못했어요")
+        AiWriteApproval.execute("캘린더 일정 삭제", "다음 일정 하나를 삭제해요.\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, before)}\n삭제하면 캘린더 계정에도 반영돼요.", destructive = true) {
+            verifySettings(s)
+            if (editable(s, eventId) != (before to cal)) throw EtlException("검토하는 동안 일정이 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
+            if (app.contentResolver.delete(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), null, null) <= 0) throw EtlException("일정을 지우지 못했어요")
+        }
         CalendarUndo.record(app, CalendarToolLogic.Action.DELETE, eventId, cal.name, CalendarToolLogic.describe(before), before)
         EtlEvents.notice(CalendarToolLogic.notice(CalendarToolLogic.Action.DELETE, cal.name, before, null))
         CalendarExport.notifyChanged()
@@ -237,33 +261,39 @@ object CalendarUndo {
     @Synchronized
     fun record(context: Context, action: CalendarToolLogic.Action, eventId: Long, calendarName: String, summary: String, before: CalendarToolLogic.Backup?) {
         val now = Instant.now()
-        val next = CalendarToolLogic.addChange(list(context), CalendarToolLogic.Change(now.toEpochMilli(), now.toEpochMilli(), action, eventId, calendarName, summary, before), now)
+        val previous = list(context)
+        val next = CalendarToolLogic.addChange(previous, CalendarToolLogic.Change(CalendarToolLogic.nextChangeId(previous, now), now.toEpochMilli(), action, eventId, calendarName, summary, before), now)
         prefs(context).edit().putString("changes", CalendarToolLogic.changesToJson(next)).apply()
     }
 
     @Synchronized
-    private fun markUndone(context: Context, id: Long) {
-        prefs(context).edit().putString("changes", CalendarToolLogic.changesToJson(list(context).map { if (it.id == id) it.copy(undone = true) else it })).apply()
+    private fun markUndone(context: Context, id: Long, restoredEventId: Long?) {
+        prefs(context).edit().putString("changes", CalendarToolLogic.changesToJson(CalendarToolLogic.finishUndo(list(context), id, restoredEventId))).apply()
     }
 
     @Synchronized
     fun clear(context: Context) = prefs(context).edit().remove("changes").apply()
 
     /** 되돌린다: 넣은 일정은 지우고, 고친 일정은 전 모양으로, 지운 일정은 같은 캘린더에 다시 넣는다(알림·참석자는 되살리지 않는다). 결과 문구. */
+    @Synchronized
     fun undo(context: Context, id: Long): String {
         val app = context.applicationContext
-        val c = list(app).firstOrNull { it.id == id } ?: return "기록을 찾지 못했어요"
+        val history = list(app)
+        val c = history.firstOrNull { it.id == id } ?: return "기록을 찾지 못했어요"
         if (c.undone) return "이미 되돌렸어요"
+        if (!CalendarToolLogic.canUndo(history, c)) return "이 일정의 더 최근 변경부터 되돌려 주세요"
         if (!CalendarReader.canWrite(app)) return "캘린더 권한이 필요해요"
         val cr = app.contentResolver
         val uri = ContentUris.withAppendedId(Events.CONTENT_URI, c.eventId)
+        var restoredEventId: Long? = null
         val ok = try {
             when (c.action) {
                 CalendarToolLogic.Action.ADD -> cr.delete(uri, null, null) > 0
                 CalendarToolLogic.Action.UPDATE -> c.before?.let { cr.update(uri, values(it, withCalendar = false), null, null) > 0 } ?: false
                 CalendarToolLogic.Action.DELETE -> c.before?.let { b ->
                     val exists = cr.query(Calendars.CONTENT_URI, arrayOf(Calendars._ID), "${Calendars._ID}=?", arrayOf(b.calendarId.toString()), null)?.use { it.count > 0 } == true
-                    exists && cr.insert(Events.CONTENT_URI, values(b, withCalendar = true)) != null
+                    if (exists) restoredEventId = cr.insert(Events.CONTENT_URI, values(b, withCalendar = true))?.lastPathSegment?.toLongOrNull()
+                    restoredEventId != null
                 } ?: false
             }
         } catch (_: SecurityException) {
@@ -272,7 +302,7 @@ object CalendarUndo {
             return "되돌리지 못했어요(${e.javaClass.simpleName})"
         }
         if (!ok) return "되돌리지 못했어요(일정이나 캘린더가 없어졌을 수 있어요)"
-        markUndone(app, id)
+        markUndone(app, id, restoredEventId)
         CalendarExport.notifyChanged()
         return "되돌렸어요"
     }

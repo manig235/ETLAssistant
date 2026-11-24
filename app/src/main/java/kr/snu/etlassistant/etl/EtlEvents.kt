@@ -17,6 +17,8 @@ object EtlEvents {
         val phoneUri: String?,
         /** 폰 사본 위치 표시. */
         val shownPath: String?,
+        /** 내용을 확인하기 위한 자료면 채팅에서 접어 둔다. */
+        val referenceOnly: Boolean = false,
     )
 
     interface Listener {

@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 사용자가 허용하면 내 일정·마감·수업 알림을 정확한 시각에 예약한다. 거부해도 부정확 알람으로 동작한다. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 재부팅 뒤 마감·내 마감 알림 알람을 다시 건다(SystemEventReceiver). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 배터리 최적화 예외 요청(앱을 닫아도 알림 확인이 제때 돌도록). APK 직접 배포라 Play 정책과 무관. -->
@@ -92,6 +95,7 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 
@@ -142,6 +146,10 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name="kr.snu.etlassistant.chat.PrivacyPolicyActivity"
+            android:exported="false" />
+
+        <activity
             android:name="kr.snu.etlassistant.chat.TimetableActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
@@ -149,6 +157,14 @@
         <activity
             android:name="kr.snu.etlassistant.chat.NotifyHistoryActivity"
             android:exported="false" />
+
+        <!-- 알림·위젯·채팅·일정·설정의 eTL 링크 → LearningX. 앱이 없으면 웹 원문으로 연결한다. -->
+        <activity
+            android:name="kr.snu.etlassistant.notify.LearningXOpenActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
             android:name="kr.snu.etlassistant.chat.CourseAlertsActivity"

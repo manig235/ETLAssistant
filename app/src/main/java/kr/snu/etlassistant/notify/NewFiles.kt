@@ -157,6 +157,7 @@ object NewFiles {
         url = "${NoticeText.ETL_PREFIX}courses/${course.id}/files",
         tag = "files:${course.id}",
         prefill = prefill(course, files),
+        prefillAction = "자료 받아줘",
     )
 }
 

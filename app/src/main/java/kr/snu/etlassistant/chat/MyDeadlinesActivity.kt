@@ -2,7 +2,6 @@ package kr.snu.etlassistant.chat
 
 import android.app.DatePickerDialog
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.outlined.Assignment
@@ -11,6 +10,7 @@ import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.outlined.CalendarViewWeek
 import com.wanted.android.wanted.design.actions.chip.WantedChip
 import com.wanted.android.wanted.design.loading.loading.WantedCircularProgressIndicator
+import kr.snu.etlassistant.notify.LearningXOpenActivity
 import kr.snu.etlassistant.etl.EtlAuthException
 import kr.snu.etlassistant.etl.EtlClient
 import kr.snu.etlassistant.etl.EtlException
@@ -171,7 +171,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
                 onBack = { finish() },
                 onTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
                 onRefresh = ::refresh,
-                onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
+                onOpen = { url -> runCatching { startActivity(LearningXOpenActivity.intent(this, url)) } },
                 onSave = { old, new ->
                     // 마감 시각을 바꾸면 새 ID로 저장한다: 예전 시각 기준으로 이미 보낸 알림 기록이 새 알림을 막지 않게.
                     if (old != null && old.id != new.id) store.delete(old.id)
@@ -203,7 +203,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
             )
             submitCheck?.let { st ->
                 SubmissionCheckDialog(st, onDismiss = { submitCheck = null }, onOpen = { url ->
-                    if (url.startsWith("https://myetl.snu.ac.kr/")) runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    if (url.startsWith("https://myetl.snu.ac.kr/")) runCatching { startActivity(LearningXOpenActivity.intent(this, url)) }
                 })
             }
         }

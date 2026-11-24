@@ -155,4 +155,39 @@ class ChatModelTest {
             f.delete()
         }
     }
+    @Test fun referenceClassificationSurvivesReloadAndKeepsRequestedFilesVisible() {
+        val f = File.createTempFile("chat-reference", ".json")
+        try {
+            val m = ChatModel(f)
+            m.addFiles(listOf(
+                att("requested.pdf"),
+                att("reference.pdf").copy(referenceOnly = true),
+                Attachment("1쪽", "image/png", 3, "/w/page.png", pagePreview = true),
+            ))
+            val files = ChatModel(f).also { it.load() }.messages.single().attachments
+            assertFalse(files[0].referenceOnly)
+            assertTrue(files[1].referenceOnly)
+            assertTrue(files[2].referenceOnly)
+        } finally {
+            f.delete()
+        }
+    }
+
+    @Test fun legacyHistoryCollapsesWorkspaceFilesAndPreviewsButKeepsPhoneCopiesVisible() {
+        val f = File.createTempFile("chat-reference-old", ".json")
+        try {
+            f.writeText("""[{"role":"FILES","attachments":[
+                {"name":"requested.pdf","uri":"content://media/1","shownPath":"Download/etl/requested.pdf"},
+                {"name":"reference.pdf","path":"/w/reference.pdf"},
+                {"name":"1쪽","mime":"image/png","pagePreview":true}
+            ]}]""")
+            val files = ChatModel(f).also { it.load() }.messages.single().attachments
+            assertFalse(files[0].referenceOnly)
+            assertTrue(files[1].referenceOnly)
+            assertTrue(files[2].referenceOnly)
+        } finally {
+            f.delete()
+        }
+    }
+
 }

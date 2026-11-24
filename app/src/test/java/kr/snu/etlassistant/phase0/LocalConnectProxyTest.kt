@@ -5,7 +5,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetSocketAddress
+import java.net.InetAddress
 import java.net.Socket
+import java.net.URI
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.Collections
 
@@ -43,6 +47,22 @@ class LocalConnectProxyTest {
     }
 
     @Test
+    fun rejectsLanLinkLocalAndMulticastDestinations() {
+        for (ip in listOf("127.0.0.1", "0.0.0.0", "10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254",
+            "224.0.0.1", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "ff02::1")) {
+            assertFalse(ip, LocalConnectProxy.isPublicDestination(InetAddress.getByName(ip)))
+        }
+        assertTrue(LocalConnectProxy.isPublicDestination(InetAddress.getByName("93.184.215.14")))
+        assertTrue(LocalConnectProxy.isPublicDestination(InetAddress.getByName("2606:2800:220:1:248:1893:25c8:1946")))
+        val proxy = LocalConnectProxy({}).start()
+        try {
+            for (target in listOf("192.168.1.1:443", "169.254.169.254:80", "[fc00::1]:443")) {
+                assertTrue(target, connectStatus(proxy.port, target, auth(proxy)).contains(" 502 "))
+            }
+        } finally { proxy.stop() }
+    }
+
+    @Test
     fun requiresPerRunCredentials() {
         val logs = Collections.synchronizedList(mutableListOf<String>())
         val proxy = LocalConnectProxy({ logs += it }).start()
@@ -62,6 +82,72 @@ class LocalConnectProxyTest {
             assertTrue(proxy.user != other.user && proxy.password != other.password)
             assertTrue(proxy.url.matches(Regex("http://[0-9a-f]+:[0-9a-f]+@127\\.0\\.0\\.1:\\d+")))
         } finally {
+            proxy.stop()
+        }
+    }
+
+    @Test
+    fun rejectsDuplicateCredentialsMalformedAuthoritiesAndPlainRequestBodies() {
+        val logs = Collections.synchronizedList(mutableListOf<String>())
+        val proxy = LocalConnectProxy({ logs += it }).start()
+        try {
+            assertTrue(connectStatus(proxy.port, "example.com:443", auth(proxy) + auth(proxy)).contains(" 407 "))
+            for (target in listOf("[::1]ignored", "example.com:443/path", "SECRET@example.com:443", "example.com:443?SECRET")) {
+                assertTrue(target, connectStatus(proxy.port, target, auth(proxy)).contains(" 400 "))
+            }
+            for (header in listOf("Content-Length: 1", "Transfer-Encoding: chunked")) {
+                open(proxy.port).use { socket ->
+                    socket.getOutputStream().write(("GET http://example.com/ HTTP/1.1\r\n${auth(proxy)}$header\r\n\r\n").toByteArray())
+                    assertTrue(socket.getInputStream().bufferedReader().readLine().contains(" 400 "))
+                }
+            }
+            assertFalse(logs.any { it.contains("SECRET") || it.contains(proxy.password) })
+        } finally { proxy.stop() }
+    }
+
+    @Test
+    fun plaintextForwardingStripsProxyCredentialsAndNeverReadsPipelinedRequests() {
+        class MemorySocket(input: String) : Socket() {
+            val incoming = ByteArrayInputStream(input.toByteArray())
+            val outgoing = ByteArrayOutputStream()
+            override fun getInputStream() = incoming
+            override fun getOutputStream() = outgoing
+            override fun shutdownOutput() {}
+        }
+        val proxy = LocalConnectProxy({})
+        val pipelined = "GET http://evil.example/second HTTP/1.1\r\n${auth(proxy)}\r\n"
+        val client = MemorySocket(pipelined)
+        val upstream = MemorySocket("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        proxy.forwardPlain(client, upstream, "GET", URI("http://example.com/path?q=1"), "HTTP/1.1",
+            listOf("Host: wrong.example", auth(proxy).trim(), "Proxy-Connection: keep-alive", "Accept: */*"))
+        val sent = upstream.outgoing.toString(Charsets.ISO_8859_1.name())
+        assertTrue(sent.startsWith("GET /path?q=1 HTTP/1.1\r\n"))
+        assertTrue(sent.contains("Host: example.com\r\n"))
+        assertFalse(sent.contains("wrong.example"))
+        assertFalse(sent.contains("Proxy-", ignoreCase = true))
+        assertFalse(sent.contains(proxy.password))
+        assertFalse(sent.contains("/second"))
+        assertEquals(pipelined.toByteArray().size, client.incoming.available())
+        assertTrue(client.outgoing.toString().endsWith("OK"))
+        proxy.stop()
+    }
+
+    @Test
+    fun boundsConcurrentUnauthenticatedConnectionsAndClosesThemOnStop() {
+        val proxy = LocalConnectProxy({}).start()
+        val sockets = (1..LocalConnectProxy.MAX_CONNECTIONS).map { open(proxy.port) }
+        try {
+            open(proxy.port).use { excess ->
+                excess.soTimeout = 2000
+                assertEquals(-1, excess.getInputStream().read())
+            }
+            proxy.stop()
+            sockets.forEach {
+                it.soTimeout = 2000
+                assertEquals(-1, it.getInputStream().read())
+            }
+        } finally {
+            sockets.forEach { it.close() }
             proxy.stop()
         }
     }

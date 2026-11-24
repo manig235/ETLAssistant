@@ -53,11 +53,18 @@ Phase 0에서 `codex login --device-auth`로 로그인할 때 겪은 불편:
 
 확인할 것(**미검증**): API 키 모드에서 쓸 수 있는 모델과 `code_mode_only` 여부(ChatGPT 계정 모드와 카탈로그 적용이 다를 수 있다). 다르면 호스트가 필요 없을 수도 있다.
 
-### 4. 앱이 ChatGPT 토큰을 직접 다루지 않는다
+### 4. ChatGPT 토큰은 앱이 암호화 보관한다 (2026-11-24 변경)
 
-프로토콜에는 호스트 앱이 토큰을 직접 넘기는 `chatgptAuthTokens` 모드(`account/chatgptAuthTokens/refresh` 요청으로 갱신)도 있다.
-쓰지 않는다. 우리가 OAuth 클라이언트가 되면 토큰을 다루는 책임이 늘어나고, 공식 Codex의 로그인·갱신 경로를 그대로 쓰는 편이 안전하다.
-Codex가 `CODEX_HOME/auth.json`(앱 내부 저장소, `allowBackup=false`)에 저장한다. 안드로이드에는 keyring이 없어 `cli_auth_credentials_store`는 파일뿐이다. 이 파일은 평문이다. **남은 위험**으로 기록한다.
+구버전의 평문 `CODEX_HOME/auth.json` 저장을 중단했다. `ChatGptOAuth`는 고정 Codex rust-v0.170.0의 OAuth PKCE·기기 코드·갱신 프로토콜을 사용한다.
+고정 HTTPS 인증 호스트만 허용하고 리다이렉트는 따라가지 않는다. 로그인 콜백은 loopback과 임의 state를 확인한다.
+`ChatGptSecretStore`는 Android Keystore AES-GCM으로 암호화하고 동기 저장한다. `ChatGptAuthStorage`는 기존 파일을 암호화한 뒤
+복호화 검증을 통과해야 원본을 지운다. 전환 실패 시 실행을 중단하며 평문을 실행 중 복원하는 방식은 쓰지 않는다.
+
+Codex는 설정과 CLI override 모두 `cli_auth_credentials_store="ephemeral"`을 사용한다. 앱이 stdio의 `account/login/start(chatgptAuthTokens)`로
+접근 토큰을 주고, `account/chatgptAuthTokens/refresh` 요청에 갱신 결과를 전달한다. 갱신 토큰은 Codex에 전달하지 않는다.
+이 프로토콜은 고정 버전의 experimental API이므로 Codex 버전 변경 시 함께 검증해야 한다. 로그인 완료·취소·로그아웃·갱신은
+세대 확인과 직렬 처리로 오래된 인증 결과가 다시 적용되지 않게 한다. 로그아웃은 암호문과 해당 Keystore 키를 제거한다.
+앱 데이터 백업과 기기 간 이전은 계속 제외한다. 정상 인증에 필요한 OpenAI 전송과 실행 중 메모리상의 토큰까지 없애는 기능은 아니다.
 
 ## 화면 흐름 (구현됨, 일부 미검증)
 
@@ -73,7 +80,9 @@ Codex가 `CODEX_HOME/auth.json`(앱 내부 저장소, `allowBackup=false`)에 �
 
 세션은 설정을 바꾸면(토큰 저장, 인증 방식 변경) 자동으로 재시작해 MCP 서버 등록과 `OPENAI_API_KEY` 전달을 갱신한다.
 
-## 검증 현황
+## 이전 로그인 구현의 검증 이력
+
+아래 기록은 암호화 이전의 Codex 내장 로그인 기준이다. 새 앱 소유 OAuth의 검증 결과는 `docs/release.md`에 별도로 기록한다.
 
 | 항목 | 상태 |
 |---|---|

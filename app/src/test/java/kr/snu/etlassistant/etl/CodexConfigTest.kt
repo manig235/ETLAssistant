@@ -26,6 +26,24 @@ class CodexConfigTest {
         assertTrue(table(t, "mcp_servers.etl").contains("bearer_token_env_var = \"${CodexConfig.SECRET_ENV}\""))
     }
 
+    @Test fun assistantCannotSpawnShellsOrSearchTheWeb() {
+        val t = CodexConfig.toml(4321)
+        assertTrue(t.lines().takeWhile { !it.startsWith("[") }.contains("web_search = \"disabled\""))
+        assertTrue(table(t, "features").contains("shell_tool = false"))
+        assertTrue(table(t, "features").contains("unified_exec = false"))
+        assertTrue(table(t, "features").contains("view_image = false"))
+        assertTrue(table(t, "shell_environment_policy").contains("inherit = \"none\""))
+    }
+
+    @Test fun codexNeverPersistsCredentials() {
+        val top = CodexConfig.toml(4321).lines().takeWhile { !it.startsWith("[") }
+        assertTrue(top.contains("cli_auth_credentials_store = \"ephemeral\""))
+        for (command in listOf("app-server", "login", "exec")) {
+            val args = CodexConfig.secureArgs(listOf(command, "-c", "cli_auth_credentials_store=\"file\""))
+            assertEquals(listOf("-c", "cli_auth_credentials_store=\"ephemeral\""), args.takeLast(2))
+        }
+    }
+
     @Test fun eachTableOnce() {
         val headers = CodexConfig.toml(1).lines().filter { it.startsWith("[") }
         assertEquals(headers.size, headers.toSet().size)

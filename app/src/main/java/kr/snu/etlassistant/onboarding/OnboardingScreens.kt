@@ -46,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import kr.snu.etlassistant.chat.PrivacyPolicyActivity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -257,6 +259,7 @@ private fun StatusCard(text: String, positive: Boolean = true) {
 
 @Composable
 private fun WelcomeStep(vm: OnboardingViewModel) {
+    val context = LocalContext.current
     StepFrame(
         title = "안녕하세요,\n영민이예요",
         subtitle = "마감과 공지는 챙기고, 궁금한 건 물어보고, 강의 파일은 바로 받아 보세요.",
@@ -283,14 +286,18 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = DesignSystemTheme.colors.foregroundNeutralSecondary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("개인정보는 이 폰 안에서만", style = DesignSystemTheme.typography.body2Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+                Text("개발자는 개인정보를 수집하지 않아요", style = DesignSystemTheme.typography.body2Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                "개발자 서버가 없어요. eTL 토큰, 파일, 대화 기록은 이 폰에만 저장돼요. 대화 내용은 AI가 답하려고 내 ChatGPT 계정을 통해 OpenAI로 보내져요.",
+                "개발자 서버는 없어요. eTL 토큰은 eTL로, ChatGPT 로그인 정보나 API 키는 OpenAI로 보내 인증해요. 비서에게 보낸 질문과 첨부, 비서가 불러온 강의 정보는 OpenAI로 전송돼요. 캘린더 연동을 켜고 계정 캘린더를 고르면 일정이 그 계정에 동기화될 수 있어요.",
                 style = DesignSystemTheme.typography.caption1Regular,
                 color = DesignSystemTheme.colors.foregroundNeutralSecondary,
             )
+            Spacer(Modifier.height(10.dp))
+            WantedTextButton(text = "개인정보 처리방침 읽기", onClick = {
+                context.startActivity(PrivacyPolicyActivity.intent(context))
+            })
         }
         Spacer(Modifier.height(16.dp))
         Text(

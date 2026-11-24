@@ -81,17 +81,18 @@ class NotifySettingsStore(context: Context) {
 class NotifyStateStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("notify_state", Context.MODE_PRIVATE)
 
-    @Synchronized
-    fun load(): NotifyState = NotifyState.fromJson(prefs.getString("state", null))
-
-    @Synchronized
-    fun save(s: NotifyState) {
-        prefs.edit().putString("state", s.toJson().toString()).apply()
+    fun load(): NotifyState = synchronized(NoticeDelivery.lock) {
+        NotifyState.fromJson(prefs.getString("state", null))
     }
 
-    /** 읽고 고쳐서 저장한다(동시 실행되는 작업끼리 덮어쓰지 않도록 잠금 안에서). */
-    @Synchronized
-    fun update(block: (NotifyState) -> Unit) {
+    fun save(s: NotifyState) = synchronized(NoticeDelivery.lock) {
+        // Fired keys must reach disk before the broadcast process can be reclaimed.
+        prefs.edit().putString("state", s.toJson().toString()).commit()
+        Unit
+    }
+
+    /** The lock is shared by every store instance and both delivery paths. */
+    fun update(block: (NotifyState) -> Unit) = synchronized(NoticeDelivery.lock) {
         val s = load()
         block(s)
         save(s)

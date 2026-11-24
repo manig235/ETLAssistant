@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Info
@@ -267,6 +268,7 @@ fun MessageRow(
     onLink: (String) -> Unit,
     attachments: List<Attachment> = emptyList(),
     attachmentActions: AttachmentActions? = null,
+    showCopy: Boolean = true,
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
@@ -316,7 +318,7 @@ fun MessageRow(
                 }
             }
         }
-        Role.ASSISTANT -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        Role.ASSISTANT -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
             // 마크다운 일부와 LaTeX 수식을 그린다(수식은 기기 안에서 그림으로, MarkdownCompose.kt)
             SelectionContainer {
             MarkdownBody(
@@ -333,6 +335,16 @@ fun MessageRow(
                     .background(c.surfaceNeutralSecondary)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
+            }
+            if (showCopy && text.isNotBlank()) {
+                IconButton(onClick = { onCopy(text) }) {
+                    Icon(
+                        Icons.Outlined.ContentCopy,
+                        contentDescription = "답변 전체 복사",
+                        tint = c.foregroundNeutralTertiary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }

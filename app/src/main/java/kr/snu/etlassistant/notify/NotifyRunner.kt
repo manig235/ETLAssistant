@@ -38,15 +38,9 @@ object NotifyRunner {
             // 시험 알림의 응원 문구는 설정의 "반말로 대화"를 따른다. 시험이 끝나면 "수고했어요"(방해 금지 중이면 보내지 않음).
             val casual = runCatching { kr.snu.etlassistant.codex.AppSettings.casualTone }.getOrDefault(false)
             val quietEarly = now.atZone(java.time.ZoneId.systemDefault()).let { Quiet.isQuiet(it.hour * 60 + it.minute, settings) }
-            val firedEarly = stateStore.load().fired.keys
-            val (examDone, examSilent) = MyDeadlines.examDoneNotices(mine, now, firedEarly, settings.examDoneAlerts, quietEarly, casual)
-            val reminders = MyDeadlines.reminderNotices(mine, now, firedEarly, casual) + examDone
-            if (reminders.isNotEmpty() || examSilent.isNotEmpty()) {
-                reminders.forEach { NotificationPoster.post(app, it, settings) }
-                stateStore.update { s ->
-                    reminders.forEach { n -> n.firedKeys.forEach { s.fired[it] = now.toEpochMilli() } }
-                    examSilent.forEach { s.fired[it] = now.toEpochMilli() }
-                }
+            NoticeDelivery.deliver(app, settings, now) { state ->
+                val (examDone, examSilent) = MyDeadlines.examDoneNotices(mine, now, state.fired.keys, settings.examDoneAlerts, quietEarly, casual)
+                Plan(MyDeadlines.reminderNotices(mine, now, state.fired.keys, casual) + examDone, examSilent)
             }
             runCatching { DeadlineAlarm.scheduleEarlier(app, MyDeadlines.nextReminderAt(mine, now, stateStore.load().fired.keys)) }
             // 과목별 알림 끄기·숨기기: 그 과목은 알리지 않고 중복 방지 기록만 남긴다([CourseMute]).
@@ -65,9 +59,6 @@ object NotifyRunner {
             // 시험·과제 공지는 채팅 화면의 "등록 안 한 공지" 시트용으로 남겨 둔다(14일·50개, 화면을 열 때는 네트워크 없이 이것만 쓴다).
             if (etlOk) runCatching { PendingNoticeStore(app).record(fetched.snapshot.announcements, now) }
             // 토큰이 없을 때(내 마감만 확인) 공지 기준선을 잡으면, 나중에 토큰을 넣었을 때 기존 공지가 한꺼번에 알려진다.
-            val plan = CourseMute.plan(snapshot, stateStore.load(), now, settings, courses)
-                .let { if (!etlOk) it.copy(markBaselineDone = false) else it }
-                .let { p -> fetched.cachedAt?.let { at -> p.copy(notices = p.notices.map { staleMark(it, at, now) }) } ?: p }
             val zone = java.time.ZoneId.systemDefault()
             val local = now.atZone(zone)
             val quiet = Quiet.isQuiet(local.hour * 60 + local.minute, settings)
@@ -98,19 +89,19 @@ object NotifyRunner {
                     emptyList()
                 }
             }
-            val firedNow = stateStore.load().fired.keys
-            val classes = if (quiet) emptyList() else classDays.firstOrNull()
-                ?.let { ClassNotices.plan(it, now, zone, settings.classLeadMinutes, firedNow) }.orEmpty()
-
-            val all = plan.notices + changes + classes
-            all.forEach { NotificationPoster.post(app, it, settings) }
+            val delivered = NoticeDelivery.deliver(app, settings, now) { state ->
+                val plan = CourseMute.plan(snapshot, state, now, settings, courses)
+                    .let { if (!etlOk) it.copy(markBaselineDone = false) else it }
+                    .let { p -> fetched.cachedAt?.let { at -> p.copy(notices = p.notices.map { staleMark(it, at, now) }) } ?: p }
+                val classes = if (quiet || !settings.classAlerts) emptyList() else classDays.firstOrNull()
+                    ?.let { ClassNotices.plan(it, now, zone, settings.classLeadMinutes, state.fired.keys) }.orEmpty()
+                plan.copy(notices = plan.notices + changes + classes)
+            }
             val nowMs = now.toEpochMilli()
-            val deadlines = plan.notices.count { it.channel == Channel.DEADLINE }
-            val anns = plan.notices.count { it.channel == Channel.ANNOUNCEMENT }
+            val deadlines = delivered.notices.count { it.channel == Channel.DEADLINE }
+            val anns = delivered.notices.count { it.channel == Channel.ANNOUNCEMENT }
+            val classes = delivered.notices.filter { it.channel == Channel.CLASS }
             stateStore.update { s ->
-                all.forEach { n -> n.firedKeys.forEach { s.fired[it] = nowMs } }
-                plan.silentKeys.forEach { s.fired[it] = nowMs }
-                if (plan.markBaselineDone) s.announcementBaselineDone = true
                 s.lastCheckAt = nowMs
                 val counts = "마감 ${deadlines}건, 공지 ${anns}건" +
                     (if (changes.isNotEmpty()) ", 과제·성적·제출 ${changes.size}건" else "") + (if (classes.isNotEmpty()) ", 수업 ${classes.size}건" else "")
@@ -123,11 +114,7 @@ object NotifyRunner {
                 s.prune(nowMs)
             }
             // 다음 마감·수업 알림 시점에 맞춰 한 번 더 확인한다(주기 확인만으로는 확인 간격만큼 늦을 수 있다).
-            val after = stateStore.load()
-            val nextDeadline = NotificationPlanner.nextDeadlineCheckAt(courses.alertable(snapshot), after, now, settings)
-            val nextClass = if (settings.classAlerts) ClassNotices.nextAt(classDays, now, zone, settings.classLeadMinutes, after.fired.keys) else null
-            val nextReminder = MyDeadlines.nextReminderAt(mine, now, after.fired.keys)
-            runCatching { DeadlineAlarm.schedule(app, listOfNotNull(nextDeadline, nextClass, nextReminder).minOrNull()) }
+            runCatching { TimedNotifications.reschedule(app, Instant.now()) }
             logErrors(snapshot.errors, fetched.cachedAt)
             log("확인 완료: 마감 $deadlines, 공지 $anns, 조회 오류 ${snapshot.errors.size}")
             kr.snu.etlassistant.calendar.CalendarExport.syncIfEnabled(app) // 캘린더로 내보내기(켜져 있을 때만, 네트워크 없음, 예외를 던지지 않음)

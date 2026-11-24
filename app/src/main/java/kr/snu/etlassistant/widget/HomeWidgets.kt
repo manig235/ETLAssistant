@@ -19,6 +19,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import kr.snu.etlassistant.notify.LearningXOpenActivity
 import kr.snu.etlassistant.chat.MyDeadlinesActivity
 import kr.snu.etlassistant.chat.TimetableActivity
 import kr.snu.etlassistant.etl.EtlAuthException
@@ -172,8 +173,11 @@ object HomeWidgets {
             row.setTextViewText(R.id.widget_item_due, if (compact) "$due · $remaining" else due)
             row.setTextViewText(R.id.widget_item_remaining, remaining + if (size.width >= 240) " · ${item.source}" else "")
             row.setContentDescription(R.id.widget_item_body, "${item.source}, ${item.title}, 마감 $due, $remaining")
-            val open = if (item.mineId != null) agenda(context, item.mineId) else
-                activity(context, Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+            val open = when {
+                item.mineId != null -> agenda(context, item.mineId)
+                item.url != null -> activity(context, LearningXOpenActivity.intent(context, item.url))
+                else -> agenda(context)
+            }
             row.setOnClickPendingIntent(R.id.widget_item_body, open)
             if (item.mineId != null && !item.exam) {
                 row.setViewVisibility(R.id.widget_item_complete, View.VISIBLE)

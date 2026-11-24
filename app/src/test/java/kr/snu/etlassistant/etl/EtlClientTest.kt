@@ -80,6 +80,29 @@ class EtlClientTest {
         assertEquals("", EtlClient.errorHint(""))
     }
 
+    @Test fun errorHintsNeverReflectTokensOrSignedUrls() {
+        for (body in listOf(
+            """{"message":"invalid token Bearer SECRET-ETL-TOKEN"}""",
+            """{"message":"not authorized https://myetl.snu.ac.kr/files/1?verifier=SECRET"}""",
+            "SECRET-ETL-TOKEN https://storage.example/file?session_token=SECRET"
+        )) {
+            val hint = EtlClient.errorHint(body.lowercase())
+            assertTrue(!hint.contains("secret", ignoreCase = true))
+            assertTrue(!hint.contains("https://"))
+            assertTrue(!hint.contains("verifier="))
+        }
+    }
+
+    @Test fun originCheckUsesSchemeHostAndPortAndRejectsUserInfo() {
+        assertTrue(EtlClient.sameOrigin("https://myetl.snu.ac.kr/api/v1/courses"))
+        assertTrue(EtlClient.sameOrigin("https://MYETL.SNU.AC.KR:443/files/1"))
+        for (url in listOf(
+            "http://myetl.snu.ac.kr/api/v1/courses", "https://myetl.snu.ac.kr:8443/files/1",
+            "https://myetl.snu.ac.kr.evil.example/files/1", "https://myetl.snu.ac.kr@evil.example/files/1",
+            "https://attacker@myetl.snu.ac.kr/files/1", "https://evil.example/myetl.snu.ac.kr/files/1", "bad url"
+        )) assertTrue(url, !EtlClient.sameOrigin(url))
+    }
+
     @Test fun pathOnlyDropsQuery() {
         assertEquals("/files/1/download", EtlClient.pathOnly("https://myetl.snu.ac.kr/files/1/download?verifier=SECRET"))
         assertEquals("/api/v1/x", EtlClient.pathOnly("/api/v1/x?a=b"))

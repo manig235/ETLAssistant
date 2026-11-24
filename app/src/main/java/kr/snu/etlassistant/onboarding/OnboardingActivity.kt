@@ -43,6 +43,7 @@ class OnboardingActivity : AppCompatActivity(), CodexSession.Listener {
         enableEdgeToEdge()
         refreshNotifyGranted()
         val actions = OnboardingActions(
+            // 새 연결에 필요한 토큰 발급은 LearningX에서 제공하지 않아 웹을 연다.
             openEtlSettings = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myetl.snu.ac.kr/profile/settings"))) },
             readClipboard = {
                 val clip = getSystemService(ClipboardManager::class.java).primaryClip

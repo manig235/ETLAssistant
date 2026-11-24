@@ -73,8 +73,12 @@ object NotifyScheduler {
         }
         // 마감·수업 알림을 모두 끄면 제시간 확인 알람도 거둔다(켜면 다음 확인이 다시 건다).
         // 단, 내 마감에 직접 정한 알림 시각이 남아 있으면 그대로 둔다.
-        val hasReminders = MyDeadlines.nextReminderAt(MyDeadlineStore(app).load(), java.time.Instant.now(), emptySet()) != null
-        if (!settings.needsTimedCheck && !hasReminders) DeadlineAlarm.cancel(app)
+        val hasReminders = TimedNotifications.hasPersonalReminders(
+            MyDeadlineStore(app).load(), java.time.Instant.now(), NotifyStateStore(app).load().fired.keys,
+        )
+        if (!settings.needsTimedCheck && !hasReminders) DeadlineAlarm.cancel(app) else DeadlineAlarm.rearm(app)
+        // Re-arm on every app start too: revoking exact access removes system alarms and kills the process.
+        // The next launch must restore the stored target with the inexact fallback.
 
         // ② 정기 브리핑(슬롯마다 한 번짜리 작업을 예약하고, 실행 뒤 다시 apply로 다음 것을 예약)
         val slots = if (settings.briefEnabled) settings.briefMinutesOfDay.take(MAX_BRIEF_SLOTS) else emptyList()

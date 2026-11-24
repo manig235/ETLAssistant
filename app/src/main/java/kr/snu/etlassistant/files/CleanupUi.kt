@@ -24,7 +24,7 @@ import com.wanted.android.wanted.design.theme.DesignSystemTheme
 /** 고르기 화면 공통 설명. */
 const val CLEANUP_QUESTION = "받은 강의자료를 폰에 얼마나 둘까요?"
 const val CLEANUP_DESC = "비서가 폰 Download/etl에 받아 둔 eTL 파일을 고른 기간이 지나면 지워요. 비서가 만든 파일(영민이가 만든 파일 폴더)은 지우지 않아요."
-const val CLEANUP_KEEP_HINT = "계속 두고 싶은 자료는 파일 카드에서 '드라이브에 저장'을 누르세요."
+const val CLEANUP_KEEP_HINT = "계속 두고 싶은 자료는 파일 카드 옆 공유 아이콘을 눌러 다른 곳에 저장하세요."
 
 /** 기간 칩(2일 · 7일 · 30일 · 정리 안 함). [selected]가 null이면 아무것도 고르지 않은 상태. */
 @OptIn(ExperimentalLayoutApi::class)

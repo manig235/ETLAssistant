@@ -48,7 +48,7 @@ class NewFilesTest {
         assertEquals("3주차.pdf, 2주차.pdf", notice.text)
         assertEquals("https://myetl.snu.ac.kr/courses/1/files", notice.url)
         assertEquals("자료구조 새 강의자료 3주차.pdf, 2주차.pdf 받아줘", notice.prefill)
-        assertNull(notice.prefillAction) // 누르면 채팅
+        assertEquals("자료 받아줘", notice.prefillAction) // 본문은 LearningX, 자료 받기는 채팅 버튼
         assertEquals(listOf(3L, 2L, 1L), s.courses[1]!!.seen)
         assertTrue(NewFiles.apply(s, now + 2, listOf(ds, algo), mapOf(1L to files(3, 2, 1))).second.isEmpty())
     }

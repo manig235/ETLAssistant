@@ -15,7 +15,7 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 - **안드로이드만**: iOS는 앱 안에서 다른 실행 파일을 띄우는 것 자체가 불가능하다.
 - **Termux 의존 없음**: 사용자가 Termux를 따로 설치하는 방식은 장벽이 높고 불안정해서 기각했다.
 - **Codex는 채팅 화면이 열려 있을 때만 실행한다.** 마지막 화면이 떨어지면 그 자리에서 멈춘다(턴·로그인 중이면 끝날 때; 2분 타이머는 삼성 앱 얼림 때문에 돌지 않아 2026-11-22에 뺐다).
-  마감·공지 알림은 Codex 없이 일반 앱 코드(WorkManager)로 처리한다.
+  마감·수업·직접 지정 알림은 Codex 없이 AlarmManager 수신기에서 저장된 정보로 보내고, 새 eTL 정보 확인·공지·브리핑은 WorkManager로 처리한다.
   실행 중에는 포그라운드 서비스로 앱을 살려 둔다(백그라운드에서는 앱의 DNS가 막힌다).
 - **진짜 VM(AVF, QEMU)은 쓰지 않는다**: AVF는 일반 앱에 권한이 없고, QEMU는 너무 무겁다.
   직접 실행이 막힐 때만 앱 내장 proot를 대안으로 쓴다.
@@ -55,17 +55,33 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
 **모델과 code mode (중요)**
 - ChatGPT 계정으로 쓸 수 있는 모델(`gpt-6.1-sol` 등)은 내장 카탈로그에서 전부 `tool_mode: code_mode_only`다. MCP 도구를
   호출하려면 **code-mode host**(`codex-code-mode-host`, 릴리스의 별도 자산)가 필요하다.
-- `codex exec`에는 호스트 지정 옵션이 없고 `codex` 바이너리 옆 같은 이름의 파일을 찾는데, `nativeLibraryDir`에는 `lib*.so`만 풀리므로
-  그 파일을 둘 수 없다. `features.code_mode=false`나 `gpt-5.5` 지정은 소용없다(`gpt-5.5`는 ChatGPT 계정에서 거부).
-- **그래서 `codex app-server --code-mode-host http://127.0.0.1:PORT`를 쓴다.** 호스트는 `libcodex-code-mode-host.so`로 넣고
-  앱이 `--listen grpc://127.0.0.1:PORT`로 띄운다. Codex 쪽 URL은 `grpc://`가 아니라 **`http://`**여야 한다.
-  `exec`는 개발용 시험에만 쓴다.
+- Android는 `lib*.so`만 추출하므로 빌드 시 고정 SHA의 Codex ELF `.rodata`에 있는 helper 이름을 같은 길이의 `libcodex-modehost.so`로
+  바꾼다. `scripts/prepare-codex-runtime.py`가 원본 hash·아키텍처·offset을 검증하고 generated jni에만 쓴다. 다운로드 원본은 보존한다.
+- **`codex app-server --listen stdio:// --enable code_mode_host`를 쓴다.** Codex가 sibling helper를 `grpc+stdio://` 파이프로 직접 실행한다.
+  code-mode용 TCP 포트·외부 host URL·TCP fallback은 없다. APK `assets/codex-runtime.json`에 변경 전후 hash를 남긴다.
+  Codex 업그레이드는 patch pin과 프로토콜 통합 테스트를 함께 갱신해야 한다. `exec`는 개발용 시험에만 쓴다.
 
 **MCP와 앱 커넥터**
 - `CODEX_HOME/config.toml`의 `[mcp_servers.etl]`에 `url`, `bearer_token_env_var`(비밀값은 환경변수로만), `default_tools_approval_mode = "approve"`.
 - **ChatGPT 계정의 커넥터(`codex_apps`, Gmail 등 140여 개 도구)가 자동으로 붙는다. `[features] apps = false`로 끈다.**
   신뢰할 수 없는 eTL 본문이 그 도구를 건드리지 못하게 하려는 것이다.
 - 스레드는 `approvalPolicy: "never"`, `sandbox: "read-only"`로 시작한다. 시험에서 승인 요청은 한 번도 오지 않았다.
+
+**배포 전 보안 보강(2026-11-24)**
+- MCP 프로토콜 자동 승인과 실제 일정 변경 승인은 별개다. `AiWriteApproval`이 내 마감·보강/휴강·캘린더 쓰기를 막고,
+  활성 채팅 화면의 확인 버튼을 눌러야 해당 호출만 실행한다. 90초 시간 초과·화면 이탈·턴 중단/종료·세션 종료면 취소한다.
+  승인 뒤에도 원래 일정/권한/설정이 달라졌으면 재조회하도록 거절한다.
+- 고정 Codex 소스의 `spec_plan.rs`/설정 스키마를 확인해 `shell_tool=false`, `unified_exec=false`, `view_image=false`, `web_search=disabled`,
+  `shell_environment_policy.inherit=none`을 넣었다. 이미지 읽기는 작업 폴더만 허용하는 `etl_view_image`가 처리하며 크기 제한·재인코딩으로 메타데이터를 제거한다.
+- MCP는 본문을 읽기 전에 인증하며 청크 길이·동시 연결·요청 크기를 제한한다. 프록시는 사설망/로컬 목적지를 거부한다.
+  eTL 토큰은 eTL 원본 호스트에만 전송하고, 모든 eTL 도구 결과에서 인증 필드·현재 토큰·서명 주소를 가린다.
+- code-mode host의 인증 없는 로컬 포트는 제거했다. 부모·자식 파이프만 사용한다. JS에는 파일/환경/직접 네트워크 API가 없다.
+- ChatGPT 토큰은 앱의 Keystore AES-GCM 저장소로 이전한다. `auth.json`은 암호화 저장을 검증한 뒤 삭제하며 실패 시 시작을 막는다.
+  Codex는 config/CLI 모두 ephemeral이며 access token만 stdio로 전달한다. 앱 소유 PKCE/기기코드 로그인과 refresh는 고정 버전의 프로토콜을 쓴다.
+- `WorkFileCleanup`은 앱 시작과 하루 한 번 작업에서 14일 지난 앱 전용 파일을 정리한다. 대화 삭제 때는 다른 대화가 참조하지 않는 첨부 사본도 지운다.
+  강제 종료/절전 시 삭제가 다음 실행 때까지 지연될 수 있다. 폰 다운로드 사본은 기존 사용자 설정을 따른다.
+- 개인정보처리방침 원본은 `docs/privacy-policy.md`; 빌드 시 그대로 묶어 첫 안내·설정의 `PrivacyPolicyActivity`에서 오프라인으로 표시한다.
+- AGP는 Kotlin 2.3 메타데이터를 지원하는 8.13.2를 쓴다. 8.13.0의 R8 경고를 무시하지 않는다.
 
 **eTL 서버 쪽**
 - eTL은 오류 메시지를 **한국어로** 준다(`사용자에게 이 동작을 수행할 권한이 없음`). 401이 "토큰 문제"인지 "그 자원에 대한 권한 없음"인지
@@ -104,9 +120,14 @@ APP_BACKGROUND·얼림이 풀린다), 실패한 부분은 마지막 성공 과�
 배터리 최적화 예외 요청(`BatteryOpt`: 안내 알림 단계, 설정, 채팅 배너). **절전 모드는 작업 중에도 네트워크를 막아** 예외가 없으면 새 조회는 안 되고(받아 둔 마감 알림만),
 예외면 절전 모드에서도 조회된다 → 절전 모드+예외 아님일 때만 안내(`POWER_SAVE_HINT`). 짧은 포그라운드 서비스는 넣지 않는다(예외 없이는 백그라운드에서 시작 금지, 예외면 불필요).
 상세는 `docs/phase3-log.md` "실측"·"실측 2".
-**제시간 알람과 팝업(2026-11-22, 기기 실측)**: 권한 없는 알람(`setAndAllowWhileIdle`)을 삼성은 허용 창 끝에서 울린다. 마지막 알람을
-목표 60초 안에서만 걸고(`NotifySchedule.ALARM_FINAL_MILLIS`) 그 전에는 중간 알람으로 다가가 지연을 최대 약 45초로 줄였다(전에는 8분, 최대 6분 늦음).
-재부팅·앱 업데이트·시각/시간대 변경 때 `SystemEventReceiver`가 알람과 예약을 되살린다(`RECEIVE_BOOT_COMPLETED`).
+**마감·수업·직접 지정 알람과 팝업(2026-11-24 배포 점검 수정, 새 경로 기기 실측 전)**: 다음에 알려진 알림 시점에 알람 하나만 건다.
+Android 12+에서 사용자가 설정 → 알림 → "정확한 알림 허용"으로 `SCHEDULE_EXACT_ALARM` 특별 접근을 주면 `setExactAndAllowWhileIdle`, 없거나 거둬지면 `setAndAllowWhileIdle`로 예약한다.
+옛 중간 알람 접근과 "최대 45초" 계산은 Android 보장이 아니어서 제거했다. 정확한 알람도 절전 중 호출 빈도·제조사 제한으로 늦을 수 있고, 부정확 알람에는 최대 지연을 약속하지 않는다.
+`DeadlineAlarmReceiver`는 `goAsync`로 짧은 로컬 작업만 돌려 직접 알림을 게시한다(`TimedNotifications`: 3일 이내 과제 캐시, 내 마감·시험, 저장된 시간표/보강·휴강).
+수신 작업은 8초 제한·9초 상한 CPU 잠금을 쓰고 네트워크는 별도 WorkManager 확인으로 넘긴다. 따라서 캐시/직접 알림이 WorkManager 실행이나 eTL 응답을 기다리지 않는다.
+알람과 확인 작업은 계획·게시·중복 키 저장에 같은 잠금을 쓰고, 실제 게시에 성공한 키만 기록한다. 방해 금지·과목별 끄기와 직접 지정 알림의 예외 규칙을 유지한다.
+재부팅·앱 업데이트·시각/시간대 변경·정확한 알람 접근 허용 때 `SystemEventReceiver`가 예약을 되살리며, 접근 해제 후 다음 실행에는 부정확 알람으로 복원한다.
+알림 권한이 없어 못 보낸 직접 알림은 마감 전이면 권한 허용/다음 실행 때 저장된 알람 목표가 없어도 다시 시도한다. 기기 절전·재부팅·권한 변경 검증은 별도로 남아 있다.
 과제·성적·공지·수업 알림의 본문 터치는 eTL 링크로 바로 연결하고, 브리핑은 영민이 앱을 연다(0.2.8). 누락된 과제/공지 링크는 ID로 복원하며 묶음은 강의 또는 eTL 홈을 연다. 상세는 `docs/phase3-log.md`.
 팝업(헤드업)은 채널 중요도 HIGH: 마감·수업·공지·새 과제/성적. 브리핑만 DEFAULT(알림창에만). 공지·변경 채널은 `announcement_v2`·`change_v2`로
 새로 만들어 HIGH로 올렸다(채널 중요도는 만든 뒤 앱이 못 바꾼다. 옛 채널은 지우고, 사용자가 꺼 둔 채널이면 새 채널도 끈 채로 만든다).
@@ -125,11 +146,11 @@ eTL 과제는 알림 확인·브리핑 때 `SnapshotCache`에 저장한 결과�
 내 마감은 eTL 밖의 마감을 사용자가 직접 등록한다(폰 안 SharedPreferences).
 내 마감마다 **알림 시각을 직접** 정할 수 있다(`MyDeadline.reminders`, 최대 5개; 화면은 "N분 전"·"시각 고르기", AI는 `reminders`/`remind_before_minutes`).
 기본 마감 알림 시점과 별개이고 방해 금지와 무관하다. `NotifyRunner.runCheck`가 eTL 조회 전에 네트워크 없이 먼저 보내고(키 `mine-remind:{id}:{분}`),
-제시간 알람(`DeadlineAlarm`)은 네트워크를 기다리지 않고 manual로 돈다. 저장할 때 `DeadlineAlarm.scheduleEarlier`로 바로 건다.
+알람(`DeadlineAlarm`) 수신기는 `TimedNotifications`로 직접 보내며 네트워크 확인은 별도 WorkManager로 넘긴다. 저장할 때 `DeadlineAlarm.scheduleEarlier`로 바로 건다.
 **반복(2026-11-23)**: 내 마감에 반복(`MyDeadline.repeat` = `MyRepeat`: 매일/매주·격주(요일 여러 개)/매월, 끝 날짜 선택)을 둘 수 있다. 규칙만 저장하고 회차는 KST로 그때그때 펼친다
 (`due`는 첫 회차, 매월 31일은 없는 달에 말일로 맞춤). 완료·"이번만 지우기"는 회차별(`doneDates`·`skipDates`). 알림·브리핑·위젯은 최근 놓친 회차(7일 이내)와 다음 회차만(`MyDeadlines.active`),
 알림 ID는 회차마다 다르다(`itemId`). 직접 정한 알림 시각은 회차마다 따라간다. 내 일정은 7일 안 회차를 모두 보인다. AI는 `repeat`·`weekdays`·`until`·`occurrence`. 상세는 `docs/phase3-log.md` "내 마감 반복".
-채팅 말풍선은 `SelectionContainer`로 길게 눌러 부분 선택·복사(접근성에는 "전체 복사" 동작).
+채팅 말풍선은 `SelectionContainer`로 길게 눌러 부분 선택·복사(접근성에는 "전체 복사" 동작). 비서 답변이 완료되면 말풍선 아래에 전체 복사 아이콘(`ContentCopy`)을 표시한다(2026-11-24 사용자 요청).
 **수식(2026-11-22, 0.2.1)**: 말풍선의 LaTeX(`\( \)`, `$ $`, `\[ \]`, `$$ $$`)를 기기 안에서 그린다(`ru.noties:jlatexmath-android`, GPLv2+classpath exception, 외부 서버·WebView 없음).
 수식이 있는 본문은 선택 가능한 TextView 한 개에서 `ReplacementSpan`으로 수식과 글을 함께 그린다(2026-11-23 선택 문제 수정, 0.2.8).
 블록은 맞춰 줄이거나 가로로 밀기. 부분 복사도 원문 LaTeX와 개행을 유지한다. 못 그리면 유니코드 대체(`MathText.toUnicode`). 상세는 `docs/phase2-log.md`.
@@ -221,7 +242,7 @@ AI가 만든 파일(`영민이가 만든 파일/`, `GeneratedFiles.isGenerated`)
 바깥을 눌러 닫으면 다음에 한 번 더 묻고 두 번 닫으면 더 묻지 않음 = 정리 안 함과 같은 효과), 설정 → 받은 파일. 하루 한 번(주기 확인 작업 시작, 채팅 화면 열 때), 알림 없음, 설정에 "최근 정리: 11/24, 3개".
 지운 URI를 기록해 채팅 파일 카드가 "자동 정리된 파일이에요 · 다시 받기"(입력창 채우기)로 보인다(작업 폴더 사본이 남아 있으면 그대로 열린다).
 
-**드라이브에 저장(2026-11-24, 사용자 요청)**: 파일 카드 아래 버튼 → `ACTION_CREATE_DOCUMENT`(이름·MIME 채움, `files/SaveCopy`)로 고른 곳에 원본 바이트를 복사(뒤에서, 토스트).
+**드라이브에 저장(2026-11-24, 사용자 요청; 이후 카드 버튼은 공유 아이콘으로 통합, 아래는 남겨 둔 저장 구현)**: 기존 파일 카드 아래 버튼 → `ACTION_CREATE_DOCUMENT`(이름·MIME 채움, `files/SaveCopy`)로 고른 곳에 원본 바이트를 복사(뒤에서, 토스트).
 OAuth·Drive API 없음. 라벨은 Drive 문서 제공자(`com.google.android.apps.docs.storage`, 매니페스트 `<queries>`) 유무로 "드라이브에 저장"/"다른 곳에 저장".
 마지막 저장 위치(`findDocumentPath`로 구한 부모, 안 되면 그 문서)를 `EXTRA_INITIAL_URI`로 다시 쓴다. 처음부터 Drive 루트로 여는 것은 하지 않는다(다른 제공자의 루트 조회는 MANAGE_DOCUMENTS가 필요).
 원본이 정리돼 없으면 카드에 버튼 대신 "다시 받기", 저장 중 원본이 없으면 만든 빈 문서를 지운다.
@@ -229,7 +250,8 @@ OAuth·Drive API 없음. 라벨은 Drive 문서 제공자(`com.google.android.ap
 **공유 받기·파일 카드 버튼(2026-11-24)**: "공유 → 영민이"(`chat/ShareReceiverActivity`, exported, ACTION_SEND/SEND_MULTIPLE `*/*`)는 받은 즉시 파일을 기존 첨부 경로(`AttachmentImporter`, 5개·50MB)로 복사하고
 글(EXTRA_TEXT, 제목)은 입력창에 채워 새 대화로 연다(자동 전송 없음). content://만 받고 이 앱 자신의 제공자 주소·file://은 버린다(내부 파일 유출 방지).
 채팅 화면으로는 무작위 키만 넘기고 내용은 메모리(`ShareInbox`)에 둔다(exported 채팅 화면이 엑스트라의 첨부 경로를 믿지 않게). 첫 설정 전이면 버리고 안내로 보낸다.
-파일 카드 아래 버튼: 열기 · 공유 · 드라이브에 저장(공유는 전에 길게 누르기에만 있었음, 카드 길게 누르기는 뺐고 사진 썸네일은 그대로), 지워진 파일이면 다시 받기.
+파일 카드는 누르면 열기, 카드 바깥 오른쪽에는 텍스트 없는 공유 아이콘만 표시(2026-11-24 사용자 요청). 기존 열기 · 공유 · 드라이브에 저장 버튼 행은 제거했고, Drive 저장도 시스템 공유 목록에서 고른다. 사진 썸네일은 기존처럼 길게 눌러 공유하고, 지워진 파일이면 다시 받기.
+비서가 읽으려고 받은 파일(`save_to_phone=false`, `referenceOnly`)과 PDF 쪽 미리보기는 "참고 자료 N개" 아래 기본 접힘으로 표시한다. 펼치면 기존 파일 카드·미리보기로 열 수 있다. 사용자가 요청한 다운로드·생성 파일은 바로 보인다. 분류는 대화 JSON에 저장하며 옛 기록은 폰 사본 없는 파일과 쪽 미리보기를 참고 자료로 본다.
 
 **Phase 4: 첫 실행 안내 — 구현됨.** Montage(Compose) 기반. 환영 → eTL 토큰(실제로 접속해 확인한 뒤 저장) → ChatGPT 로그인
 (브라우저 기본, 코드 방식은 브라우저가 안 될 때만 예비로 노출, 로그인된 상태에서 계정 전환 가능) → 알림 → 완료(추천 질문).
@@ -349,7 +371,7 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   - 로그(`phase0.log`)는 1MB에서 `.1`로 한 번 회전하고, 모든 줄을 `LogRedact`로 가린다(URL 쿼리·사용자 정보, 기기 코드, Bearer·JWT·sk- 키).
   - 설정 "eTL 연결 해제"(`etl/EtlDisconnect`): 토큰 + eTL 캐시(etl_snapshot, notify_watch, timetable.weekly, 계획서 첨부, 게시판 세션). 대화·받은 파일·알림 기록·내 마감은 남긴다.
   - 로컬 CONNECT 프록시는 프로세스마다 새 Basic 자격 증명을 요구하고 `http://user:pass@127.0.0.1:port`로 넘긴다. **기기에서 Codex가 자격 증명을 보내는지 아직 확인하지 못했다**(안 보내면 채팅 전체가 막힘).
-  - code-mode host의 gRPC(127.0.0.1)는 인증이 없다. 세션 ID가 UUIDv4라 다른 앱이 우리 세션을 가로챌 수는 없고, 자기 세션으로 JS 실행만 가능하다(고치지 않음).
+  - code-mode host는 private stdio 파이프만 사용한다. 원래 인증이 없던 loopback gRPC 포트는 열지 않는다.
 - 캘린더 일정(공유 캘린더의 남이 쓴 글 포함)은 신뢰하지 않는 데이터다(AGENTS.md "캘린더"). 비서가 일정을 읽으면 그 내용은 사용자 ChatGPT 계정으로 OpenAI에 간다(스위치 켤 때 안내).
   비서의 캘린더 쓰기는 사용자가 직접 요청했을 때만, 고른 캘린더 안만, 매번 채팅 한 줄 + 되돌리기 기록. 앱이 직접 보내는 네트워크는 없다(구글 캘린더는 계정 동기화가 올린다).
 - 앱에는 분석 SDK나 외부 서버 전송을 넣지 않는다.

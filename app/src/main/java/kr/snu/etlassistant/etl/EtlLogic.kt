@@ -161,7 +161,11 @@ object EtlLogic {
             !Regex("sessionless_launch", RegexOption.IGNORE_CASE).containsMatchIn(decoded)
     }
 
-    private val SIGNED = Regex("([?&](?:verifier|sf_verifier|download_frd_token|session_token)=)[^&#\"\\s]+", RegexOption.IGNORE_CASE)
+    private val SIGNED_PARAMETERS = setOf("verifier", "sf_verifier", "download_frd_token", "session_token", "access_token", "refresh_token", "id_token", "api_key", "token", "signature", "sig", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "x-goog-signature", "x-goog-credential", "key-pair-id", "policy")
+    // 공지·과제 HTML의 href에서는 &가 &amp; / &#38; / &#x26;으로 바뀌기도 한다.
+    private val SIGNED = Regex("([?&](?:(?:amp|#0*38|#x0*26);)*(?:${SIGNED_PARAMETERS.joinToString("|") { Regex.escape(it) }})=)(?:&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]*);|[^&#\"'<>\\s])+", RegexOption.IGNORE_CASE)
+    private fun secretKey(key: String) = key.lowercase().replace("_", "").replace("-", "")
+    private val SECRET_KEYS = (SIGNED_PARAMETERS + setOf("apikey", "authorization", "client_secret", "password", "secret", "xn_api_token")).map(::secretKey).toSet()
     private val FEED = Regex("(/feeds/[a-z_]+/)[^\\s\"?#]+", RegexOption.IGNORE_CASE)
 
     /** 서명 링크(파일 verifier, session_token)와 피드 주소의 비밀 부분을 ***로 가린다. 모델에게 주기 전에 쓴다. */
@@ -171,8 +175,21 @@ object EtlLogic {
     fun unsign(v: Any?): Any? = when (v) {
         is String -> unsignText(v)
         is JSONArray -> JSONArray().also { out -> for (i in 0 until v.length()) out.put(unsign(v.opt(i))) }
-        is JSONObject -> JSONObject().also { out -> v.keys().forEach { k -> out.put(k, unsign(v.opt(k)) ?: JSONObject.NULL) } }
+        is JSONObject -> JSONObject().also { out -> v.keys().forEach { k -> out.put(k, if (secretKey(k) in SECRET_KEYS) "***" else unsign(v.opt(k)) ?: JSONObject.NULL) } }
         else -> v
+    }
+
+    /** 모든 도구 결과의 마지막 경계. 알려진 인증 원문은 본문·에러에 반사되어도 모델에 넘기지 않는다. */
+    fun modelText(value: Any, secrets: List<String> = emptyList()): String {
+        val known = secrets.filter { it.isNotEmpty() }
+        fun text(s: String) = known.fold(s) { out, secret -> out.replace(secret, "***") }
+        fun scrub(v: Any?): Any? = when (v) {
+            is String -> text(v)
+            is JSONArray -> JSONArray().also { out -> for (i in 0 until v.length()) out.put(scrub(v.opt(i))) }
+            is JSONObject -> JSONObject().also { out -> v.keys().forEach { k -> out.put(text(k), scrub(v.opt(k)) ?: JSONObject.NULL) } }
+            else -> v
+        }
+        return (scrub(unsign(value)) ?: JSONObject.NULL).toString()
     }
 
     // ---- 제출 판정 ----------------------------------------------------------

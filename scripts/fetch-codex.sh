@@ -94,8 +94,9 @@ install -m 0755 "$BIN" "$OUT_BIN"
 echo "설치: $OUT_BIN ($(stat -c %s "$OUT_BIN") bytes)"
 
 # code-mode host: 계정으로 쓸 수 있는 모델은 전부 code_mode_only라서 MCP 도구를 부르려면 필요하다.
-# `codex app-server --code-mode-host grpc://127.0.0.1:PORT`로 연결하므로 `codex` 바이너리 옆에 둘 필요는 없다.
-# nativeLibraryDir에는 lib*.so만 풀리므로 libcodex-code-mode-host.so로 설치한다.
+# 다운로드 원본은 libcodex-code-mode-host.so로 보관한다. 빌드의 preparePrivateCodexRuntime은
+# 검증한 원본을 보존하고 generated jni에 libcodex-modehost.so로 복사한다. Codex의 같은 길이
+# 경로 문자열만 바꾸므로 기본 grpc+stdio provider가 직접 실행하며 TCP 리스너는 열지 않는다.
 HOST_ASSET="codex-code-mode-host-$TARGET.tar.gz"
 read -r HOST_URL HOST_DIGEST < <(python3 -I - "$WORK/release.json" "$HOST_ASSET" <<'PY'
 import json, sys

@@ -111,6 +111,7 @@ class SettingsState {
 
     var notify by mutableStateOf(NotifySettings())
     var notifyPermitted by mutableStateOf(true)
+    var exactAlarmsAllowed by mutableStateOf(true)
     /** 배터리 최적화 예외인가(아니면 앱을 닫았을 때 알림 확인이 늦거나 끊길 수 있다). */
     var batteryUnrestricted by mutableStateOf(true)
     var powerSave by mutableStateOf(false)
@@ -150,11 +151,13 @@ class SettingsActions(
     val pickTime: (initialMinutes: Int, onPicked: (Int) -> Unit) -> Unit,
     val requestNotifyPermission: () -> Unit,
     val requestBatteryExemption: () -> Unit,
+    val requestExactAlarms: () -> Unit = {},
     val checkNow: () -> Unit,
     val briefNow: () -> Unit,
     val setModelChoice: (ModelChoice) -> Unit,
     val replayOnboarding: () -> Unit,
     val openHistory: () -> Unit = {},
+    val openPrivacyPolicy: () -> Unit = {},
     val openCourseAlerts: () -> Unit = {},
     val openCalendarExport: () -> Unit = {},
     val openTimetable: () -> Unit = {},
@@ -746,6 +749,17 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
                 SoftButton("권한 요청", onClick = a.requestNotifyPermission)
             }
             Spacer(Modifier.height(10.dp))
+            StatusBanner(
+                if (s.exactAlarmsAllowed) "정확한 알림: 허용됨" else "정확한 알림: 허용 안 됨",
+                if (s.exactAlarmsAllowed) StatusTone.POSITIVE else StatusTone.CAUTION,
+            )
+            Spacer(Modifier.height(6.dp))
+            Caption("내 일정·마감·수업 알림 시각에 사용해요. 허용하지 않으면 절전 중 알림이 오래 늦어질 수 있어요. 서로 가까운 알림도 시스템 제한으로 늦어질 수 있어요. 정기 브리핑·새 공지 확인은 정확한 시각을 보장하지 않아요.")
+            if (!s.exactAlarmsAllowed) {
+                Spacer(Modifier.height(10.dp))
+                SoftButton("정확한 알림 허용", onClick = a.requestExactAlarms)
+            }
+            Spacer(Modifier.height(10.dp))
             if (s.batteryUnrestricted) {
                 StatusBanner("배터리: 제한 없음", StatusTone.POSITIVE)
             } else {
@@ -913,8 +927,9 @@ private fun AboutSection(s: SettingsState, a: SettingsActions) {
             Spacer(Modifier.height(4.dp))
             Caption("만든 사람: 박영민 · 버전 $version")
             Spacer(Modifier.height(10.dp))
-            Caption("서울대학교의 공식 앱이 아니에요. eTL 데이터는 읽기만 하고, 토큰과 파일은 이 폰에만 저장돼요.")
+            Caption("서울대학교의 공식 앱이 아니에요. 개발자는 개인정보를 수집하지 않아요. 질문·첨부와 비서가 불러온 정보는 OpenAI로 전송돼요.")
             Spacer(Modifier.height(4.dp))
+            LinkRow("개인정보 처리방침", onClick = a.openPrivacyPolicy)
             HyperLink("건의사항 · 오류 제보", onClickLabel = "제보 안내 열기") { feedbackOpen = true }
             val newVersion = s.updateVersion
             val canDownload = newVersion != null && s.updateUrl != null

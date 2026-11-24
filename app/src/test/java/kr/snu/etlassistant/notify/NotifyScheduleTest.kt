@@ -104,41 +104,16 @@ class NotifyScheduleTest {
         assertTrue(NotifySchedule.authFailureDue(now - 24 * hour, now))
     }
 
-    // ---- 마감 알람 다가가기 ------------------------------------------------------
-
-    private val aMin = 60_000L
-    private val aHour = 60 * aMin
-
-    /** 시스템 최대 지연(남은 시간 × 0.75, 최대 1시간)을 넣어 끝까지 따라가 본다. 목표를 넘지 않고, 마지막 지연은 45초 이하. */
-    private fun worstCase(startLeft: Long): Pair<Long, Int> {
-        val target = 1_000_000_000L
-        var now = target - startLeft
-        var wakes = 0
-        while (true) {
-            val (at, final) = NotifySchedule.nextAlarm(now, target)
-            val fire = at + minOf(((at - now) * 0.75).toLong(), aHour)
-            wakes++
-            if (final) return (fire - target) to wakes
-            assertTrue("중간 알람이 목표를 넘었다", fire < target)
-            now = fire
-            assertTrue(wakes < 30)
+    @Test fun oneAlarmTargetsTheReminderWithoutIntermediateWakes() {
+        for (left in listOf(1_000L, min, 90 * min, 3 * 24 * hour)) {
+            assertEquals(NotifySchedule.AlarmRequest(1_000L + left, true), NotifySchedule.nextAlarm(1_000L, 1_000L + left, true))
+            assertEquals(NotifySchedule.AlarmRequest(1_000L + left, false), NotifySchedule.nextAlarm(1_000L, 1_000L + left, false))
         }
     }
 
-    @Test fun farTargetApproachesAndEndsWithin45Seconds() {
-        for (left in listOf(3 * 24 * aHour, 5 * aHour, 2 * aHour + 1, 90 * aMin, 30 * aMin, 9 * aMin, 4 * aMin, 2 * aMin)) {
-            val (late, wakes) = worstCase(left)
-            assertTrue("left=$left late=$late", late <= 45_000L)
-            assertTrue("left=$left wakes=$wakes", wakes <= 8)
-        }
-    }
-
-    @Test fun nearTargetIsFinal() {
-        assertEquals(1_000L to true, NotifySchedule.nextAlarm(0, 1_000))
-        assertEquals(aMin to true, NotifySchedule.nextAlarm(0, aMin))
-        assertEquals((4 * aMin) to false, NotifySchedule.nextAlarm(0, 8 * aMin))
-        assertEquals((9 * aHour - 5 * aMin) to false, NotifySchedule.nextAlarm(0, 10 * aHour))
-        assertEquals((45 * aMin) to false, NotifySchedule.nextAlarm(0, 90 * aMin))
+    @Test fun overdueAlarmIsRequestedNowWithEitherAccessState() {
+        assertEquals(NotifySchedule.AlarmRequest(2_000L, true), NotifySchedule.nextAlarm(2_000L, 1_000L, true))
+        assertEquals(NotifySchedule.AlarmRequest(2_000L, false), NotifySchedule.nextAlarm(2_000L, 1_000L, false))
     }
 
     @Test fun rearmAfterRebootOrTimeChange() {

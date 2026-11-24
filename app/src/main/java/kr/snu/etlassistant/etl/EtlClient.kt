@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -56,7 +57,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             } catch (_: Exception) {
                 throw EtlException("다음 페이지 링크를 해석할 수 없어요")
             }
-            if (!abs.startsWith("$origin/")) throw EtlException("다음 페이지 링크가 eTL 밖을 가리켜요") // 토큰 유출 방지
+            if (!sameOrigin(abs, origin)) throw EtlException("다음 페이지 링크가 eTL 밖을 가리켜요") // 토큰 유출 방지
             url = abs
         }
         return out
@@ -67,11 +68,11 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
      * Authorization은 eTL origin 요청에만 붙인다(서명된 스토리지 URL에는 붙이지 않는다).
      */
     fun download(rawUrl: String, out: OutputStream, maxBytes: Long = MAX_DOWNLOAD): Download {
-        var url = URL(URL("$origin/"), rawUrl).toString()
-        if (!url.startsWith("$origin/")) throw EtlException("다운로드 주소가 eTL이 아니에요")
+        var url = resolveUrl("$origin/", rawUrl)
+        if (!sameOrigin(url, origin)) throw EtlException("다운로드 주소가 eTL이 아니에요")
         val shownPath = URL(url).path
         repeat(MAX_REDIRECTS + 1) {
-            val onEtl = url.startsWith("$origin/")
+            val onEtl = sameOrigin(url, origin)
             val c = open(url, withToken = onEtl, json = false, readTimeoutMs = DOWNLOAD_READ_TIMEOUT_MS)
             try {
                 val code = try {
@@ -81,8 +82,8 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                 }
                 if (code in 300..399) {
                     val loc = c.getHeaderField("Location") ?: throw EtlException("리다이렉트 위치가 없어요: $shownPath")
-                    val next = URL(URL(url), loc).toString()
-                    if (!next.startsWith("https://")) throw EtlException("https가 아닌 리다이렉트를 거부했어요: $shownPath")
+                    val next = resolveUrl(url, loc)
+                    if (!URL(next).protocol.equals("https", true) || URL(next).userInfo != null) throw EtlException("안전하지 않은 리다이렉트를 거부했어요: $shownPath")
                     url = next
                     return@repeat
                 }
@@ -121,6 +122,8 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
     }
 
     private fun open(url: String, withToken: Boolean, json: Boolean, readTimeoutMs: Int = READ_TIMEOUT_MS): HttpURLConnection {
+        // 인증을 붙이는 마지막 지점에서도 origin을 확인한다. 리다이렉트는 호출자가 직접 처리한다.
+        if (withToken && !sameOrigin(url, origin)) throw EtlException("eTL 밖으로 인증 정보를 보낼 수 없어요")
         val c = URL(url).openConnection() as HttpURLConnection
         c.instanceFollowRedirects = false
         c.connectTimeout = CONNECT_TIMEOUT_MS
@@ -151,18 +154,22 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             }
             if (code == 401) {
                 val text = try {
-                    c.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty().lowercase()
+                    c.errorStream?.use { it.readNBytesCompat(MAX_ERROR_BODY).toString(Charsets.UTF_8) }.orEmpty().lowercase()
                 } catch (_: IOException) {
                     ""
                 }
-                // 서버가 준 오류 문구 일부를 덧붙인다(토큰 원문은 제거). 판정 규칙을 맞추는 데 쓴다.
+                // 서버 본문은 토큰·서명 URL을 반사할 수 있으므로 정해 둔 진단 문구만 사용한다.
                 val hint = errorHint(text)
                 if (isPermissionDenied(text)) throw EtlException("권한 없음(401): $path$hint", "forbidden")
                 throw EtlAuthException(AUTH_REJECTED + hint + " [$path]")
             }
             if (code !in 200..299) throw EtlException("eTL 요청 실패($code): $path", "http-$code")
             val body = try {
-                c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
+                c.inputStream.use {
+                    val bytes = it.readNBytesCompat(MAX_JSON_BODY + 1)
+                    if (bytes.size > MAX_JSON_BODY) throw EtlException("eTL 응답이 너무 커요: $path", "parse")
+                    bytes.toString(Charsets.UTF_8)
+                }
             } catch (e: IOException) {
                 throw EtlException("eTL 응답 읽기 실패: $path (${e.javaClass.simpleName})", ioKind(e))
             }
@@ -199,6 +206,8 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
 
         fun ioKind(e: IOException): String = if (e is java.net.SocketTimeoutException) "timeout" else "network"
         const val MAX_DOWNLOAD = 300L shl 20
+        private const val MAX_JSON_BODY = 16 * 1024 * 1024
+        private const val MAX_ERROR_BODY = 64 * 1024
         private const val AUTH_REJECTED = "eTL이 토큰을 거부했어요(401): 만료됐거나 올바르지 않아요"
         private val TOKEN_RE = Regex("[\\u0021-\\u007e]+")
         private val XSSI = Regex("^\\s*while\\(1\\);")
@@ -214,12 +223,38 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             return mentionsDenied && !mentionsToken
         }
 
-        /** 오류 본문에서 message 문구만 뽑아 160자까지. 토큰이 섞여 있으면 가린다. */
+        /** 서버가 반사한 임의의 본문을 모델·로그에 보내지 않고, 알려진 오류 종류만 안내한다. */
         fun errorHint(lowerBody: String): String {
-            val m = Regex("\"message\"\\s*:\\s*\"([^\"]{1,160})").find(lowerBody)?.groupValues?.get(1)
-                ?: lowerBody.trim().take(80).takeIf { it.isNotEmpty() && !it.startsWith("<") }
-                ?: return ""
-            return " — 서버 메시지: $m"
+            return when {
+                isPermissionDenied(lowerBody) -> " — 서버 메시지: 사용자에게 이 동작을 수행할 권한이 없음"
+                "token" in lowerBody || "토큰" in lowerBody -> " — 서버 메시지: 토큰 인증 실패"
+                else -> ""
+            }
+        }
+
+        internal fun sameOrigin(rawUrl: String, origin: String = BASE_URL): Boolean = try {
+            val url = URL(rawUrl)
+            val base = URL(origin)
+            url.userInfo == null && url.protocol.equals(base.protocol, true) && url.host.equals(base.host, true) &&
+                (if (url.port < 0) url.defaultPort else url.port) == (if (base.port < 0) base.defaultPort else base.port)
+        } catch (_: Exception) { false }
+
+        private fun resolveUrl(base: String, relative: String): String = try {
+            URL(URL(base), relative).toString()
+        } catch (_: Exception) {
+            throw EtlException("eTL 파일 주소를 해석할 수 없어요")
+        }
+
+        // InputStream.readNBytes는 일부 지원 Android 버전에 없으므로 직접 상한을 둔다.
+        private fun InputStream.readNBytesCompat(limit: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (out.size() < limit) {
+                val count = read(buffer, 0, minOf(buffer.size, limit - out.size()))
+                if (count < 0) break
+                out.write(buffer, 0, count)
+            }
+            return out.toByteArray()
         }
 
         fun parseBody(body: String, path: String): Any {

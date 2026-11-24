@@ -41,6 +41,11 @@ object CodexConfig {
 
     const val SECRET_ENV = "ETL_MCP_SECRET"
 
+    /** CLI overrides also cover project config and every developer-screen command. */
+    fun secureArgs(args: List<String>): List<String> = args + listOf(
+        "-c", "cli_auth_credentials_store=\"ephemeral\"",
+    )
+
     /** [mcpPort]가 null이면 MCP 서버 항목 없이 쓴다. */
     fun write(codexHome: File, mcpPort: Int?) {
         File(codexHome, "config.toml").writeText(toml(mcpPort))
@@ -50,10 +55,22 @@ object CodexConfig {
     /** config.toml 본문. 키는 고정한 Codex(rust-v0.170.0)의 config 스키마에서 확인했다. */
     fun toml(mcpPort: Int?): String =
         buildString {
+            appendLine("web_search = \"disabled\"")
+            // ChatGPT 인증정보는 앱의 Keystore 저장소가 관리하며 Codex는 메모리에서만 사용한다.
+            appendLine("cli_auth_credentials_store = \"ephemeral\"")
+            appendLine()
             // ChatGPT 계정에 연결된 커넥터(codex_apps: Gmail 등 140여 개 도구)가 자동으로 붙는다.
             // eTL 비서에는 필요 없고, 신뢰할 수 없는 eTL 본문이 그 도구를 건드릴 위험만 키우므로 끈다.
             appendLine("[features]")
             appendLine("apps = false")
+            // 학습 비서는 파일 읽기를 경로 검증하는 eTL 도구로 처리한다. 셸로 인증 파일·환경변수를 읽지 못하게 한다.
+            appendLine("shell_tool = false")
+            appendLine("unified_exec = false")
+            // 작업 폴더 밖 이미지에는 접근하지 못하도록 경로를 검사하는 etl_view_image만 쓴다.
+            appendLine("view_image = false")
+            appendLine()
+            appendLine("[shell_environment_policy]")
+            appendLine("inherit = \"none\"")
             appendLine()
             // OpenAI 사용 통계(analytics 이벤트, 기본 Statsig 지표)를 끈다. app-server는 원래 기본이 꺼짐이지만
             // (`--analytics-default-enabled`를 주지 않음) 버전이 바뀌어도 꺼진 채로 있게 명시한다.
@@ -129,7 +146,10 @@ object CodexConfig {
           `skip`이 있으면 그 이유와 `url`을 안내한다(동영상, 잠긴·숨긴 파일은 받지 않는다). 목록이 비면 게시판(`etl_boards`)을 찾아보고,
           거기에도 없으면 주차학습(LearningX) 자료일 수 있으니 eTL에서 직접 확인하도록 안내한다.
         - 파일 내용이 필요하면(요약, 채점, 검토 등) `etl_download`로 받은 뒤 돌려준 `workspace_path`를 쓴다. 텍스트·코드·문서(docx·pptx·hwp·hwpx)는 `etl_read_file`,
-          PDF는 `etl_render_pages`로 쪽 이미지를 만들어 이미지 보기 기능으로 직접 본다. 폰에 저장할 필요가 없으면 `save_to_phone=false`로 받는다.
+          PDF는 `etl_render_pages`로 쪽 이미지를 만들고 `etl_view_image`에 반환된 경로를 넣어 직접 본다. 이미지 파일도 `etl_view_image`로 읽는다.
+          이 도구는 `etl-files/` 안의 파일만 읽는다. 사용자가 파일 자체를 받거나 저장해 달라고 요청했을 때만 `save_to_phone=true`로 받는다.
+          code mode에서는 `etl_view_image` 결과의 `content` 중 `type=image` 블록을 `image(...)`로 출력한다. base64를 `text`나 로그로 출력하지 않는다.
+          요약·검토·질문에 답하려고 비서가 확인하는 자료는 `save_to_phone=false`로 받는다(채팅의 접힌 참고 자료에 표시된다).
         - 사용자가 사진이나 파일을 첨부하면 메시지 끝에 `[사용자가 첨부함]` 목록이 붙는다. 사진은 이미지로 함께 오고,
           그 밖의 파일은 `etl-files/uploads/` 경로로 오므로 `etl_read_file`(텍스트·docx·pptx·hwp·hwpx), `etl_render_pages`(PDF)로 읽는다.
           한글 문서 결과에 `preview_only`가 있으면 배포용·암호 문서라 앞부분만 읽은 것이니 그 사실(`note`)을 밝힌다.
@@ -220,8 +240,8 @@ object CodexConfig {
         - 사용자가 고르면 앱이 폰 Download/etl에 받아 둔 eTL 파일을 2·7·30일 뒤 자동으로 지운다(비서가 만든 파일은 지우지 않는다).
           예전에 받은 파일을 찾거나 "그 파일 어디 있어?"라고 물으면 자동 정리됐을 수 있다고 알리고, 필요하면 `etl_download`로 다시 받는다.
           기간은 앱의 설정 → 받은 파일에서 바꾼다고 안내한다.
-        - 사용자가 파일을 Google Drive 등에 저장하고 싶어 하면 채팅의 파일 카드 아래 "드라이브에 저장"(Drive 앱이 없으면 "다른 곳에 저장") 버튼을
-          누르라고 안내한다. 비서가 도구로 직접 Drive에 올릴 수는 없다.
+        - 사용자가 파일을 Google Drive 등에 저장하고 싶어 하면 채팅의 파일 카드 옆 공유 아이콘을
+          누르고 공유 목록에서 Drive 등 저장할 앱을 고르라고 안내한다. 비서가 도구로 직접 Drive에 올릴 수는 없다.
 
         ## eTL API 경로 (`etl_get`)
         - 전용 도구로 답할 수 없는 eTL 정보는 "조회할 수 없다"고 답하기 전에 아래 경로를 `etl_get`으로 조회한다.

@@ -3,10 +3,10 @@ package kr.snu.etlassistant.phase0
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import kr.snu.etlassistant.notify.LearningXOpenActivity
 import kr.snu.etlassistant.etl.CodexConfig
 import kr.snu.etlassistant.etl.EtlService
 import java.io.File
@@ -122,6 +122,8 @@ object CodexRunner {
      * 개발 화면(exec, login 등)과 채팅 세션(app-server)이 같이 쓴다.
      */
     fun prepare(args: List<String>, opts: Options, label: String? = null): Prepared? {
+        // Never start a process while an old plaintext credential file remains unmanaged.
+        kr.snu.etlassistant.codex.ChatGptAuthStorage.prepare(app)
         if (label != null) {
             log.line("")
             log.line("===== $label =====")
@@ -143,7 +145,8 @@ object CodexRunner {
         val codexHome = File(files, "codex-home").apply { mkdirs() }
         val workspace = File(files, "workspace").apply { mkdirs() }
 
-        val pb = ProcessBuilder(listOf(bin.path) + args).directory(workspace)
+        val secureArgs = CodexConfig.secureArgs(args)
+        val pb = ProcessBuilder(listOf(bin.path) + secureArgs).directory(workspace)
         val env = pb.environment()
         val set = LinkedHashMap<String, String>()
         set["HOME"] = home.path
@@ -209,50 +212,18 @@ object CodexRunner {
         env.putAll(set)
 
         log.line("[app] cwd: ${workspace.path}")
-        log.line("[app] cmd: ${(listOf(bin.path) + args).joinToString(" ") { shellQuote(it) }}")
+        log.line("[app] cmd: ${(listOf(bin.path) + secureArgs).joinToString(" ") { shellQuote(it) }}")
         set.forEach { (k, v) -> log.line("[app] env $k=${if (k in SECRET_ENVS) "***" else if (k in PROXY_VARS) v.replace(Regex("//[^@/]*@"), "//***@") else v}") }
         unset.forEach { log.line("[app] env unset $it") }
-        return Prepared(pb, workspace, args)
-    }
-
-    /** code-mode host 프로세스와 포트. */
-    class Host(val process: Process, val port: Int) {
-        fun stop() {
-            process.destroy()
-        }
+        return Prepared(pb, workspace, secureArgs)
     }
 
     /**
-     * code-mode host를 띄운다. ChatGPT 계정 모델은 전부 code_mode_only라서 MCP 도구를 부르려면 필요하다.
-     * `libcodex-code-mode-host.so`는 `nativeLibraryDir`에서 직접 실행한다.
+     * 기본 provider가 sibling libcodex-modehost.so를 grpc+stdio 파이프로 직접 실행·종료한다.
+     * 빌드가 검증한 동일 길이 ELF 경로 치환을 쓴다. 다른 앱에 노출되는 TCP fallback은 없다.
      */
-    fun startHost(workspace: File): Host? {
-        val hostBin = File(app.applicationInfo.nativeLibraryDir, "libcodex-code-mode-host.so")
-        if (!hostBin.exists()) {
-            log.line("[app] code-mode host가 없습니다(libcodex-code-mode-host.so). scripts/fetch-codex.sh를 실행하세요.")
-            return null
-        }
-        val port = freePort()
-        val proc = try {
-            ProcessBuilder(hostBin.path, "--listen", "grpc://127.0.0.1:$port").directory(workspace).start()
-        } catch (e: IOException) {
-            log.line("[app] code-mode host 실행 실패: ${e.message}")
-            return null
-        }
-        pump(proc.inputStream, "host")
-        pump(proc.errorStream, "host-err")
-        if (!waitForPort(port, 8000)) {
-            log.line("[app] code-mode host가 8초 안에 포트를 열지 않았습니다.")
-            proc.destroyForcibly()
-            return null
-        }
-        log.line("[app] code-mode host: 127.0.0.1:$port")
-        return Host(proc, port)
-    }
-
-    /** app-server를 stdio로 띄우고 호스트에 연결하는 인자. */
-    fun appServerArgs(host: Host): List<String> =
-        listOf("app-server", "--listen", "stdio://", "--code-mode-host", "http://127.0.0.1:${host.port}", "--enable", "code_mode_host")
+    fun appServerArgs(): List<String> =
+        listOf("app-server", "--listen", "stdio://", "--enable", "code_mode_host")
 
     fun pump(stream: InputStream, tag: String) {
         readerThread(stream, tag, AtomicBoolean(true))
@@ -309,10 +280,10 @@ object CodexRunner {
 
     fun openUrl(url: String) {
         lastUrl = url
-        log.line("[app] 브라우저로 URL 열기: $url")
+        log.line("[app] 외부 URL 열기: $url")
         main.post {
             try {
-                app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                app.startActivity(LearningXOpenActivity.intent(app, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             } catch (e: ActivityNotFoundException) {
                 log.line("[app] URL을 열 앱이 없습니다: ${e.message}")
             } catch (e: Exception) {
@@ -330,21 +301,6 @@ object CodexRunner {
             log.line("[proxy] start 실패: ${e.message}")
             null
         }
-    }
-
-    private fun freePort(): Int = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
-
-    private fun waitForPort(port: Int, timeoutMs: Long): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 300) }
-                return true
-            } catch (_: IOException) {
-                Thread.sleep(150)
-            }
-        }
-        return false
     }
 
     private fun shellQuote(s: String): String =

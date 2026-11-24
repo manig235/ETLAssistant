@@ -27,6 +27,8 @@ data class Attachment(
     val shownPath: String? = null,
     /** 비서가 PDF를 읽으려고 만든 쪽 이미지인가(작은 미리보기로만 보인다). */
     val pagePreview: Boolean = false,
+    /** 전달용 결과물이 아니라 비서가 내용을 확인하려고 받은 참고 자료. */
+    val referenceOnly: Boolean = pagePreview,
 ) {
     val isImage: Boolean get() = mime.startsWith("image/")
 
@@ -34,13 +36,15 @@ data class Attachment(
         .put("name", name).put("mime", mime).put("size", size)
         .put("path", path ?: JSONObject.NULL).put("uri", uri ?: JSONObject.NULL)
         .put("shownPath", shownPath ?: JSONObject.NULL).put("pagePreview", pagePreview)
+        .put("referenceOnly", referenceOnly)
 
     companion object {
         fun fromJson(o: JSONObject): Attachment? {
             val name = o.optString("name").takeIf { it.isNotEmpty() } ?: return null
             fun s(k: String) = if (o.isNull(k)) null else o.optString(k).takeIf { it.isNotEmpty() }
             return Attachment(name, o.optString("mime", "application/octet-stream"), o.optLong("size"),
-                s("path"), s("uri"), s("shownPath"), o.optBoolean("pagePreview", false))
+                s("path"), s("uri"), s("shownPath"), o.optBoolean("pagePreview", false),
+                o.optBoolean("referenceOnly", o.optBoolean("pagePreview", false) || (s("uri") == null && s("shownPath") == null)))
         }
     }
 }
