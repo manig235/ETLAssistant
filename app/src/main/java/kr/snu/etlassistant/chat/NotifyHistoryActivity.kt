@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.wanted.android.wanted.design.actions.button.textbutton.WantedTextButton
 import com.wanted.android.wanted.design.theme.DesignSystemTheme
@@ -48,6 +50,8 @@ import java.time.Instant
 class NotifyHistoryActivity : AppCompatActivity() {
     private val store by lazy { NotifyHistory(this) }
     private var items by mutableStateOf<List<HistoryEntry>>(emptyList())
+    /** 같은 공지로 이미 넣은 내 마감(공지 ID → 내 마감 ID). "등록됨"으로 보인다. */
+    private var registered by mutableStateOf<Map<Long, Long>>(emptyMap())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +62,16 @@ class NotifyHistoryActivity : AppCompatActivity() {
                 onBack = { finish() },
                 onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                 onClear = { store.clear(); reload() },
+                registered = registered,
+                // 시험·과제 공지의 "내 일정에 등록": 미리 채운 추가 창. 이미 넣었으면 그 항목을 고치기로 연다.
+                onRegister = { draft, existing ->
+                    val i = when {
+                        existing != null && existing > 0 -> Intent(this, MyDeadlinesActivity::class.java).putExtra(kr.snu.etlassistant.widget.HomeWidgets.EXTRA_DEADLINE_ID, existing)
+                        existing != null -> Intent(this, TimetableActivity::class.java) // 시간표에 반영된 보강·휴강
+                        else -> DraftIntents.open(this, draft)
+                    }
+                    runCatching { startActivity(i) }
+                },
             )
         }
     }
@@ -69,11 +83,17 @@ class NotifyHistoryActivity : AppCompatActivity() {
 
     private fun reload() {
         items = store.load().sortedByDescending { it.at }
+        // 공지 ID → 내 마감 ID(양수) 또는 -1(시간표 보강·휴강으로 반영됨).
+        registered = kr.snu.etlassistant.etl.TimetableChangeStore(this).load().mapNotNull { c -> c.sourceAnnouncementId?.let { it to -1L } }.toMap() +
+            kr.snu.etlassistant.notify.MyDeadlineStore(this).load().mapNotNull { d -> d.sourceAnnouncementId?.let { it to d.id } }.toMap()
     }
 }
 
 @Composable
-private fun HistoryScreen(items: List<HistoryEntry>, onBack: () -> Unit, onOpen: (String) -> Unit, onClear: () -> Unit) {
+private fun HistoryScreen(
+    items: List<HistoryEntry>, onBack: () -> Unit, onOpen: (String) -> Unit, onClear: () -> Unit,
+    registered: Map<Long, Long> = emptyMap(), onRegister: (String, Long?) -> Unit = { _, _ -> },
+) {
     DesignSystemTheme {
         val c = DesignSystemTheme.colors
         val t = DesignSystemTheme.typography
@@ -106,8 +126,20 @@ private fun HistoryScreen(items: List<HistoryEntry>, onBack: () -> Unit, onOpen:
                             Spacer(Modifier.height(2.dp))
                             Text(e.title, style = t.body1Medium, color = c.foregroundNeutralPrimary)
                             Text(if (open && !e.bigText.isNullOrBlank()) e.bigText else e.text, style = t.body2Regular, color = c.foregroundNeutralSecondary)
-                            if (open && e.url != null && e.url.startsWith("https://myetl.snu.ac.kr/")) {
-                                WantedTextButton(text = "eTL에서 열기", onClick = { onOpen(e.url) })
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                e.draft?.let { draft ->
+                                    val parsed = kr.snu.etlassistant.notify.ScheduleDraft.fromJson(draft)
+                                    val existing = parsed?.announcementId?.let { registered[it] }
+                                    val label = when {
+                                        existing != null -> if (parsed.timetable) "반영됨 · 열기" else "등록됨 · 열기"
+                                        else -> parsed?.actionLabel ?: kr.snu.etlassistant.notify.ScheduleDrafts.ACTION
+                                    }
+                                    WantedTextButton(text = label, onClick = { onRegister(draft, existing) },
+                                        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label })
+                                }
+                                if (open && e.url != null && e.url.startsWith("https://myetl.snu.ac.kr/")) {
+                                    WantedTextButton(text = "eTL에서 열기", onClick = { onOpen(e.url) })
+                                }
                             }
                         }
                     }

@@ -5,6 +5,7 @@ import kr.snu.etlassistant.etl.EtlAuthException
 import kr.snu.etlassistant.etl.EtlClient
 import kr.snu.etlassistant.etl.EtlException
 import kr.snu.etlassistant.etl.EtlLogic
+import kr.snu.etlassistant.etl.Queries
 import kr.snu.etlassistant.etl.EtlLogic.obj
 import kr.snu.etlassistant.etl.EtlLogic.str
 import org.json.JSONObject
@@ -149,7 +150,10 @@ object SnapshotFetcher {
                     title = a.str("title")?.takeIf { it.isNotBlank() } ?: "(제목 없음)",
                     postedAt = posted,
                     url = a.str("html_url") ?: a.str("url"),
-                    text = EtlLogic.htmlToText(a.str("message"), 600),
+                    // 시험 공지는 준비물 줄을 찾으려고 본문을 더 길게 둔다(알림에는 그 줄만 짧게 붙는다).
+                    text = EtlLogic.htmlToText(a.str("message"), 2000).let { full ->
+                        if (Queries.isExamAnnouncement(a.str("title"), full)) full else EtlLogic.htmlToText(a.str("message"), 600)
+                    },
                 )
             }
     }

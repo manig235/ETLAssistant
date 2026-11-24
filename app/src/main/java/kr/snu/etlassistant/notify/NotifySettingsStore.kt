@@ -24,6 +24,8 @@ class NotifySettingsStore(context: Context) {
             classLeadMinutes = prefs.getInt("classLeadMinutes", d.classLeadMinutes).coerceIn(1, 120),
             submitAlerts = prefs.getBoolean("submitAlerts", d.submitAlerts),
             newFileAlerts = prefs.getBoolean("newFileAlerts", d.newFileAlerts),
+            examDoneAlerts = prefs.getBoolean("examDoneAlerts", d.examDoneAlerts),
+            pendingSheet = prefs.getBoolean("pendingSheet", d.pendingSheet),
         )
     }
 
@@ -46,6 +48,8 @@ class NotifySettingsStore(context: Context) {
             .putInt("classLeadMinutes", s.classLeadMinutes)
             .putBoolean("submitAlerts", s.submitAlerts)
             .putBoolean("newFileAlerts", s.newFileAlerts)
+            .putBoolean("examDoneAlerts", s.examDoneAlerts)
+            .putBoolean("pendingSheet", s.pendingSheet)
             .apply()
     }
 

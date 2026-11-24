@@ -47,6 +47,8 @@ object TimetableLogic {
         val end: String? = null,
         val room: String? = null,
         val note: String? = null,
+        /** 공지 알림의 "시간표에 반영"으로 넣었으면 그 공지 ID(같은 공지로 두 번 넣지 않게). */
+        val sourceAnnouncementId: Long? = null,
     )
 
     data class Day(val date: LocalDate, val weekday: String, val classes: List<ClassRow>, val cancelled: List<ClassRow>)
@@ -90,7 +92,8 @@ object TimetableLogic {
         list.forEach { c ->
             arr.put(JSONObject().put("id", c.id).put("date", c.date.toString()).put("kind", c.kind).put("course", c.course)
                 .put("course_id", c.courseId ?: JSONObject.NULL).put("start", c.start ?: JSONObject.NULL).put("end", c.end ?: JSONObject.NULL)
-                .put("room", c.room ?: JSONObject.NULL).put("note", c.note ?: JSONObject.NULL))
+                .put("room", c.room ?: JSONObject.NULL).put("note", c.note ?: JSONObject.NULL)
+                .apply { c.sourceAnnouncementId?.let { put("src_ann", it) } })
         }
     }.toString()
 
@@ -103,7 +106,8 @@ object TimetableLogic {
             val start = normTime(o.str("start"))
             val end = normTime(o.str("end"))
             if (kind == "보강" && (start == null || end == null)) return@mapNotNull null
-            Change(o.optLong("id"), date, kind, o.optString("course"), o.optLong("course_id").takeIf { it > 0 }, start, end, o.str("room"), o.str("note"))
+            Change(o.optLong("id"), date, kind, o.optString("course"), o.optLong("course_id").takeIf { it > 0 }, start, end, o.str("room"), o.str("note"),
+                o.optLong("src_ann", 0L).takeIf { it > 0 })
         }
     }
 

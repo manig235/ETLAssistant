@@ -68,6 +68,10 @@ fun DownloadCleanupSettingsContent() {
  * "나중에" 버튼은 없다. 고르면 저장하고, 바깥을 눌러 닫으면 고른 것으로 치지 않고 다음에 한 번 더 묻는다
  * ([DownloadCleanupLogic.MAX_ASKS]번 닫으면 더 묻지 않고 정리하지 않는다. 설정에서 언제든 고를 수 있다).
  */
+/** 이번에 받은 파일 정리 선택 창이 뜰 차례인가(다른 자동 창이 겹치지 않게 미룬다). */
+fun cleanupPromptPending(context: android.content.Context): Boolean =
+    runCatching { DownloadCleanupLogic.shouldAsk(DownloadCleanup.period(context), DownloadCleanup.asks(context)) }.getOrDefault(false)
+
 @Composable
 fun CleanupPrompt() {
     val context = LocalContext.current.applicationContext

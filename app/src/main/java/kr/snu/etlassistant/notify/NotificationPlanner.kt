@@ -276,12 +276,18 @@ object NotificationPlanner {
         if (fresh.size <= ANN_INDIVIDUAL_MAX) {
             return fresh.map { a ->
                 val body = NoticeText.clean(a.text)
+                // 시험 공지면 준비물·지참 줄(최대 2줄, 60자)을 본문 앞에 붙인다(키워드 줄만, 날짜는 뽑지 않는다).
+                val supplies = if (Queries.isExamAnnouncement(a.title, a.text)) Queries.suppliesLines(a.text).map { NoticeText.clean(it) }.filter { it.isNotEmpty() } else emptyList()
+                val big = listOfNotNull(
+                    supplies.takeIf { it.isNotEmpty() }?.joinToString("\n", prefix = "준비물·지참: ") ,
+                    body.takeIf { it.isNotEmpty() }?.let { NoticeText.cut(it, ANN_BODY_MAX) },
+                ).joinToString("\n\n").ifEmpty { null }
                 Notice(
                     channel = Channel.ANNOUNCEMENT,
                     // 보강·휴강 공지는 따로 표시한다(ttokttok-pet watch.js announcementBadge).
                     title = NoticeText.cut(NoticeText.clean(a.courseName) + " · " + Queries.announcementBadge(a.title, a.text), NoticeText.TITLE_MAX),
                     text = NoticeText.safe(a.title, NoticeText.LINE_MAX),
-                    bigText = if (body.isEmpty()) null else NoticeText.cut(body, ANN_BODY_MAX),
+                    bigText = big,
                     url = NoticeText.announcementUrl(a),
                     tag = "ann:${a.id}",
                     firedKeys = listOf("ann:${a.id}"),
@@ -308,10 +314,16 @@ object NotificationPlanner {
     /**
      * 시험 공지가 있으면 "일정 정리 부탁" 버튼을 단다. 누르면 채팅 입력창에 정리 요청이 채워진다(보내지 않음, 날짜는 앱이 뽑지 않고 비서가 공지를 읽는다).
      */
-    private fun Notice.withExamAction(items: List<AnnouncementItem>): Notice {
-        val exams = items.filter { Queries.isExamAnnouncement(it.title, it.text) }
-        if (exams.isEmpty()) return this
-        return copy(prefill = examPrefill(exams), prefillAction = EXAM_ACTION)
+    private fun Notice.withExamAction(items: List<AnnouncementItem>): Notice =
+        // 시험·과제 공지면 버튼 하나 "내 일정에 등록"(초안을 채운 추가 창, AI 없음). 비서에게 맡기기는 그 창의 링크로 한다
+        // (2026-11-24 사용자 결정: 예전 "일정 정리 부탁" 버튼을 합침). 묶음이면 첫 시험·과제 공지로.
+        ScheduleDrafts.firstOf(items)?.let { copy(draft = it.toJson()) } ?: this
+
+    /** `{과목} ‘{제목}’ 공지 보고 과제 마감(날짜·시간·제출 방법) 내 일정에 넣어줘`. */
+    fun assignmentPrefill(items: List<AnnouncementItem>): String {
+        val named = items.take(2).joinToString(", ") { "${NoticeText.course(it.courseName)} ‘${NoticeText.safe(it.title, 60)}’" }
+        val more = if (items.size > 2) " 외 ${items.size - 2}개" else ""
+        return "$named$more 공지 보고 과제 마감(날짜·시간·제출 방법) 내 일정에 넣어줘"
     }
 
     const val EXAM_ACTION = "일정 정리 부탁"
@@ -320,6 +332,6 @@ object NotificationPlanner {
     fun examPrefill(exams: List<AnnouncementItem>): String {
         val named = exams.take(2).joinToString(", ") { "${NoticeText.course(it.courseName)} ‘${NoticeText.safe(it.title, 60)}’" }
         val more = if (exams.size > 2) " 외 ${exams.size - 2}개" else ""
-        return "$named$more 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘"
+        return "$named$more 공지 보고 시험 일정(날짜·시간·장소·준비물) 내 일정에 넣어줘"
     }
 }

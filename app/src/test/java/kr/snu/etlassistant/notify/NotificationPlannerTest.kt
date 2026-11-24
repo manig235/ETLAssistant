@@ -2,6 +2,7 @@ package kr.snu.etlassistant.notify
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -477,26 +478,44 @@ class NotificationPlannerTest {
 
     // ---- 시험 공지 -------------------------------------------------------------
 
-    @Test fun examAnnouncementGetsBadgeAndChatAction() {
+    @Test fun examAnnouncementGetsBadgeAndRegisterDraft() {
         val n = plan(snap(n = listOf(ann(1, course = "자료구조", title = "중간고사 안내", text = "10/20 10시, 301동 102호")))).notices.single()
         assertEquals("자료구조 · 시험 공지", n.title)
-        assertEquals(NotificationPlanner.EXAM_ACTION, n.prefillAction)
-        assertEquals("자료구조 ‘중간고사 안내’ 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘", n.prefill)
+        // 버튼은 "내 일정에 등록" 하나(예전 "일정 정리 부탁"은 등록 창 안의 링크로 합쳤다).
+        assertNull(n.prefillAction)
+        val d = ScheduleDraft.fromJson(n.draft)!!
+        assertEquals(MyKind.EXAM, d.kind)
+        assertEquals(1L, d.announcementId)
+        assertEquals("자료구조 ‘중간고사 안내’ 공지 보고 시험 일정(날짜·시간·장소·준비물) 내 일정에 넣어줘 (공지 ID 1)", d.prefill)
         // 본문 누르기는 그대로 eTL 원문
         assertEquals("https://myetl.snu.ac.kr/a/1", n.url)
         val plain = plan(snap(n = listOf(ann(2)))).notices.single()
-        assertNull(plain.prefill)
+        assertNull(plain.draft)
         assertNull(plain.prefillAction)
     }
 
-    @Test fun examSummaryNamesExamAnnouncementsOnly() {
+    @Test fun summaryDraftUsesFirstExamOrAssignment() {
         val anns = listOf(
             ann(1, title = "기말고사 장소"), ann(2, title = "과제 안내"), ann(3, title = "Quiz 3"), ann(4, title = "중간고사 일정"),
         )
         val n = plan(snap(n = anns)).notices.single()
         assertTrue(n.bigText!!.contains("(시험 공지)"))
-        assertEquals(NotificationPlanner.EXAM_ACTION, n.prefillAction)
-        assertTrue(n.prefill!!.endsWith("외 1개 공지 보고 시험 일정(날짜·시간·장소) 내 일정에 넣어줘"))
-        assertFalse(n.prefill!!.contains("과제 안내"))
+        assertTrue(n.bigText!!.contains("(과제 공지)"))
+        assertNotNull(ScheduleDraft.fromJson(n.draft))
+        assertNull(n.prefillAction)
+    }
+
+    @Test fun assignmentAnnouncementGetsBadgeAndDeadlineDraft() {
+        val n = plan(snap(n = listOf(ann(5, course = "회로이론", title = "[회로이론] 과제 3 안내", text = "11월 28일(금) 23:59까지 제출하세요")))).notices.single()
+        assertEquals("회로이론 · 과제 공지", n.title)
+        val d = ScheduleDraft.fromJson(n.draft)!!
+        assertEquals(MyKind.DEADLINE, d.kind)
+        assertEquals("과제 3 안내", d.title)
+        assertTrue(d.prefill.contains("과제 마감(날짜·시간·제출 방법)"))
+    }
+
+    @Test fun examAnnouncementShowsSuppliesLine() {
+        val n = plan(snap(n = listOf(ann(6, course = "물리", title = "중간고사 안내", text = "일시: 11월 30일 10:00\n준비물: 공학용 계산기, 신분증\n범위: 1~5장")))).notices.single()
+        assertTrue(n.bigText!!.startsWith("준비물·지참: 준비물: 공학용 계산기, 신분증"))
     }
 }

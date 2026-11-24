@@ -208,6 +208,27 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         CodexSession.ensureStarted()
         updateBanner()
         if (shareKey != null) applyShare()
+        loadPendingNotices()
+    }
+
+    /**
+     * 등록 안 한 공지(받아 둔 것만, 네트워크 없음). 새 공지가 있을 때만 시트를 자동으로 연다.
+     * 채팅을 열 때 뜨는 창은 한 실행에 하나: 업데이트 팝업 > 받은 파일 정리 선택 > 이 시트(나머지는 다음 기회로).
+     */
+    private fun loadPendingNotices() {
+        Thread {
+            val store = kr.snu.etlassistant.notify.PendingNoticeStore(this)
+            val list = runCatching { store.targets(this) }.getOrDefault(emptyList())
+            val otherPrompt = kr.snu.etlassistant.update.updatePromptPending(this) || kr.snu.etlassistant.files.cleanupPromptPending(this)
+            val auto = kr.snu.etlassistant.notify.PendingNoticesLogic.shouldAutoShow(list, store.seen(),
+                kr.snu.etlassistant.notify.NotifySettingsStore(this).load().pendingSheet, otherPrompt)
+            if (auto) store.markSeen(list.map { it.id })
+            runOnUiThread {
+                vm.pendingNotices = list
+                if (auto) vm.pendingSheet = true
+                if (list.isEmpty()) vm.pendingSheet = false
+            }
+        }.start()
     }
 
     override fun onResume() {

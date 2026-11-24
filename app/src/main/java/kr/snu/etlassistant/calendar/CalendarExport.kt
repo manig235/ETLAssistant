@@ -22,7 +22,7 @@ import java.time.Instant
 import java.util.concurrent.Executors
 
 /**
- * 캘린더로 내보내기의 기기 쪽: 설정 저장, CalendarContract 읽기·쓰기, 한 방향 동기화.
+ * 캘린더 연동 "영민이 → 캘린더"의 기기 쪽: 설정 저장, CalendarContract 읽기·쓰기, 맞추기(내보내기 + 캘린더에서 고친 것 되가져오기).
  * - LOCAL: 앱이 만든 로컬 캘린더(ACCOUNT_TYPE_LOCAL, 계정 "영민이")에 sync adapter로 쓴다. 이 폰 밖으로 나가지 않는다.
  * - GOOGLE: 사용자가 고른 구글 계정 캘린더에 일반 앱으로 쓴다(DIRTY가 표시되어 구글 동기화가 서버로 올린다).
  * 네트워크는 쓰지 않는다. 권한이 없어지면(SecurityException) 내보내기를 끄고 이유를 남긴다.
@@ -50,6 +50,7 @@ object CalendarExport {
     @Synchronized
     fun saveSettings(context: Context, s: CalendarExportSettings) {
         prefs(context).edit().putString("settings", s.toJson()).apply()
+        CalendarWatch.apply(context)
     }
 
     /** 마지막 결과 한 줄과 사용자에게 알릴 이유(권한이 꺼져 멈춤 등). */
@@ -72,10 +73,30 @@ object CalendarExport {
 
     fun summary(context: Context): String {
         val s = settings(context)
-        if (!s.enabled) return note(context) ?: "꺼짐"
-        val where = if (s.target == CalendarTarget.LOCAL) "이 폰의 \"$DISPLAY_NAME\" 캘린더" else "구글 캘린더 \"${s.googleCalendarName}\""
-        return "${where}로 내보내는 중"
+        val r = CalendarReader.settings(context)
+        val parts = mutableListOf<String>()
+        if (s.enabled) parts += if (s.target == CalendarTarget.LOCAL) "이 폰의 \"$DISPLAY_NAME\" 캘린더에 넣는 중" else "구글 캘린더 \"${s.googleCalendarName}\"에 넣는 중"
+        if (r.showEnabled) parts += "내 캘린더 일정 보기"
+        if (r.assistantEnabled) parts += "비서가 캘린더 사용"
+        if (parts.isEmpty()) return note(context) ?: "꺼짐"
+        return parts.joinToString(" · ")
     }
+
+    /** 맞춘 뒤 내 마감이 바뀌었거나 캘린더가 바뀌었을 때 화면을 다시 읽게 하는 알림(앱이 떠 있을 때만). */
+    val listeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+
+    fun notifyChanged() = listeners.forEach { runCatching { it() } }
+
+    /** 내보낸 일정 ID와 앱 캘린더 ID(캘린더 읽기에서 영민이가 넣은 일정을 뺄 때 쓴다). */
+    fun ownEvents(context: Context): Pair<Set<Long>, Set<Long>> {
+        val m = loadMapping(context.applicationContext)
+        val ids = m?.entries?.values?.filter { !it.tombstone }?.map { it.eventId }?.toSet().orEmpty()
+        val local = runCatching { findLocalCalendar(context.contentResolver) }.getOrNull()
+        return ids to setOfNotNull(local)
+    }
+
+    /** 앱 캘린더(LOCAL "영민이") ID. 없으면 null. 권한이 없으면 null. */
+    fun localCalendarId(context: Context): Long? = runCatching { findLocalCalendar(context.contentResolver) }.getOrNull()
 
     // ---- 동기화 ------------------------------------------------------------------
 
@@ -149,22 +170,62 @@ object CalendarExport {
         if (local && stored?.calendarId != calendarId) wipeAppEvents(cr, calendarId)
 
         val assignments: List<AssignmentItem>? = runCatching { SnapshotCache(app).load()?.assignments }.getOrNull()
-        val mine = MyDeadlineStore(app).load()
+        val store = MyDeadlineStore(app)
+        var mine = store.load()
         val courses = CourseFilterStore(app).load()
-        val desired = CalendarLogic.desired(s, assignments, mine, courses, now)
-        val live = liveEvents(cr, calendarId, entries.values.filter { !it.tombstone }.map { it.eventId })
-        val plan = CalendarLogic.plan(desired, entries, live, now)
+        var desired = CalendarLogic.desired(s, assignments, mine, courses, now)
+        val liveRows = liveRows(cr, calendarId, entries.values.filter { !it.tombstone }.map { it.eventId })
+        val live = liveRows.keys
+
+        // 캘린더에서 고친 것: 내 마감은 되가져오고, eTL 과제·반복 회차는 되돌린다.
+        val edits = CalendarLogic.edits(desired, entries, liveRows, mine, s.pullBack)
+        val force = mutableSetOf<String>()
+        var pulled = 0
+        var reverted = 0
+        var repeatingReverted = 0
+        var nextId = System.currentTimeMillis()
+        for (e in edits) {
+            when (e) {
+                is CalendarLogic.Edit.Baseline -> entries[e.key]?.let { entries[e.key] = it.copy(rowHash = e.rowHash, reverts = 0) }
+                is CalendarLogic.Edit.Accept -> entries[e.key]?.let { entries[e.key] = it.copy(rowHash = e.rowHash) }
+                is CalendarLogic.Edit.Revert -> {
+                    force += e.key
+                    reverted++
+                    if (e.repeating) repeatingReverted++
+                    entries[e.key]?.let { entries[e.key] = it.copy(reverts = it.reverts + 1) }
+                }
+                is CalendarLogic.Edit.PullMine -> {
+                    val old = mine.firstOrNull { it.id == e.id }
+                    val new = old?.let { CalendarLogic.applyPull(it, e, nextId++) }
+                    if (old == null || new == null) { force += e.key; reverted++; continue }
+                    if (new.id != old.id) store.delete(old.id)
+                    store.upsert(new)
+                    pulled++
+                    // 같은 일정을 새 ID의 키로 옮긴다(지우고 다시 넣지 않게). 다음 맞추기에서 앱 모양(제목 앞말 등)으로 고쳐 쓴다.
+                    entries.remove(e.key)?.let { entries[CalendarLogic.mineKey(new)] = it.copy(hash = "", reverts = 0) }
+                    log("캘린더에서 고친 내 마감을 반영함")
+                }
+            }
+        }
+        if (pulled > 0) {
+            mine = store.load()
+            desired = CalendarLogic.desired(s, assignments, mine, courses, now)
+            runCatching { kr.snu.etlassistant.notify.NotifyScheduler.apply(app) }
+        }
+        val plan = CalendarLogic.plan(desired, entries, live, now, force)
 
         plan.tombstone.forEach { k -> entries[k]?.let { entries[k] = it.copy(eventId = CalendarLogic.TOMBSTONE) } }
         plan.forget.forEach { entries.remove(it) }
         for (op in plan.ops) {
             when (op) {
                 is CalendarLogic.Op.Insert -> insertEvent(app, cr, calendarId, local, op.item)?.let {
-                    entries[op.item.key] = CalendarLogic.Entry(it, op.item.hash, op.item.start.toEpochMilli())
+                    // 쓴 뒤 다시 읽은 모양을 기준으로 둔다(캘린더가 값을 바꿔 저장해도 사용자가 고친 것으로 보지 않게).
+                    entries[op.item.key] = CalendarLogic.Entry(it, op.item.hash, op.item.start.toEpochMilli(), readRow(cr, it)?.hash ?: op.item.rowHash)
                 }
                 is CalendarLogic.Op.Update -> {
                     val n = cr.update(eventUri(op.eventId, local), eventValues(app, op.item, calendarId = null, withApp = false), null, null)
-                    entries[op.item.key] = if (n > 0) CalendarLogic.Entry(op.eventId, op.item.hash, op.item.start.toEpochMilli())
+                    val reverts = entries[op.item.key]?.takeIf { op.item.key in force }?.reverts ?: 0
+                    entries[op.item.key] = if (n > 0) CalendarLogic.Entry(op.eventId, op.item.hash, op.item.start.toEpochMilli(), readRow(cr, op.eventId)?.hash ?: op.item.rowHash, reverts)
                     else CalendarLogic.Entry(CalendarLogic.TOMBSTONE, op.item.hash, op.item.start.toEpochMilli())
                 }
                 is CalendarLogic.Op.Delete -> {
@@ -176,9 +237,10 @@ object CalendarExport {
             saveMapping(app, calendarId, entries)
         }
         saveMapping(app, calendarId, entries)
-        val msg = CalendarLogic.resultLabel(plan, now)
+        val msg = CalendarLogic.resultLabel(plan, now) + CalendarLogic.editsLabel(pulled, reverted, repeatingReverted)
         setResult(app, msg)
         if (plan.ops.isNotEmpty()) log(msg)
+        if (pulled > 0) notifyChanged()
         return msg
     }
 
@@ -331,20 +393,31 @@ object CalendarExport {
         )
     }
 
-    /** [ids] 중 [calendarId]에 아직 있는(DELETED=0) 일정. */
-    private fun liveEvents(cr: ContentResolver, calendarId: Long, ids: List<Long>): Set<Long> {
-        val out = mutableSetOf<Long>()
+    private val ROW_PROJECTION = arrayOf(Events._ID, Events.TITLE, Events.DTSTART, Events.DTEND, Events.EVENT_LOCATION)
+
+    private fun row(c: android.database.Cursor): CalRow {
+        val start = c.getLong(2)
+        return CalRow(c.getLong(0), c.getString(1).orEmpty(), start, if (c.isNull(3)) start else c.getLong(3), c.getString(4).orEmpty())
+    }
+
+    /** [ids] 중 [calendarId]에 아직 있는(DELETED=0) 일정과 그 지금 모양(제목·시각·장소). */
+    private fun liveRows(cr: ContentResolver, calendarId: Long, ids: List<Long>): Map<Long, CalRow> {
+        val out = mutableMapOf<Long, CalRow>()
         ids.distinct().chunked(400).forEach { chunk ->
             cr.query(
                 Events.CONTENT_URI,
-                arrayOf(Events._ID),
+                ROW_PROJECTION,
                 "${Events.CALENDAR_ID}=? AND ${Events.DELETED}=0 AND ${Events._ID} IN (${chunk.joinToString(",")})",
                 arrayOf(calendarId.toString()),
                 null,
-            )?.use { c -> while (c.moveToNext()) out += c.getLong(0) }
+            )?.use { c -> while (c.moveToNext()) row(c).let { out[it.eventId] = it } }
         }
         return out
     }
+
+    private fun readRow(cr: ContentResolver, id: Long): CalRow? = runCatching {
+        cr.query(Events.CONTENT_URI, ROW_PROJECTION, "${Events._ID}=?", arrayOf(id.toString()), null)?.use { c -> if (c.moveToFirst()) row(c) else null }
+    }.getOrNull()
 
     private fun eventValues(app: Context, item: CalItem, calendarId: Long?, withApp: Boolean) = ContentValues().apply {
         if (calendarId != null) put(Events.CALENDAR_ID, calendarId)
@@ -356,7 +429,8 @@ object CalendarExport {
         put(Events.EVENT_END_TIMEZONE, CalendarLogic.TZ_ID)
         put(Events.ALL_DAY, 0)
         put(Events.HAS_ALARM, 0)
-        put(Events.AVAILABILITY, Events.AVAILABILITY_FREE)
+        put(Events.AVAILABILITY, if (item.busy) Events.AVAILABILITY_BUSY else Events.AVAILABILITY_FREE)
+        put(Events.EVENT_LOCATION, item.location)
         if (withApp) {
             put(Events.CUSTOM_APP_PACKAGE, app.packageName)
             put(Events.CUSTOM_APP_URI, CalendarLogic.APP_URI_PREFIX + item.key)
@@ -379,15 +453,16 @@ object CalendarExport {
     // ---- 권한 없이: 캘린더 앱에 "일정 추가" 화면 열기 -------------------------------------
 
     /** 한 항목을 캘린더 앱의 일정 추가 화면으로(권한 필요 없음, 사용자가 저장한다). 반복 내 마감은 RRULE을 넣는다. */
-    fun insertIntent(title: String, start: Instant, description: String, rrule: String? = null): Intent =
+    fun insertIntent(title: String, start: Instant, description: String, rrule: String? = null, end: Instant = start, location: String = ""): Intent =
         Intent(Intent.ACTION_INSERT, Events.CONTENT_URI).apply {
             putExtra(Events.TITLE, title)
             putExtra(Events.DESCRIPTION, description)
             putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start.toEpochMilli())
-            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, start.toEpochMilli())
+            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end.toEpochMilli())
             putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, false)
             putExtra(Events.EVENT_TIMEZONE, CalendarLogic.TZ_ID)
-            putExtra(Events.AVAILABILITY, Events.AVAILABILITY_FREE)
+            putExtra(Events.AVAILABILITY, if (end.isAfter(start)) Events.AVAILABILITY_BUSY else Events.AVAILABILITY_FREE)
+            if (location.isNotEmpty()) putExtra(Events.EVENT_LOCATION, location)
             if (rrule != null) putExtra(Events.RRULE, rrule)
         }
 
@@ -398,9 +473,13 @@ object CalendarExport {
 
     /** [series]는 저장된 원래 항목, [occurrence]는 누른 회차(반복이 아니면 null). */
     fun insertIntentFor(series: MyDeadline, occurrence: MyDeadline?): Intent? {
-        if (series.repeat == null) return insertIntent(CalendarLogic.mineTitle(series.copy(done = false)), series.due, CalendarLogic.mineDescription(series))
+        if (series.repeat == null) {
+            val item = CalendarLogic.mineItem(series.copy(done = false))
+            return insertIntent(item.title, item.start, item.description, end = item.end, location = item.location)
+        }
         val first = CalendarLogic.dtstartFor(series, occurrence) ?: return null
-        return insertIntent(CalendarLogic.mineTitle(series.copy(done = false)), first.due, CalendarLogic.mineDescription(series), CalendarLogic.rrule(series))
+        val fromFirst = first.occurrence == kr.snu.etlassistant.notify.MyDeadlines.firstOccurrence(series)?.occurrence
+        return insertIntent(CalendarLogic.mineTitle(series.copy(done = false)), first.due, CalendarLogic.mineDescription(series), CalendarLogic.rrule(series, fromFirst))
     }
 
     // ---- .ics -------------------------------------------------------------------

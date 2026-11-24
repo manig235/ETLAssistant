@@ -1,8 +1,8 @@
 package kr.snu.etlassistant.chat
 
+import android.content.Intent
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.content.Intent
 import android.os.Bundle
 import android.text.format.DateFormat
 import android.widget.Toast
@@ -78,14 +78,35 @@ class TimetableActivity : AppCompatActivity() {
     private var weekly by mutableStateOf<TimetableLogic.Weekly?>(null)
     private var changeList by mutableStateOf<List<TimetableLogic.Change>>(emptyList())
     private var loading by mutableStateOf(false)
+    /** 보강·휴강 공지의 "시간표에 반영"으로 온 초안. */
+    private var draft by mutableStateOf<kr.snu.etlassistant.notify.ScheduleDraft?>(null)
+
+    private fun readDraft(i: Intent?) {
+        val d = kr.snu.etlassistant.notify.ScheduleDraft.fromJson(i?.getStringExtra(DraftIntents.EXTRA_DRAFT))?.takeIf { it.timetable } ?: return
+        if (changes.load().any { it.sourceAnnouncementId == d.announcementId }) { toast("이 공지는 이미 시간표에 반영했어요"); return }
+        draft = d
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readDraft(intent)
+    }
     private var hiddenCourses by mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) readDraft(intent)
         setContent {
             TimetableScreen(
                 weekly = weekly, changes = changeList, loading = loading,
+                draft = draft, onDraftDone = { draft = null },
+                // "✨ 비서가 공지 읽고 채우기": 창을 닫고 채팅 입력창에 요청을 채운다(보내지는 않는다).
+                onAskAssistant = { d ->
+                    draft = null
+                    runCatching { startActivity(Intent(this, ChatActivity::class.java).putExtra(ChatActivity.EXTRA_PREFILL, d.prefill).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
+                },
                 hiddenCourses = hiddenCourses,
                 onHiddenCourses = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
                 onBack = { finish() },
@@ -166,6 +187,9 @@ internal fun TimetableScreen(
     onDelete: (TimetableLogic.Change) -> Unit,
     pickDate: (LocalDate, (LocalDate) -> Unit) -> Unit,
     pickTime: (LocalTime, (LocalTime) -> Unit) -> Unit,
+    draft: kr.snu.etlassistant.notify.ScheduleDraft? = null,
+    onDraftDone: () -> Unit = {},
+    onAskAssistant: (kr.snu.etlassistant.notify.ScheduleDraft) -> Unit = {},
 ) {
     DesignSystemTheme {
         val c = DesignSystemTheme.colors
@@ -234,13 +258,15 @@ internal fun TimetableScreen(
                 }
             }
         }
-        if (adding) {
+        if (adding || draft != null) {
             ChangeDialog(
                 courses = weekly?.courses.orEmpty(),
-                onDismiss = { adding = false },
-                onSave = { onAdd(it); adding = false },
+                onDismiss = { adding = false; onDraftDone() },
+                onSave = { onAdd(it); adding = false; onDraftDone() },
                 pickDate = pickDate,
                 pickTime = pickTime,
+                draft = draft,
+                onAskAssistant = { adding = false; onAskAssistant(it) },
             )
         }
         if (editingCustom) {
@@ -263,17 +289,21 @@ private fun ChangeDialog(
     onSave: (TimetableLogic.Change) -> Unit,
     pickDate: (LocalDate, (LocalDate) -> Unit) -> Unit,
     pickTime: (LocalTime, (LocalTime) -> Unit) -> Unit,
+    /** 보강·휴강 공지에서 온 초안(날짜·시각은 공지에서 하나만 찾았을 때만). */
+    draft: kr.snu.etlassistant.notify.ScheduleDraft? = null,
+    onAskAssistant: (kr.snu.etlassistant.notify.ScheduleDraft) -> Unit = {},
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
-    var kind by remember { mutableStateOf("휴강") }
-    var course by remember { mutableStateOf<TimetableLogic.CourseMeetings?>(null) }
-    var courseText by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(LocalDate.now(EtlLogic.KST)) }
-    var start by remember { mutableStateOf<LocalTime?>(null) }
-    var end by remember { mutableStateOf<LocalTime?>(null) }
+    val pre = remember(draft) { draft?.let { TimetableDraftLogic.prefill(it, courses) } }
+    var kind by remember { mutableStateOf(pre?.kind ?: "휴강") }
+    var course by remember { mutableStateOf(pre?.course) }
+    var courseText by remember { mutableStateOf(if (pre?.course == null) pre?.courseText.orEmpty() else "") }
+    var date by remember { mutableStateOf(pre?.date ?: LocalDate.now(EtlLogic.KST)) }
+    var start by remember { mutableStateOf(pre?.start) }
+    var end by remember { mutableStateOf(pre?.end) }
     var room by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf(pre?.note.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     val hm = { x: LocalTime? -> x?.let { "%02d:%02d".format(it.hour, it.minute) } }
 
@@ -283,6 +313,17 @@ private fun ChangeDialog(
         title = { Text("보강·휴강 추가", style = t.title3Bold, color = c.foregroundNeutralPrimary) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (draft != null) {
+                    if (!draft.foundDate) {
+                        Text(kr.snu.etlassistant.notify.ScheduleDrafts.ASK_HINT, style = t.body2Medium, color = c.foregroundCautionaryPrimary)
+                        Spacer(Modifier.height(4.dp))
+                    } else Text(kr.snu.etlassistant.notify.ScheduleDrafts.FOUND_HINT, style = t.caption1Regular, color = c.foregroundBrandPrimary)
+                    if (draft.prefill.isNotEmpty()) {
+                        DialogButton(kr.snu.etlassistant.notify.ScheduleDrafts.ASK_LINK) { onAskAssistant(draft) }
+                        Text("공지 내용은 이걸 누를 때만 비서(내 ChatGPT 계정)로 가요.", style = t.caption2Regular, color = c.foregroundNeutralSecondary)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (k in listOf("휴강", "보강")) WantedChip(text = k, isActive = kind == k, onClick = { kind = k; error = null })
                 }
@@ -351,6 +392,7 @@ private fun ChangeDialog(
                         id = System.currentTimeMillis(), date = date, kind = kind, course = name, courseId = course?.courseId,
                         start = if (kind == "보강") hm(start) else null, end = if (kind == "보강") hm(end) else null,
                         room = room.trim().ifEmpty { null }, note = note.trim().ifEmpty { null },
+                        sourceAnnouncementId = draft?.announcementId,
                     )
                 )
             })

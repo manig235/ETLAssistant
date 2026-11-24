@@ -22,6 +22,8 @@ object DeadlineWidgetLogic {
         val url: String? = null, val mineId: Long? = null,
         /** 반복 내 마감이면 그 회차 날짜(KST). 완료 버튼이 이 회차만 완료로 표시한다. */
         val mineDate: LocalDate? = null,
+        /** 시험이면 완료 버튼을 두지 않는다. */
+        val exam: Boolean = false,
     )
 
     fun items(assignments: List<AssignmentItem>, mine: List<MyDeadline>, now: Instant): List<Item> =
@@ -32,7 +34,9 @@ object DeadlineWidgetLogic {
                 assignmentUrl(a))
         } + MyDeadlines.active(mine, now).filter { !it.done && it.due.isAfter(now) }.map {
             // 반복 마감은 다음 회차 하나만 보인다.
-            Item("mine-${it.id}" + (it.occurrence?.let { o -> "-$o" } ?: ""), it.title, "내 마감", it.due, mineId = it.id, mineDate = it.occurrence)
+            // 시험은 "[시험] 과목 제목"과 장소로 구분한다(시작 시각까지 보인다).
+            if (it.isExam) Item("exam-${it.id}", MyDeadlines.examTitle(it), listOf("시험", it.location).filter { s -> s.isNotBlank() }.joinToString(" · "), it.due, mineId = it.id, exam = true)
+            else Item("mine-${it.id}" + (it.occurrence?.let { o -> "-$o" } ?: ""), it.title, "내 마감", it.due, mineId = it.id, mineDate = it.occurrence)
         }).distinctBy { it.key }.sortedWith(compareBy({ it.due }, { it.key }))
 
     private fun assignmentUrl(a: AssignmentItem): String {

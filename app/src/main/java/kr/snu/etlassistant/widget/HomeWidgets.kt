@@ -175,7 +175,7 @@ object HomeWidgets {
             val open = if (item.mineId != null) agenda(context, item.mineId) else
                 activity(context, Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
             row.setOnClickPendingIntent(R.id.widget_item_body, open)
-            if (item.mineId != null) {
+            if (item.mineId != null && !item.exam) {
                 row.setViewVisibility(R.id.widget_item_complete, View.VISIBLE)
                 row.setContentDescription(R.id.widget_item_complete, "${item.title} 완료로 표시")
                 row.setOnClickPendingIntent(R.id.widget_item_complete, PendingIntent.getBroadcast(context, 0,
