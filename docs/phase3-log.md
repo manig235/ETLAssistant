@@ -208,6 +208,18 @@ AI 없이 앱 코드(WorkManager)만으로 마감·공지를 알린다. 코드�
   `Notice.prefill`/`prefillAction`(버튼 이름이 있으면 그 버튼이 채팅을 연다)을 `NotificationPoster`가 처리한다.
 - 검증: 단위 테스트 `NewFilesTest`. 서울대 eTL의 `sort=updated_at`·`order=desc` 지원과 파일 탭 숨김 강의의 실제 응답 코드는 기기에서 확인하지 못했다.
 
+## 캘린더 연동·시험·공지 등록 (2026-11-24)
+
+- 캘린더 연동 화면 개편(영민이 → 캘린더 / 캘린더 → 영민이 / 고급). 되가져오기(`CalendarLogic.edits`: 쓴 뒤 다시 읽은 모양과 비교, 내 마감은 반영, eTL·반복 회차는 되돌림, 3번 넘게 되돌리면 받아들임),
+  곧바로 맞추기(`CalendarWatch`: 콘텐츠 URI 트리거 작업 5초~60초 + 앱이 떠 있을 때 ContentObserver + 내 일정 열 때), 내 캘린더 읽기(`CalendarReader`, Instances, 종일 일정 UTC 날짜),
+  비서 캘린더 도구(`CalendarAssistant`, 되돌리기 `CalendarUndo`). 브리핑 "■ 오늘 일정"(내 캘린더 일정 보기가 켜져 있을 때).
+- 시험(`MyDeadline.kind=EXAM`): 기본 마감 알림·누락 대상이 아니고 직접 정한 알림(기본 전날 20:00·2시간 전)과 응원 문구(`ExamCheer`), 끝난 뒤 "수고했어요"(`examDoneAlerts`, 방해 금지면 기록만).
+  브리핑 "■ 시험 (7일 이내)". 과목별 알림 끄기는 시험에 적용하지 않는다.
+- 반복 끝 횟수(`MyRepeat.count`)와 반복 종류별 편집 창(`DeadlineForm`). 내 일정 "그 이후"에 7일 밖 다음 회차가 보이게 고침.
+- 공지 종류(`Queries.announcementCategory`) → "내 일정에 등록"/"시간표에 반영" 하나(예전 "일정 정리 부탁" 버튼을 합침; 비서에게 맡기기는 등록 창의 링크). 날짜는 하나만 확실할 때만 미리 채움(`ScheduleDrafts`).
+  시험 공지 알림에 준비물 줄(`Queries.suppliesLines`). 등록 안 한 공지 시트(`PendingNoticeStore`, 채팅을 열 때 새 공지가 있을 때만, 업데이트 팝업과 겹치지 않게).
+- 검증: 단위 테스트(`CalendarReadTest`, `CalendarSyncEditsTest`, `CalendarToolLogicTest`, `ExamTest`, `RepeatEndAndFormTest`, `ScheduleDraftTest`, `NotificationPlannerTest`). 기기에서는 하나도 확인하지 못했다.
+
 ## 시험 공지 배지와 "일정 정리 부탁" (2026-11-23)
 
 - `Queries.examMention`: 시험·중간고사·기말고사·퀴즈·quiz·exam·midterm·finals(단독 "final"은 final project 등이 많아 뺐다). 키워드만 보고 날짜는 뽑지 않는다.
