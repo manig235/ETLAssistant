@@ -8,6 +8,8 @@ import androidx.work.WorkerParameters
 class NotifyCheckWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
         val manual = inputData.getBoolean(KEY_MANUAL, false)
+        // 받은 파일 자동 정리(하루 한 번, 네트워크 불필요). 알림을 꺼 둬도 돈다.
+        kr.snu.etlassistant.files.DownloadCleanup.runIfDue(applicationContext)
         // "지금 확인"(manual)은 알림이 모두 꺼져 있어도 한 번 실행한다.
         if (!manual && !NotifySettingsStore(applicationContext).load().needsPeriodicCheck) return Result.success()
         return when (NotifyRunner.runCheck(applicationContext)) {

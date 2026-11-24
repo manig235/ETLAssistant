@@ -176,9 +176,26 @@ OAuth·Google API·Play 서비스 없이 `CalendarContract`만 쓴다. 대상은
 ".ics 파일로 내보내기"(공유 `ACTION_SEND`+FileProvider `cache/ics/`, 또는 `CreateDocument` 저장): RFC 5545, VTIMEZONE Asia/Seoul, 반복은 RRULE+EXDATE(건너뛴 회차, 완료 회차), 0분이라 DTEND 없음.
 기기 미확인: 삼성 캘린더에 로컬 캘린더가 보이는지, 구글 캘린더 앱에 보이는지, 구글 캘린더 동기화(기본 알림이 붙는지 포함), ACTION_INSERT를 받는 앱, 네이버 캘린더 .ics 가져오기.
 
+**받은 파일 자동 정리(2026-11-24, 사용자 결정)**: 앱이 MediaStore로 폰 `Download/etl/`에 저장한 파일 중 저장(DATE_ADDED) 뒤 N일(2·7·30, "정리 안 함") 지난 것을 지운다(`files/DownloadCleanup`).
+AI가 만든 파일(`영민이가 만든 파일/`, `GeneratedFiles.isGenerated`)과 앱 소유가 아닌 항목은 건너뛴다(권한 요청 없음, 보안 예외는 조용히 무시). 앱 안 작업 폴더 14일 정리는 따로 그대로.
+**고르기 전에는 지우지 않는다.** 고르는 곳: 첫 실행 안내 알림 단계(기본 표시 2일, "다음"을 눌러야 저장), 기존 사용자는 채팅 화면을 열 때 대화상자(`CleanupPrompt`, "나중에" 없음,
+바깥을 눌러 닫으면 다음에 한 번 더 묻고 두 번 닫으면 더 묻지 않음 = 정리 안 함과 같은 효과), 설정 → 받은 파일. 하루 한 번(주기 확인 작업 시작, 채팅 화면 열 때), 알림 없음, 설정에 "최근 정리: 11/24, 3개".
+지운 URI를 기록해 채팅 파일 카드가 "자동 정리된 파일이에요 · 다시 받기"(입력창 채우기)로 보인다(작업 폴더 사본이 남아 있으면 그대로 열린다).
+
+**드라이브에 저장(2026-11-24, 사용자 요청)**: 파일 카드 아래 버튼 → `ACTION_CREATE_DOCUMENT`(이름·MIME 채움, `files/SaveCopy`)로 고른 곳에 원본 바이트를 복사(뒤에서, 토스트).
+OAuth·Drive API 없음. 라벨은 Drive 문서 제공자(`com.google.android.apps.docs.storage`, 매니페스트 `<queries>`) 유무로 "드라이브에 저장"/"다른 곳에 저장".
+마지막 저장 위치(`findDocumentPath`로 구한 부모, 안 되면 그 문서)를 `EXTRA_INITIAL_URI`로 다시 쓴다. 처음부터 Drive 루트로 여는 것은 하지 않는다(다른 제공자의 루트 조회는 MANAGE_DOCUMENTS가 필요).
+원본이 정리돼 없으면 카드에 버튼 대신 "다시 받기", 저장 중 원본이 없으면 만든 빈 문서를 지운다.
+
+**공유 받기·파일 카드 버튼(2026-11-24)**: "공유 → 영민이"(`chat/ShareReceiverActivity`, exported, ACTION_SEND/SEND_MULTIPLE `*/*`)는 받은 즉시 파일을 기존 첨부 경로(`AttachmentImporter`, 5개·50MB)로 복사하고
+글(EXTRA_TEXT, 제목)은 입력창에 채워 새 대화로 연다(자동 전송 없음). content://만 받고 이 앱 자신의 제공자 주소·file://은 버린다(내부 파일 유출 방지).
+채팅 화면으로는 무작위 키만 넘기고 내용은 메모리(`ShareInbox`)에 둔다(exported 채팅 화면이 엑스트라의 첨부 경로를 믿지 않게). 첫 설정 전이면 버리고 안내로 보낸다.
+파일 카드 아래 버튼: 열기 · 공유 · 드라이브에 저장(공유는 전에 길게 누르기에만 있었음, 카드 길게 누르기는 뺐고 사진 썸네일은 그대로), 지워진 파일이면 다시 받기.
+
 **Phase 4: 첫 실행 안내 — 구현됨.** Montage(Compose) 기반. 환영 → eTL 토큰(실제로 접속해 확인한 뒤 저장) → ChatGPT 로그인
 (브라우저 기본, 코드 방식은 브라우저가 안 될 때만 예비로 노출, 로그인된 상태에서 계정 전환 가능) → 알림 → 완료(추천 질문).
-완료·새 대화의 예시는 확정한 여섯 개이며, 자료 요약·파일 받기·제출 확인에는 각각 3~4학점 수강 과목을 무작위로 넣는다(학점은 수강편람 값, 미확인/직접 추가 수업 제외). 자료 질문은 파일·모듈에서 접근 가능한 문서가 확인된 과목, 제출 확인은 최근 온라인 과제(마감 -30일~+14일 또는 최근 등록)가 확인된 과목만 쓴다. 화면 재구성·회전 때는 선택을 유지한다. 0.2.8.
+완료·새 대화의 예시는 확정한 여섯 개이며, 자료 요약·파일 받기·제출 확인에는 각각 3~4학점 수강 과목을 무작위로 넣는다(학점은 수강편람 값, 미확인/직접 추가 수업 제외). 자료 질문은 파일·모듈에서 접근 가능한 문서가 확인된 과목, 제출 확인은 최근 온라인 과제(마감 -30일~+14일 또는 최근 등록)가 확인된 과목을 먼저 쓴다. 화면 재구성·회전 때는 선택을 유지한다. 0.2.8.
+**2026-11-24**: 확인된 과목이 없어도 이번 학기 과목을 하나라도 알면(시간표 → eTL 강의 목록 → `SnapshotCache`, 숨긴 과목 제외) 과목명을 붙이고, 일반 문구로 굳히지 않고 데이터가 생기면 다시 고른다(`OnboardingLogic.knownCourses`, 순위는 `docs/phase2-log.md`).
 
 **UI와 모델 선택:** 채팅·설정·안내 화면은 모두 Compose + Montage(`DesignSystemTheme`)다. 툴체인은 Gradle 8.14.3 / AGP 8.13.0 /
 Kotlin 2.3.20 / compileSdk 36. AI 모델과 추론 강도는 `model/list`로 계정이 쓸 수 있는 것만 보여 주고(기본 "자동"),
@@ -265,6 +282,8 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
 - `etl_timetable(date?, week=false, refresh=false)`: 수강편람의 정규 수업 + 그날 eTL 캘린더 일정
 - `etl_syllabus(course_id, attachment?)`: 강의계획서. eTL `syllabus_body`(글, 걸린 eTL 파일 ID) + 수강편람 강의계획서(`cc103ajax`: 평가 비율, 주차별 계획, 목표, 교재, 출석 규정, 첨부 목록). `attachment`(index)로 첨부 계획서를 비서용 작업 폴더에만 받아 읽는다(2026-11-21 사용자 결정: 원본 파일은 사용자에게 주지 않는다. 폰 저장·채팅 파일 카드 없음. 첨부는 `etl-files/syllabus/`에 두고, PDF를 `etl_render_pages`로 읽어도 채팅에 쪽 미리보기를 띄우지 않는다(`EtlFiles.isPrivateRead`). 계획서는 비서가 정보를 얻으려고 보는 것이지 사용자에게 필요한 게 아니라는 사용자 결정)
 - `etl_download`에 게시판 첨부용 `course_id`, `board_id`, `post_id`(선택)
+- `make_pdf(title, content_markdown, filename?)`(2026-11-24, 폰 안 쓰기): 비서가 쓴 마크다운을 기기 안에서 A4 PDF로(`pdf/`: `PdfMarkdown` 파서, `PdfLayoutLogic` 쪽 나누기·파일명, `PdfMaker` = PdfDocument+StaticLayout+시스템 글꼴, 수식은 `MathRender` 그림/`MathText.toUnicode`).
+  `Download/etl/영민이가 만든 파일/`(MediaStore)에 저장하고 받은 파일과 같은 카드를 붙인다. 20MB·200쪽·30만 자 상한. AI가 만든 파일은 `files/GeneratedFiles`가 URI를 기록하고 `isGenerated`로 판정한다(받은 파일 자동 정리 제외용). NOTICE 줄은 남기지 않는다(사용자가 요청한 결과물이고 카드가 보임).
 - `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
 
 ## 보안 규칙

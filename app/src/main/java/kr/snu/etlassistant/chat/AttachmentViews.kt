@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,6 +34,10 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
@@ -40,6 +45,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import android.net.Uri
+import kr.snu.etlassistant.files.DownloadCleanup
+import kr.snu.etlassistant.files.GeneratedFilesLogic
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +71,12 @@ import java.io.File
 class AttachmentActions(
     val onOpen: (Attachment) -> Unit,
     val onShare: (Attachment) -> Unit,
+    /** 지워진(자동 정리 등) 폰 파일 카드의 "다시 받기": 입력창을 채운다. null이면 버튼을 숨긴다. */
+    val onRedownload: ((Attachment) -> Unit)? = null,
+    /** 시스템 문서 선택기로 고른 곳(Drive 등)에 사본 저장. null이면 버튼을 숨긴다. */
+    val onSaveCopy: ((Attachment) -> Unit)? = null,
+    /** "드라이브에 저장"(Drive 앱이 있을 때) 또는 "다른 곳에 저장". */
+    val saveCopyLabel: String = "다른 곳에 저장",
 )
 
 private fun Attachment.exists(): Boolean = path?.let { File(it).isFile } == true || uri != null
@@ -176,50 +192,104 @@ private fun typeLabel(a: Attachment): String {
     return if (ext.isNotEmpty() && ext.length <= 5) ext else "파일"
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * 폰 사본(MediaStore)이 아직 있는지 뒤에서 확인한다(자동 정리·사용자가 지운 경우). 확인 전에는 있다고 본다.
+ * 조회가 막히면(소유권 없음 등) 없다고 본다.
+ */
+@Composable
+private fun rememberPhoneAlive(uri: String?): Boolean {
+    val context = LocalContext.current.applicationContext
+    val alive by produceState(true, uri) {
+        value = uri == null || withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.query(Uri.parse(uri), arrayOf(android.provider.BaseColumns._ID), null, null, null)?.use { it.count > 0 } ?: false
+            }.getOrDefault(false)
+        }
+    }
+    return alive
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
-    val exists = a.exists()
+    val context = LocalContext.current.applicationContext
+    val phoneAlive = rememberPhoneAlive(a.uri)
+    val generated = GeneratedFilesLogic.isGeneratedPath(a.shownPath)
+    val state = AttachmentLogic.availability(
+        workspaceExists = a.path?.let { File(it).isFile } == true,
+        phoneUri = a.uri,
+        phoneAlive = phoneAlive,
+        cleaned = remember(a.uri) { DownloadCleanup.wasCleaned(context, a.uri) },
+    )
+    val exists = state == AttachmentLogic.Availability.OK
     val detail = buildList {
         add(typeLabel(a))
         if (a.size > 0) add(AttachmentLogic.formatSize(a.size))
         when {
-            !exists -> add("폰에서 정리된 파일")
-            a.shownPath != null -> add("내 폰 Download/etl")
+            state == AttachmentLogic.Availability.CLEANED -> add("자동 정리된 파일이에요")
+            !exists -> add(if (a.shownPath != null) "폰에서 지워진 파일이에요" else "정리된 파일이에요")
+            a.shownPath != null -> add(if (generated) "내 폰 Download/etl/${GeneratedFilesLogic.SUBDIR}" else "내 폰 Download/etl")
         }
     }.joinToString(" · ")
-    Row(
+    Column(
         Modifier
             .widthIn(max = maxWidth)
             .clip(RoundedCornerShape(16.dp))
             .background(c.surfaceNeutralSecondary)
-            .combinedClickable(
-                enabled = exists,
-                role = SemRole.Button,
-                onClickLabel = "열기",
-                onLongClickLabel = "공유",
-                onClick = { actions.onOpen(a) },
-                onLongClick = { actions.onShare(a) },
-            )
+            .clickable(enabled = exists, role = SemRole.Button, onClickLabel = "열기") { actions.onOpen(a) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(c.surfaceBrandSubtle),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(iconOf(AttachmentLogic.kindOf(a.name, a.mime)), contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f, fill = false)) {
+                Text(a.name, style = t.body2Medium, color = c.foregroundNeutralPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(detail, style = t.caption1Regular, color = c.foregroundNeutralSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        val redownload = actions.onRedownload
+        val saveCopy = actions.onSaveCopy
+        if (!exists && a.shownPath != null && redownload != null) {
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                CardAction(Icons.Outlined.Refresh, if (generated) "다시 만들기" else "다시 받기") { redownload(a) }
+            }
+        } else if (exists) {
+            // 열기 · 공유 · 드라이브에 저장(전에는 공유가 길게 누르기에만 있었다).
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                CardAction(Icons.AutoMirrored.Outlined.OpenInNew, "열기") { actions.onOpen(a) }
+                CardAction(Icons.Outlined.Share, "공유") { actions.onShare(a) }
+                if (saveCopy != null) CardAction(Icons.Outlined.CloudUpload, actions.saveCopyLabel) { saveCopy(a) }
+            }
+        }
+    }
+}
+
+/** 파일 카드 아래의 작은 글자 버튼. */
+@Composable
+private fun CardAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val c = DesignSystemTheme.colors
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(role = SemRole.Button, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(c.surfaceBrandSubtle),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(iconOf(AttachmentLogic.kindOf(a.name, a.mime)), contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(22.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f, fill = false)) {
-            Text(a.name, style = t.body2Medium, color = c.foregroundNeutralPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = t.caption1Regular, color = c.foregroundNeutralSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Icon(icon, contentDescription = null, tint = c.foregroundBrandPrimary, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(label, style = DesignSystemTheme.typography.caption1Bold, color = c.foregroundBrandPrimary)
     }
 }
 

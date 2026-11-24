@@ -117,6 +117,8 @@ fun ChatRoot(vm: ChatViewModel, a: ChatActions) {
         ChatScreen(vm, a)
         // 새 버전이 있으면 앞에 팝업(하루 한 번까지, update/UpdatePrompt).
         kr.snu.etlassistant.update.UpdatePrompt()
+        // 받은 파일 자동 정리 기간을 아직 고르지 않았으면 한 번 묻는다(files/CleanupUi).
+        kr.snu.etlassistant.files.CleanupPrompt()
     }
 }
 
