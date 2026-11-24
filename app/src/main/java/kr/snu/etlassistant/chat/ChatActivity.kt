@@ -151,6 +151,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         )
         setContent { ChatRoot(vm, actions) }
         applyPrefill(intent)
+        shareKey = intent?.getStringExtra(EXTRA_SHARE_KEY)?.also { intent.removeExtra(EXTRA_SHARE_KEY) }
         // 새 버전 확인: 하루 한 번 워커 예약 + 마지막 확인 후 6시간이 지났으면 지금 뒤에서 한 번.
         UpdateScheduler.apply(this)
         UpdateChecker.maybeCheckOnStart(this)
@@ -168,6 +169,25 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         super.onNewIntent(intent)
         setIntent(intent)
         if (ready) applyPrefill(intent)
+        intent.getStringExtra(EXTRA_SHARE_KEY)?.let { key ->
+            intent.removeExtra(EXTRA_SHARE_KEY)
+            shareKey = key
+            if (ready && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) applyShare()
+        }
+    }
+
+    /** 공유로 받은 내용(이미 작업 폴더로 복사된 첨부와 글)을 새 대화의 입력창에 채운다. 보내지는 않는다. */
+    private var shareKey: String? = null
+
+    private fun applyShare() {
+        val s = ShareInbox.take(shareKey.also { shareKey = null }) ?: return
+        if (CodexSession.newConversation()) refreshChats() else toast("답변 중이라 지금 대화의 입력창에 넣었어요")
+        s.failures.distinct().forEach { toast(it) }
+        val room = (AttachmentLogic.MAX_PENDING - vm.pending.size - vm.importing).coerceAtLeast(0)
+        vm.pending += s.attachments.take(room)
+        if (s.dropped > 0 || s.attachments.size > room) toast("한 번에 ${AttachmentLogic.MAX_PENDING}개까지 첨부할 수 있어요")
+        s.text?.let { vm.setInput(it) }
+        vm.scrollToBottom()
     }
 
     /** 첫 실행 안내에서 고른 추천 질문을 입력창에 채워 둔다(자동으로 보내지는 않는다). */
@@ -187,6 +207,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         CodexSession.attach(this)
         CodexSession.ensureStarted()
         updateBanner()
+        if (shareKey != null) applyShare()
     }
 
     override fun onResume() {
@@ -489,6 +510,8 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
 
     companion object {
         const val EXTRA_PREFILL = "prefill"
+        /** "공유 → 영민이"로 받은 내용의 [ShareInbox] 키(내용 자체는 메모리에만 있다). */
+        const val EXTRA_SHARE_KEY = "shareKey"
         private const val STATE_PENDING_SAVE = "pendingSave"
         private const val KEY_NOTIFY_BANNER_DISMISSED = "notifyBannerDismissedAt"
     }

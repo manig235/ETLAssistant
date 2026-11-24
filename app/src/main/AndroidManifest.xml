@@ -112,6 +112,25 @@
             </intent-filter>
         </activity>
 
+        <!-- "공유 → 영민이": 받은 파일·글을 채팅 새 대화의 첨부·입력창에 넣는다(chat/ShareReceiverActivity, 자동 전송 없음). -->
+        <activity
+            android:name="kr.snu.etlassistant.chat.ShareReceiverActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name="kr.snu.etlassistant.onboarding.OnboardingActivity"
             android:exported="false"

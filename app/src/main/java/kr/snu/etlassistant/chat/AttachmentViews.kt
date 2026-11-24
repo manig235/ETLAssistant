@@ -36,6 +36,8 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
@@ -207,7 +209,7 @@ private fun rememberPhoneAlive(uri: String?): Boolean {
     return alive
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
     val c = DesignSystemTheme.colors
@@ -236,14 +238,7 @@ private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
             .widthIn(max = maxWidth)
             .clip(RoundedCornerShape(16.dp))
             .background(c.surfaceNeutralSecondary)
-            .combinedClickable(
-                enabled = exists,
-                role = SemRole.Button,
-                onClickLabel = "열기",
-                onLongClickLabel = "공유",
-                onClick = { actions.onOpen(a) },
-                onLongClick = { actions.onShare(a) },
-            )
+            .clickable(enabled = exists, role = SemRole.Button, onClickLabel = "열기") { actions.onOpen(a) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -269,10 +264,13 @@ private fun FileCard(a: Attachment, maxWidth: Dp, actions: AttachmentActions) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 CardAction(Icons.Outlined.Refresh, if (generated) "다시 만들기" else "다시 받기") { redownload(a) }
             }
-        } else if (exists && saveCopy != null) {
+        } else if (exists) {
+            // 열기 · 공유 · 드라이브에 저장(전에는 공유가 길게 누르기에만 있었다).
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                CardAction(Icons.Outlined.CloudUpload, actions.saveCopyLabel) { saveCopy(a) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                CardAction(Icons.AutoMirrored.Outlined.OpenInNew, "열기") { actions.onOpen(a) }
+                CardAction(Icons.Outlined.Share, "공유") { actions.onShare(a) }
+                if (saveCopy != null) CardAction(Icons.Outlined.CloudUpload, actions.saveCopyLabel) { saveCopy(a) }
             }
         }
     }
