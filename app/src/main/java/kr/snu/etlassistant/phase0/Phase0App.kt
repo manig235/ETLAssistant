@@ -9,5 +9,6 @@ class Phase0App : Application() {
         CodexRunner.init(this)
         kr.snu.etlassistant.codex.CodexSession.init(this)
         kr.snu.etlassistant.notify.NotifyScheduler.apply(this)
+        kr.snu.etlassistant.calendar.CalendarWatch.apply(this) // 캘린더가 바뀌면 곧바로 맞춘다(켜져 있을 때만)
     }
 }

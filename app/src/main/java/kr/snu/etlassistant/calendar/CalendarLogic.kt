@@ -19,7 +19,8 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /*
- * 캘린더로 내보내기(2026-11-23). eTL 과제 마감과 내 마감을 폰 캘린더(CalendarContract) 또는 .ics 파일로 보낸다.
+ * 캘린더 연동의 "영민이 → 캘린더"(2026-11-23, 처음 이름은 "캘린더로 내보내기"). eTL 과제 마감과 내 마감(시험 포함)을 폰 캘린더(CalendarContract) 또는 .ics 파일로 보낸다.
+ * 사용자가 캘린더에서 고친 내 마감 일정은 되가져오고(내 마감 시각·제목·시험 장소), eTL 과제 일정은 원래대로 되돌린다([edits]).
  * 네트워크는 쓰지 않는다: eTL 과제는 알림 확인 때 받아 둔 결과(SnapshotCache), 내 마감은 폰 안 저장값만 쓴다.
  * 이 파일은 순수 함수만 둔다(단위 테스트 대상). ContentResolver를 쓰는 부분은 CalendarExport.kt.
  */
@@ -43,6 +44,8 @@ data class CalendarExportSettings(
     val includeMine: Boolean = true,
     /** 제출·완료한 항목도 보낸다(기본 끔: 제출·완료하면 캘린더에서 지운다). */
     val includeDone: Boolean = false,
+    /** 캘린더에서 고친 내 마감 일정을 앱에 되가져온다(기본 켬). 끄면 고친 일정도 앱 내용으로 되돌린다. */
+    val pullBack: Boolean = true,
 ) {
     fun toJson(): String = JSONObject()
         .put("version", 1)
@@ -53,6 +56,7 @@ data class CalendarExportSettings(
         .put("includeEtl", includeEtl)
         .put("includeMine", includeMine)
         .put("includeDone", includeDone)
+        .put("pullBack", pullBack)
         .toString()
 
     companion object {
@@ -66,6 +70,7 @@ data class CalendarExportSettings(
                 includeEtl = o.optBoolean("includeEtl", true),
                 includeMine = o.optBoolean("includeMine", true),
                 includeDone = o.optBoolean("includeDone", false),
+                pullBack = o.optBoolean("pullBack", true),
             )
         } catch (_: Exception) {
             CalendarExportSettings()
@@ -73,7 +78,7 @@ data class CalendarExportSettings(
     }
 }
 
-/** 캘린더 일정 하나(마감 하나). [start] == [end]인 0분짜리 일정이다. */
+/** 캘린더 일정 하나(마감 하나). 마감은 [start] == [end]인 0분짜리, 시험은 시작~끝(끝을 모르면 0분) 일정이다. */
 data class CalItem(
     /** `etl:{courseId}:{assignmentId}`, `mine:{id}`, 반복 회차는 `mine:{id}:{epochDay}`. */
     val key: String,
@@ -82,9 +87,22 @@ data class CalItem(
     val end: Instant,
     val description: String,
     val url: String? = null,
+    /** 시험 장소(EVENT_LOCATION). */
+    val location: String = "",
+    /** 바쁨으로 표시(시험). 마감은 바쁨 아님. */
+    val busy: Boolean = false,
 ) {
-    /** 바뀌었는지 비교하는 값(일정 내용만). */
-    val hash: String get() = CalendarLogic.hash(listOf(title, start.toEpochMilli().toString(), end.toEpochMilli().toString(), description, url.orEmpty(), CalendarLogic.TZ_ID))
+    /** 바뀌었는지 비교하는 값(일정 내용만). 장소가 없으면 예전 값과 같다(이미 넣은 일정을 다시 쓰지 않게). */
+    val hash: String get() = CalendarLogic.hash(listOf(title, start.toEpochMilli().toString(), end.toEpochMilli().toString(), description, url.orEmpty(), CalendarLogic.TZ_ID) +
+        (if (location.isNotEmpty() || busy) listOf(location, busy.toString()) else emptyList()))
+
+    /** 캘린더에 실제로 들어간 모양(제목·시각·장소)의 값. 사용자가 캘린더에서 고쳤는지 볼 때 쓴다. */
+    val rowHash: String get() = CalendarLogic.rowHash(title, start.toEpochMilli(), end.toEpochMilli(), location)
+}
+
+/** 캘린더에서 읽은 내보낸 일정의 지금 모양([CalendarLogic.edits]에 쓴다). */
+data class CalRow(val eventId: Long, val title: String, val start: Long, val end: Long, val location: String) {
+    val hash: String get() = CalendarLogic.rowHash(title, start, end, location)
 }
 
 object CalendarLogic {
@@ -132,13 +150,28 @@ object CalendarLogic {
         FOOTER,
     ).joinToString("\n")
 
-    fun mineTitle(d: MyDeadline): String = "[내 마감] ${NoticeText.clean(d.title)}" + (if (d.done) " (완료)" else "")
+    fun mineTitle(d: MyDeadline): String = if (d.isExam) MyDeadlines.examTitle(d)
+    else "[내 마감] ${NoticeText.clean(d.title)}" + (if (d.done) " (완료)" else "")
 
     fun mineDescription(d: MyDeadline): String = listOfNotNull(
+        d.supplies.trim().takeIf { d.isExam && it.isNotEmpty() }?.let { "준비물: ${NoticeText.clean(it)}" },
         d.memo.trim().takeIf { it.isNotEmpty() }?.let { cleanMultiline(it) },
-        "내 마감" + (if (d.repeat != null) " · ${MyDeadlines.repeatLabel(d)}" else ""),
+        (if (d.isExam) "시험" else "내 마감") + (if (d.repeat != null) " · ${MyDeadlines.repeatLabel(d)}" else ""),
         FOOTER,
     ).joinToString("\n")
+
+    /** 캘린더 제목에서 앱이 붙인 앞뒤 말을 떼고 내 마감 제목만(되가져오기용). 시험은 과목도 뗀다. 비면 null. */
+    fun titleFromCalendar(calendarTitle: String, d: MyDeadline): String? {
+        var t = NoticeText.clean(calendarTitle)
+        if (d.isExam) {
+            t = t.removePrefix("[시험]").trim()
+            val course = NoticeText.clean(d.course)
+            if (course.isNotEmpty() && t.startsWith("$course ") && !NoticeText.clean(d.title).contains(course)) t = t.removePrefix(course).trim()
+        } else {
+            t = t.removePrefix("[내 마감]").trim().removeSuffix("(완료)").trim()
+        }
+        return t.take(MyDeadlines.TITLE_MAX).takeIf { it.isNotEmpty() }
+    }
 
     const val FOOTER = "영민이 앱이 넣은 일정이에요. 앱에서 바뀌면 여기도 바뀌어요."
 
@@ -150,7 +183,12 @@ object CalendarLogic {
         return CalItem(etlKey(a.courseId, a.assignmentId), etlTitle(a), due, due, etlDescription(a), safeEtlUrl(a.url))
     }
 
-    fun mineItem(d: MyDeadline): CalItem = CalItem(mineKey(d), mineTitle(d), d.due, d.due, mineDescription(d))
+    fun mineItem(d: MyDeadline): CalItem = if (d.isExam)
+        CalItem(mineKey(d), mineTitle(d), d.due, d.end ?: d.due, mineDescription(d), location = NoticeText.clean(d.location), busy = true)
+    else CalItem(mineKey(d), mineTitle(d), d.due, d.due, mineDescription(d))
+
+    fun rowHash(title: String, start: Long, end: Long, location: String): String =
+        hash(listOf(NoticeText.clean(title), start.toString(), end.toString(), NoticeText.clean(location)))
 
     /**
      * 캘린더에 있어야 할 일정. [assignments]가 null이면(받아 둔 eTL 과제가 없음) eTL 쪽은 비우되 [authoritative]에서 빼서
@@ -192,9 +230,86 @@ object CalendarLogic {
 
     // ---- 맞추기(reconcile) -------------------------------------------------------
 
-    /** 매핑 한 줄. [eventId]가 [TOMBSTONE]이면 사용자가 캘린더에서 지운 일정(다시 만들지 않는다). */
-    data class Entry(val eventId: Long, val hash: String, val dueMillis: Long) {
+    /**
+     * 매핑 한 줄. [eventId]가 [TOMBSTONE]이면 사용자가 캘린더에서 지운 일정(다시 만들지 않는다).
+     * [rowHash]는 마지막으로 쓴 뒤 캘린더에서 다시 읽은 모양(제목·시각·장소). 비어 있으면 아직 모른다(예전 매핑).
+     * [reverts]는 같은 내용으로 되돌린 횟수(캘린더 쪽이 값을 바꿔 써서 되돌리기가 끝없이 반복되지 않게, [MAX_REVERTS]).
+     */
+    data class Entry(val eventId: Long, val hash: String, val dueMillis: Long, val rowHash: String = "", val reverts: Int = 0) {
         val tombstone: Boolean get() = eventId == TOMBSTONE
+    }
+
+    const val MAX_REVERTS = 3
+
+    /** 캘린더에서 고친 것을 어떻게 할지. */
+    sealed class Edit {
+        /** 반복 없는 내 마감: 바뀐 제목·시각(시험은 끝·장소도)을 앱에 반영한다. null은 그대로. */
+        data class PullMine(val key: String, val id: Long, val title: String?, val start: Instant?, val end: Instant?, val location: String?) : Edit()
+        /** eTL 과제·반복 회차·되가져오기 꺼짐: 앱 내용으로 되돌린다. */
+        data class Revert(val key: String, val repeating: Boolean) : Edit()
+        /** 같은 일정을 [MAX_REVERTS]번 되돌려도 다시 바뀌면 지금 모양을 받아들인다(되돌리지 않음). */
+        data class Accept(val key: String, val rowHash: String) : Edit()
+        /** 예전 매핑이라 모양을 몰랐다: 지금 모양을 기준으로 삼는다. */
+        data class Baseline(val key: String, val rowHash: String) : Edit()
+    }
+
+    /**
+     * 사용자가 캘린더에서 고친 일정을 찾는다. [rows]는 매핑된 일정 중 아직 있는 것의 지금 모양.
+     * - 앱에서도 바뀌었으면(desired 해시 ≠ 매핑 해시) 앱이 이긴다(plan의 Update가 덮는다): 여기서는 아무것도 하지 않는다.
+     * - 반복 없는 내 마감 + [pullBack]: 바뀐 제목·시각(시험은 끝·장소)을 되가져온다. 제목이 비면 제목은 그대로.
+     * - 반복 내 마감 회차: 반복 전체를 바꾸지 않고 되돌린다(앱에는 반영하지 않음).
+     * - eTL 과제(읽기 전용)·[pullBack] 꺼짐: 되돌린다.
+     */
+    fun edits(desired: Desired, mapping: Map<String, Entry>, rows: Map<Long, CalRow>, mine: List<MyDeadline>, pullBack: Boolean): List<Edit> {
+        val out = mutableListOf<Edit>()
+        val wanted = desired.items.associateBy { it.key }
+        for ((key, e) in mapping) {
+            if (e.tombstone) continue
+            val row = rows[e.eventId] ?: continue
+            val item = wanted[key] ?: continue
+            if (item.hash != e.hash) continue // 앱 쪽이 바뀜 → plan이 고친다
+            if (e.rowHash.isEmpty()) { out += Edit.Baseline(key, row.hash); continue }
+            if (row.hash == e.rowHash) continue
+            val parts = key.split(':')
+            val mineId = if (parts[0] == "mine") parts.getOrNull(1)?.toLongOrNull() else null
+            val repeating = parts[0] == "mine" && parts.size > 2
+            val d = mineId?.let { id -> mine.firstOrNull { it.id == id } }
+            if (pullBack && d != null && !repeating && d.repeat == null) {
+                val title = titleFromCalendar(row.title, d)?.takeIf { NoticeText.clean(row.title) != item.title && it != d.title }
+                val start = Instant.ofEpochMilli(row.start).takeIf { row.start != item.start.toEpochMilli() }
+                val end = if (d.isExam) Instant.ofEpochMilli(row.end).takeIf { row.end != item.end.toEpochMilli() && row.end > row.start } else null
+                val location = if (d.isExam) NoticeText.clean(row.location).take(MyDeadlines.LOCATION_MAX).takeIf { it != item.location } else null
+                if (title != null || start != null || end != null || location != null) {
+                    out += Edit.PullMine(key, d.id, title, start, end, location)
+                    continue
+                }
+                // 되가져올 것이 없는 변화(설명만 등): 지금 모양을 기준으로.
+                out += Edit.Accept(key, row.hash)
+                continue
+            }
+            out += if (e.reverts >= MAX_REVERTS) Edit.Accept(key, row.hash) else Edit.Revert(key, repeating)
+        }
+        return out
+    }
+
+    /**
+     * [Edit.PullMine]을 내 마감에 적용한 새 값. 시각이 바뀌면 새 ID(알림 기록 규칙, 화면과 같다)이고 알림 시각은 같은 만큼 옮긴다.
+     * 시험의 끝은 시작을 옮기면 길이를 유지한다(끝도 바뀌었으면 그 값). 검증에 걸리면 null(되돌린다).
+     */
+    fun applyPull(d: MyDeadline, e: Edit.PullMine, newId: Long): MyDeadline? {
+        val start = e.start ?: d.due
+        val shift = Duration.between(d.due, start)
+        val end = if (!d.isExam) null else e.end ?: d.end?.plus(shift)
+        val new = d.copy(
+            id = if (start != d.due) newId else d.id,
+            title = e.title ?: d.title,
+            due = start,
+            end = end,
+            location = e.location ?: d.location,
+            reminders = d.reminders.map { it.plus(shift) }.filter { it.isBefore(start) },
+        )
+        if (MyDeadlines.validate(new.title, new.memo, 0) != null || MyDeadlines.validateExam(new) != null) return null
+        return new
     }
 
     const val TOMBSTONE = -1L
@@ -224,7 +339,7 @@ object CalendarLogic {
      * - 원본이 사라졌거나 제출·완료된 항목은 지운다. 단 [Desired.authoritative]에 없는 종류는 건드리지 않고,
      *   마감이 [KEEP_PAST]보다 오래된 일정은 지난 기록으로 남겨 둔다([FORGET_AFTER]가 지나면 매핑만 잊는다).
      */
-    fun plan(desired: Desired, mapping: Map<String, Entry>, live: Set<Long>, now: Instant): Plan {
+    fun plan(desired: Desired, mapping: Map<String, Entry>, live: Set<Long>, now: Instant, forceUpdate: Set<String> = emptySet()): Plan {
         val ops = mutableListOf<Op>()
         val tomb = mutableListOf<String>()
         val forget = mutableListOf<String>()
@@ -235,7 +350,7 @@ object CalendarLogic {
                 e == null -> ops += Op.Insert(item)
                 e.tombstone -> Unit
                 e.eventId !in live -> tomb += item.key
-                e.hash != item.hash -> ops += Op.Update(e.eventId, item)
+                e.hash != item.hash || item.key in forceUpdate -> ops += Op.Update(e.eventId, item)
             }
         }
         val keepFrom = now.minus(KEEP_PAST).toEpochMilli()
@@ -257,7 +372,7 @@ object CalendarLogic {
         .put("version", 1)
         .put("calendarId", calendarId)
         .put("entries", JSONObject().also { o ->
-            entries.forEach { (k, e) -> o.put(k, JSONArray().put(e.eventId).put(e.hash).put(e.dueMillis)) }
+            entries.forEach { (k, e) -> o.put(k, JSONArray().put(e.eventId).put(e.hash).put(e.dueMillis).put(e.rowHash).put(e.reverts)) }
         }).toString()
 
     data class Mapping(val calendarId: Long, val entries: Map<String, Entry>)
@@ -268,7 +383,7 @@ object CalendarLogic {
         o.optJSONObject("entries")?.let { e ->
             e.keys().forEach { k ->
                 val a = e.optJSONArray(k) ?: return@forEach
-                entries[k] = Entry(a.optLong(0, TOMBSTONE), a.optString(1, ""), a.optLong(2, 0L))
+                entries[k] = Entry(a.optLong(0, TOMBSTONE), a.optString(1, ""), a.optLong(2, 0L), a.optString(3, ""), a.optInt(4, 0))
             }
         }
         Mapping(o.optLong("calendarId", -1L), entries)
@@ -291,7 +406,7 @@ object CalendarLogic {
      * - 격주: `INTERVAL=2;WKST=MO`. 시작 시각([dtstartFor])이 규칙에 맞는 회차여야 앱과 같은 주에 맞춰진다.
      * - 끝 날짜: 그날(KST) 23:59:59를 UTC로 바꾼 `UNTIL`(그날 회차 포함).
      */
-    fun rrule(d: MyDeadline): String? {
+    fun rrule(d: MyDeadline, fromFirst: Boolean = true): String? {
         val r = d.repeat ?: return null
         val start = d.due.atZone(ZONE).toLocalDate()
         val base = when (r.freq) {
@@ -300,7 +415,16 @@ object CalendarLogic {
             MyRepeat.Freq.BIWEEKLY -> "FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=${byDay(MyDeadlines.weekdaysOf(d))}"
             MyRepeat.Freq.MONTHLY -> "FREQ=MONTHLY;BYMONTHDAY=" + (if (start.dayOfMonth == 31) "-1" else start.dayOfMonth.toString())
         }
-        return base + (r.until?.let { ";UNTIL=" + UTC_FMT.format(it.atTime(23, 59, 59).atZone(ZONE)) } ?: "")
+        // 끝: 횟수면 COUNT. 단 시작 회차가 첫 회차가 아니거나(나중 회차에서 추가), 날짜도 함께 있거나, 매월 29·30일(캘린더 앱이 2월을 빼서 횟수가 어긋남)이면
+        // 실제 마지막 회차 시각을 UNTIL로 쓴다(RFC 5545는 COUNT와 UNTIL을 함께 못 쓴다).
+        val monthlyGap = r.freq == MyRepeat.Freq.MONTHLY && start.dayOfMonth in 29..30
+        val end = when {
+            r.count != null && r.until == null && fromFirst && !monthlyGap -> ";COUNT=${r.count}"
+            r.count != null -> MyDeadlines.lastOccurrence(d)?.let { ";UNTIL=" + UTC_FMT.format(it.due) } ?: ";COUNT=${r.count}"
+            r.until != null -> ";UNTIL=" + UTC_FMT.format(r.until.atTime(23, 59, 59).atZone(ZONE))
+            else -> ""
+        }
+        return base + end
     }
 
     /** 이 날짜가 [rrule]이 만드는 회차인가(29·30일 매월 반복의 2월 말일처럼 앱과 다른 날을 거른다). */
@@ -405,16 +529,18 @@ object CalendarLogic {
             "END:VTIMEZONE",
         )
         val stamp = utc(now)
-        fun event(uidKey: String, title: String, start: Instant, desc: String, url: String?, extra: List<String> = emptyList()) {
+        fun event(uidKey: String, title: String, start: Instant, desc: String, url: String?, extra: List<String> = emptyList(), end: Instant? = null, location: String = "") {
             lines += "BEGIN:VEVENT"
             lines += "UID:${uidKey.replace(':', '-')}@youngmin.etl-android"
             lines += "DTSTAMP:$stamp"
             lines += "DTSTART;TZID=$TZ_ID:${local(start)}"
+            if (end != null && end.isAfter(start)) lines += "DTEND;TZID=$TZ_ID:${local(end)}"
             lines += extra
             lines += "SUMMARY:${escapeText(title)}"
+            if (location.isNotEmpty()) lines += "LOCATION:${escapeText(location)}"
             lines += "DESCRIPTION:${escapeText(desc)}"
             if (url != null) lines += "URL:$url"
-            lines += "TRANSP:TRANSPARENT"
+            lines += if (end != null && end.isAfter(start)) "TRANSP:OPAQUE" else "TRANSP:TRANSPARENT"
             lines += "END:VEVENT"
         }
         if (settings.includeEtl) {
@@ -430,17 +556,20 @@ object CalendarLogic {
                 val r = d.repeat
                 if (r == null) {
                     if (d.due.isBefore(from) || (!settings.includeDone && d.done)) continue
-                    event(mineKey(d), mineTitle(d), d.due, mineDescription(d), null)
+                    val item = mineItem(d)
+                    event(mineKey(d), item.title, d.due, item.description, null, end = item.end, location = item.location)
                     continue
                 }
-                if (r.until != null && r.until.isBefore(from.atZone(ZONE).toLocalDate())) continue
+                val lastDate = MyDeadlines.lastDate(d)
+                if (lastDate != null && lastDate.isBefore(from.atZone(ZONE).toLocalDate())) continue
                 val first = dtstartFor(d) ?: continue
+                val fromFirst = first.occurrence == MyDeadlines.firstOccurrence(d)?.occurrence
                 val time = d.due.atZone(ZONE).toLocalTime()
                 val ex = (d.skipDates + if (settings.includeDone) emptySet() else d.doneDates)
                     .filter { !it.isBefore(first.occurrence ?: it) }.sorted()
                     .map { local(it.atTime(time).atZone(ZONE).toInstant()) }
                 val extra = listOfNotNull(
-                    "RRULE:${rrule(d)}",
+                    "RRULE:${rrule(d, fromFirst)}",
                     ex.takeIf { it.isNotEmpty() }?.let { "EXDATE;TZID=$TZ_ID:${it.joinToString(",")}" },
                 )
                 event("mine:${d.id}", mineTitle(d.copy(done = false)), first.due, mineDescription(d), null, extra)
@@ -461,6 +590,13 @@ object CalendarLogic {
             plan.updates.takeIf { it > 0 }?.let { "바뀜 $it" },
             plan.deletes.takeIf { it > 0 }?.let { "지움 $it" },
         )
-        return "%d/%d %02d:%02d 내보냄 · ".format(z.monthValue, z.dayOfMonth, z.hour, z.minute) + (parts.joinToString(" · ").ifEmpty { "바뀐 것 없음" })
+        return "%d/%d %02d:%02d 맞춤 · ".format(z.monthValue, z.dayOfMonth, z.hour, z.minute) + (parts.joinToString(" · ").ifEmpty { "바뀐 것 없음" })
     }
+
+    /** 되가져오기 결과 문구: ` · 캘린더에서 고친 내 마감 1개 반영 · 되돌림 2`. */
+    fun editsLabel(pulled: Int, reverted: Int, repeatingReverted: Int): String = listOfNotNull(
+        pulled.takeIf { it > 0 }?.let { "캘린더에서 고친 내 마감 ${it}개 반영" },
+        (reverted - repeatingReverted).takeIf { it > 0 }?.let { "eTL 과제 일정 되돌림 $it" },
+        repeatingReverted.takeIf { it > 0 }?.let { "반복 회차 되돌림 $it(반복 마감은 앱에서 고쳐 주세요)" },
+    ).joinToString("") { " · $it" }
 }
