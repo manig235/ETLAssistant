@@ -2,6 +2,8 @@ package kr.snu.etlassistant.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -67,6 +69,9 @@ class ChatViewModel : ViewModel() {
     /** 대화 목록(서랍을 열 때 새로 읽는다)과 지금 대화. */
     var chatList by mutableStateOf<List<ChatMeta>>(emptyList())
     var currentChatId by mutableStateOf("")
+    /** 내 일정에 아직 넣지 않은 시험·과제 공지(채팅 상단 칩과 하단 시트). */
+    var pendingNotices by mutableStateOf<List<kr.snu.etlassistant.notify.PendingNotice>>(emptyList())
+    var pendingSheet by mutableStateOf(false)
 
     fun bump() { version++ }
 
@@ -117,6 +122,7 @@ fun ChatRoot(vm: ChatViewModel, a: ChatActions) {
         ChatScreen(vm, a)
         // 새 버전이 있으면 앞에 팝업(하루 한 번까지, update/UpdatePrompt).
         kr.snu.etlassistant.update.UpdatePrompt()
+        if (vm.pendingSheet) PendingNoticesSheet(vm)
     }
 }
 
@@ -169,11 +175,15 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
             .imePadding()
     ) {
         ChatTopBar(onMenu = { drawerScope.launch { drawerState.open() } }, onNewChat = a.onNewChat, onSettings = a.onSettings)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModelChip(
                 label = ModelCatalog.choiceLabel(vm.choice, vm.models),
                 onClick = { vm.sheetOpen = true },
             )
+            if (vm.pendingNotices.isNotEmpty()) {
+                com.wanted.android.wanted.design.actions.chip.WantedChip(text = "등록할 공지 ${vm.pendingNotices.size}개", onClick = { vm.pendingSheet = true },
+                    modifier = Modifier.semantics { contentDescription = "등록 안 한 공지 ${vm.pendingNotices.size}개 보기" })
+            }
         }
         vm.banner?.let { spec ->
             StatusBanner(

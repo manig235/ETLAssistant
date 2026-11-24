@@ -172,6 +172,23 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         CodexSession.attach(this)
         CodexSession.ensureStarted()
         updateBanner()
+        loadPendingNotices()
+    }
+
+    /** 등록 안 한 시험·과제 공지(받아 둔 것만, 네트워크 없음). 새 공지가 있고 업데이트 팝업이 안 뜨는 때에만 시트를 자동으로 연다. */
+    private fun loadPendingNotices() {
+        Thread {
+            val store = kr.snu.etlassistant.notify.PendingNoticeStore(this)
+            val list = runCatching { store.targets(this) }.getOrDefault(emptyList())
+            val auto = kr.snu.etlassistant.notify.PendingNoticesLogic.shouldAutoShow(list, store.seen(),
+                kr.snu.etlassistant.notify.NotifySettingsStore(this).load().pendingSheet, kr.snu.etlassistant.update.updatePromptPending(this))
+            if (auto) store.markSeen(list.map { it.id })
+            runOnUiThread {
+                vm.pendingNotices = list
+                if (auto) vm.pendingSheet = true
+                if (list.isEmpty()) vm.pendingSheet = false
+            }
+        }.start()
     }
 
     override fun onResume() {

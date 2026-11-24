@@ -35,10 +35,18 @@ object NotifyRunner {
                 return@guarded skipped(stateStore, now, "건너뜀 · 알림 권한 없음")
             }
             // 내가 정한 알림 시각(내 마감)은 네트워크 없이 먼저 보낸다: eTL 조회가 실패해도 울려야 한다. 방해 금지·마감 알림 설정과 무관.
-            val reminders = MyDeadlines.reminderNotices(mine, now, stateStore.load().fired.keys)
-            if (reminders.isNotEmpty()) {
+            // 시험 알림의 응원 문구는 설정의 "반말로 대화"를 따른다. 시험이 끝나면 "수고했어요"(방해 금지 중이면 보내지 않음).
+            val casual = runCatching { kr.snu.etlassistant.codex.AppSettings.casualTone }.getOrDefault(false)
+            val quietEarly = now.atZone(java.time.ZoneId.systemDefault()).let { Quiet.isQuiet(it.hour * 60 + it.minute, settings) }
+            val firedEarly = stateStore.load().fired.keys
+            val (examDone, examSilent) = MyDeadlines.examDoneNotices(mine, now, firedEarly, settings.examDoneAlerts, quietEarly, casual)
+            val reminders = MyDeadlines.reminderNotices(mine, now, firedEarly, casual) + examDone
+            if (reminders.isNotEmpty() || examSilent.isNotEmpty()) {
                 reminders.forEach { NotificationPoster.post(app, it, settings) }
-                stateStore.update { s -> reminders.forEach { n -> n.firedKeys.forEach { s.fired[it] = now.toEpochMilli() } } }
+                stateStore.update { s ->
+                    reminders.forEach { n -> n.firedKeys.forEach { s.fired[it] = now.toEpochMilli() } }
+                    examSilent.forEach { s.fired[it] = now.toEpochMilli() }
+                }
             }
             runCatching { DeadlineAlarm.scheduleEarlier(app, MyDeadlines.nextReminderAt(mine, now, stateStore.load().fired.keys)) }
             // 과목별 알림 끄기·숨기기: 그 과목은 알리지 않고 중복 방지 기록만 남긴다([CourseMute]).
@@ -54,6 +62,8 @@ object NotifyRunner {
             // eTL을 실제로 조회했는가. 아니면(토큰 없음, 연결 실패) 공지 기준선·새 과제/변경 비교를 하지 않는다.
             val etlOk = !token.isNullOrEmpty() && failure == null
             val snapshot = MyDeadlines.merge(fetched.snapshot, mine, now)
+            // 시험·과제 공지는 채팅 화면의 "등록 안 한 공지" 시트용으로 남겨 둔다(14일·50개, 화면을 열 때는 네트워크 없이 이것만 쓴다).
+            if (etlOk) runCatching { PendingNoticeStore(app).record(fetched.snapshot.announcements, now) }
             // 토큰이 없을 때(내 마감만 확인) 공지 기준선을 잡으면, 나중에 토큰을 넣었을 때 기존 공지가 한꺼번에 알려진다.
             val plan = CourseMute.plan(snapshot, stateStore.load(), now, settings, courses)
                 .let { if (!etlOk) it.copy(markBaselineDone = false) else it }
@@ -178,7 +188,10 @@ object NotifyRunner {
             logErrors(snapshot.errors, fetched.cachedAt)
             val classes = if (token.isNullOrEmpty()) emptyList() else todayClassLines(app, token, now)
             // 브리핑은 방해 금지와 무관하게 정해진 시각에 보낸다.
-            NotificationPoster.post(app, BriefBuilder.build(snapshot, now, settings, todayClasses = classes, staleSince = fetched.cachedAt), settings)
+            // 시험(내 마감, 과목 숨기기와 무관: 내 마감처럼 적용하지 않음)과 오늘 캘린더 일정(내 캘린더 일정 보기가 켜져 있을 때, 네트워크 없음).
+            val exams = MyDeadlines.examLines(mine, now)
+            val events = runCatching { kr.snu.etlassistant.calendar.CalendarReader.todayLines(app, now) }.getOrDefault(emptyList())
+            NotificationPoster.post(app, BriefBuilder.build(snapshot, now, settings, todayClasses = classes, staleSince = fetched.cachedAt, exams = exams, todayEvents = events), settings)
             val nowMs = now.toEpochMilli()
             stateStore.update { s ->
                 s.lastBriefAt = nowMs

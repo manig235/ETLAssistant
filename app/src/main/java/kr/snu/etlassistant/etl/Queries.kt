@@ -147,21 +147,54 @@ object Queries {
         return JSONArray(rows)
     }
 
+    /** 공지 종류(알림 배지와 "내 일정에 등록"/"시간표에 반영" 초안이 함께 쓴다). */
+    enum class AnnCategory(val badge: String) {
+        EXAM("시험 공지"), ASSIGNMENT("과제 공지"), VIDEO("동영상 강의"), MAKEUP("보강 공지"), CANCEL("휴강 공지");
+
+        val label: String get() = badge.removeSuffix(" 공지")
+        val timetable: Boolean get() = this == MAKEUP || this == CANCEL
+    }
+
     /**
-     * 공지 본문으로 수업 변동·시험 공지를 가린다(알림 제목에 쓴다).
-     * 제목에 시험 말이 있으면 "시험 공지"가 먼저고, 그다음 보강·휴강, 본문에만 시험 일정이 있으면 "시험 공지".
+     * 공지 종류. 우선순위는 시험 > 과제 > 동영상 강의 > 보강 > 휴강이고 제목에 있는 말이 먼저다
+     * (제목: 시험 → 과제 → 동영상 → 본문까지 보강 → 휴강 → 본문의 시험·과제·동영상). 해당 없으면 null.
      */
-    fun announcementBadge(title: String?, text: String?): String {
+    fun announcementCategory(title: String?, text: String?): AnnCategory? {
         val s = "${title ?: ""} ${text ?: ""}"
         val exam = examMention(title, text)
+        val assign = exam == ExamMention.NONE && isAssignmentAnnouncement(title, text)
+        val video = exam == ExamMention.NONE && !assign && isVideoLecture(title, text)
+        val t = title.orEmpty()
         return when {
-            exam == ExamMention.TITLE -> "시험 공지"
-            "보강" in s -> "보강 공지"
-            Regex("휴강|결강").containsMatchIn(s) -> "휴강 공지"
-            exam == ExamMention.BODY -> "시험 공지"
-            else -> "새 공지"
+            exam == ExamMention.TITLE -> AnnCategory.EXAM
+            assign && ASSIGN.containsMatchIn(t) -> AnnCategory.ASSIGNMENT
+            video && VIDEO.containsMatchIn(t) -> AnnCategory.VIDEO
+            "보강" in s -> AnnCategory.MAKEUP
+            Regex("휴강|결강").containsMatchIn(s) -> AnnCategory.CANCEL
+            exam == ExamMention.BODY -> AnnCategory.EXAM
+            assign -> AnnCategory.ASSIGNMENT
+            video -> AnnCategory.VIDEO
+            else -> null
         }
     }
+
+    /** 알림 제목 배지: "시험 공지", "과제 공지", "동영상 강의", "보강 공지", "휴강 공지", 그 밖은 "새 공지". */
+    fun announcementBadge(title: String?, text: String?): String = announcementCategory(title, text)?.badge ?: "새 공지"
+
+    private val VIDEO = Regex("동영상\\s*강의|녹화\\s*강의|영상\\s*강의|\\bVOD\\b|온라인\\s*강의|사전\\s*녹화|강의\\s*영상|녹화본", RegexOption.IGNORE_CASE)
+    /** 동영상 강의를 시청하라는 말(단순 자료 링크 공지를 거른다). */
+    private val VIDEO_ACTION = Regex("시청|기한|기간|까지|대체|출석\\s*인정|수강\\s*기간", RegexOption.IGNORE_CASE)
+    /** 그날 대면 수업이 없다는 단서. */
+    private val NO_CLASS = Regex("대면\\s*수업\\s*(은|이)?\\s*(없|휴강|대체)|대체\\s*(합니다|해요|됩니다|수업)|수업\\s*(은|이)?\\s*없|휴강", RegexOption.IGNORE_CASE)
+
+    /** 동영상 강의 공지인가: 동영상 강의 말과 시청·기한·대체 같은 말이 함께 있을 때(시험·과제 공지가 아닐 때). */
+    fun isVideoLecture(title: String?, text: String?): Boolean {
+        val s = "${title.orEmpty()} ${text.orEmpty()}"
+        return VIDEO.containsMatchIn(s) && VIDEO_ACTION.containsMatchIn(s) && !EXAM_RESULT.containsMatchIn(title.orEmpty())
+    }
+
+    /** 동영상 강의 공지에 "그날 대면 수업 없음/대체" 단서가 있는가. */
+    fun replacesClass(text: String?): Boolean = NO_CLASS.containsMatchIn(text.orEmpty())
 
     enum class ExamMention { NONE, TITLE, BODY }
 
@@ -186,6 +219,39 @@ object Queries {
     }
 
     fun isExamAnnouncement(title: String?, text: String?): Boolean = examMention(title, text) != ExamMention.NONE
+
+    /** 과제 공지의 말. "제출"·"마감"은 과제 말과 함께 볼 때만 쓴다. */
+    private val ASSIGN = Regex("과제|보고서|레포트|리포트|프로젝트|\\bhomework\\b|\\bhw\\s*#?\\d*\\b|\\bassignments?\\b|\\bprojects?\\b|\\breport\\b", RegexOption.IGNORE_CASE)
+    private val ASSIGN_DUE = Regex("제출|마감|기한|까지|\\bdue\\b|\\bdeadline\\b|\\bsubmit", RegexOption.IGNORE_CASE)
+
+    /**
+     * 과제 공지인가(2026-11-24, "내 일정에 등록" 버튼). 시험 공지가 아니고, 제목에 과제 말이 있거나(성적·채점 같은 결과 공지는 제외)
+     * 본문에 과제 말과 제출·마감 말이 함께 있을 때. 키워드만 본다.
+     */
+    fun isAssignmentAnnouncement(title: String?, text: String?): Boolean {
+        if (isExamAnnouncement(title, text)) return false
+        val t = title.orEmpty()
+        val b = text.orEmpty()
+        // "과제 성적/점수/채점/해설/정답 공개" 같은 결과 공지는 뺀다.
+        if (EXAM_RESULT.containsMatchIn(t) || Regex("정답").containsMatchIn(t)) return false
+        if (ASSIGN.containsMatchIn(t)) return true
+        return ASSIGN.containsMatchIn(b) && ASSIGN_DUE.containsMatchIn(b)
+    }
+
+    /** 준비물·지참물·허용 물품을 말하는 줄(2026-11-24). 키워드만 보고 날짜나 물품을 해석하지 않는다. */
+    private val SUPPLIES = Regex("준비물|지참|가져\\s*오|가져\\s*와|챙겨|허용|불허|사용\\s*(가능|불가)|계산기|신분증|학생증|사인펜|요약지|치팅|cheat\\s*sheet|\\bbring\\b|\\ballowed\\b|\\bcalculators?\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * 시험 공지 본문에서 준비물 관련 줄을 최대 [maxLines]줄, 줄마다 [maxChars]자로 뽑는다(알림 본문에 덧붙인다).
+     * 줄바꿈이 없는 긴 본문은 문장(". ", "다.") 단위로 나눠 본다. 같은 줄은 한 번만.
+     */
+    fun suppliesLines(text: String?, maxLines: Int = 2, maxChars: Int = 60): List<String> {
+        val parts = text.orEmpty().split('\n').flatMap { it.split(Regex("(?<=[.!?。])\\s+")) }
+        return parts.map { it.replace(Regex("\\s+"), " ").trim().trimStart('-', '*', '•', '·', '※', ' ') }
+            .filter { it.isNotEmpty() && SUPPLIES.containsMatchIn(it) }
+            .distinct().take(maxLines)
+            .map { if (it.length > maxChars) it.take(maxChars - 1) + "…" else it }
+    }
 
     // ---- etl_get --------------------------------------------------------------
 

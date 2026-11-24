@@ -41,6 +41,7 @@ object NotificationPoster {
     }
 
     private const val CHAT_REQUEST_SALT = 0x5f3c1d
+    private const val DRAFT_REQUEST_SALT = 0x2a91e7
 
     private fun chatOpen(context: Context, prefill: String?): Intent =
         Intent().setClassName(context, CHAT_ACTIVITY)
@@ -102,11 +103,19 @@ object NotificationPoster {
                 b.setStyle(NotificationCompat.BigTextStyle().bigText(it))
             }
 
-            if (etlIntent != null) {
-                b.addAction(0, "eTL에서 열기", etlIntent)
+            // 버튼 순서: 내 일정에 등록 / 일정 정리 부탁(비서) / eTL에서 열기(최대 3개).
+            notice.draft?.let { draft ->
+                val open = kr.snu.etlassistant.chat.DraftIntents.open(context, draft)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .setData(Uri.parse("youngmin-draft://announcement/$id"))
+                val label = ScheduleDraft.fromJson(draft)?.actionLabel ?: ScheduleDrafts.ACTION
+                b.addAction(0, label, PendingIntent.getActivity(context, id xor DRAFT_REQUEST_SALT, open, flags))
             }
             if (notice.prefill != null && notice.prefillAction != null) {
                 b.addAction(0, notice.prefillAction, chatIntent)
+            }
+            if (etlIntent != null) {
+                b.addAction(0, "eTL에서 열기", etlIntent)
             }
 
             if (settings.hideContentOnLockScreen) {

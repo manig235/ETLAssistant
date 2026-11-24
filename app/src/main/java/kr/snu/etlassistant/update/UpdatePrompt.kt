@@ -21,6 +21,15 @@ import com.wanted.android.wanted.design.theme.DesignSystemTheme
  * "나중에"·"받기"·바깥 누름 모두 그 버전을 하루 미룬다([UpdateLogic.shouldPrompt]). 업데이트 알림을 꺼 두면 띄우지 않는다.
  * 받기는 확인한 버전의 APK 직접 링크를 열어 브라우저에서 다운로드한다.
  */
+/** 이번에 업데이트 팝업이 뜰 차례인가(다른 자동 창이 겹치지 않게 미룬다). */
+fun updatePromptPending(context: android.content.Context): Boolean = runCatching {
+    val store = UpdateStore(context)
+    val latest = store.latest
+    store.enabled && latest?.downloadUrl != null && UpdateLogic.shouldPrompt(
+        latest, UpdateChecker.currentVersion(context), store.promptSnoozedTag, store.promptSnoozedAtMs, System.currentTimeMillis(),
+    )
+}.getOrDefault(false)
+
 @Composable
 fun UpdatePrompt() {
     val context = LocalContext.current
