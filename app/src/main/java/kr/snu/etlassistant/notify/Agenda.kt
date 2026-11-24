@@ -75,8 +75,9 @@ class SnapshotCache(context: Context) {
 }
 
 object Agenda {
-    enum class Kind { ASSIGNMENT, MINE }
-    enum class Filter(val label: String) { ALL("전체"), ASSIGNMENT("과제"), MINE("내 마감") }
+    enum class Kind { ASSIGNMENT, MINE, EXAM, CALENDAR }
+    /** [CALENDAR]는 "내 캘린더 일정 보기"가 켜져 있을 때만 화면에 보인다. */
+    enum class Filter(val label: String) { ALL("전체"), ASSIGNMENT("과제"), MINE("내 마감"), EXAM("시험"), CALENDAR("캘린더") }
 
     /** 같은 이름·시각의 과제도 서로 다른 행으로 유지한다. */
     data class Row(
@@ -95,6 +96,10 @@ object Agenda {
         val assignment: AssignmentItem? = null,
         /** 제출했지만 제출 정보 점검에서 문제가 나온 과제. 제출·완료를 숨겨도 보인다. */
         val attention: Boolean = false,
+        /** 캘린더에서 읽은 일정이면 그 일정(누르면 캘린더 앱에서 연다). */
+        val calendar: kr.snu.etlassistant.calendar.CalEvent? = null,
+        /** 시각 대신 보일 문구(시험 `10:00~12:00`, 캘린더 `종일`). null이면 [at]과 남은 시간. */
+        val timeText: String? = null,
     )
 
     data class Group(val date: LocalDate, val rows: List<Row>)
@@ -123,6 +128,8 @@ object Agenda {
         zone: ZoneId,
         filter: Filter = Filter.ALL,
         hideDone: Boolean = true,
+        /** 고른 캘린더의 일정(내 캘린더 일정 보기가 꺼져 있으면 빈 목록). */
+        calendar: List<kr.snu.etlassistant.calendar.CalEvent> = emptyList(),
     ): Schedule {
         val rows = mutableListOf<Row>()
         if (filter == Filter.ALL || filter == Filter.ASSIGNMENT) {
@@ -138,10 +145,31 @@ object Agenda {
                 )
             }
         }
+        if (filter == Filter.ALL || filter == Filter.EXAM) {
+            // 시험: 끝나면 목록에서 빠진다(누락이 없다). 보는 중인 시험은 "진행 중".
+            for (d in mine.filter { it.isExam && !it.done && it.over.isAfter(now) }) {
+                val ongoing = !d.due.isAfter(now)
+                rows += Row("exam-${d.id}", Kind.EXAM, MyDeadlines.examTitle(d).removePrefix("[시험] "),
+                    listOfNotNull("시험", d.location.takeIf { it.isNotBlank() }, d.supplies.takeIf { it.isNotBlank() }?.let { "준비물: $it" },
+                        if (d.reminders.isNotEmpty()) "🔔 ${MyDeadlines.reminderLabel(d)}" else null,
+                        d.memo.takeIf { it.isNotBlank() }, if (ongoing) "진행 중" else null).joinToString(" · "),
+                    d.due, mine = d, timeText = MyDeadlines.examTimeLabel(d) + (if (ongoing) "" else " · " + kr.snu.etlassistant.etl.EtlLogic.remaining(d.due, now)))
+            }
+        }
+        if (filter == Filter.ALL || filter == Filter.CALENDAR) {
+            for (e in calendar) {
+                if (!e.end.isAfter(now) && !(e.start == e.end && e.start.isAfter(now))) continue
+                rows += Row(e.key, Kind.CALENDAR, e.title,
+                    listOfNotNull(e.calendarName.ifEmpty { "캘린더" }, e.location.takeIf { it.isNotEmpty() }, if (e.recurring) "🔁" else null).joinToString(" · "),
+                    if (e.allDay || e.start.isBefore(now)) maxOf(e.start, now.atZone(zone).toLocalDate().atStartOfDay(zone).toInstant()) else e.start,
+                    calendar = e,
+                    timeText = (if (e.allDay) "" else NoticeText.dateLabel(e.start).substringBefore(' ') + " ") + kr.snu.etlassistant.calendar.CalendarReadLogic.timeLabel(e))
+            }
+        }
         if (filter == Filter.ALL || filter == Filter.MINE) {
-            // 반복 마감은 앞으로 7일의 회차를 모두 펼친다(그 안에 없으면 다음 회차 하나).
+            // 반복 마감은 앞으로 7일의 회차를 모두 펼치고, 7일 뒤의 다음 회차 하나도 "그 이후"에 보인다.
             val until = now.atZone(zone).toLocalDate().plusDays(7).atStartOfDay(zone).toInstant()
-            for (d in MyDeadlines.agendaItems(mine, now, until)) {
+            for (d in MyDeadlines.agendaItems(mine.filter { !it.isExam }, now, until)) {
                 val past = !d.due.isAfter(now)
                 if (past && d.done) continue
                 rows += Row("mine-${d.id}" + (d.occurrence?.let { "-$it" } ?: ""), Kind.MINE, d.title,
@@ -160,7 +188,8 @@ object Agenda {
         val future = visible.filter { !it.overdue }
         return Schedule(
             today = today,
-            urgent = future.filter { !it.done && !it.at.isAfter(now.plus(Duration.ofHours(24))) },
+            // 캘린더 일정은 마감이 아니라 요약에 넣지 않는다(시험은 넣는다).
+            urgent = future.filter { !it.done && it.kind != Kind.CALENDAR && !it.at.isAfter(now.plus(Duration.ofHours(24))) },
             overdue = visible.filter { it.overdue },
             upcoming = groups(future.filter { it.at.isBefore(endExclusive) }),
             later = groups(future.filter { !it.at.isBefore(endExclusive) }),
@@ -184,6 +213,6 @@ object Agenda {
     }
 
     /** `11/23(월) 23:59 · 1일 2시간 남음`처럼 보일 시각 부분. */
-    fun whenLabel(r: Row, now: Instant): String =
-        NoticeText.dateLabel(r.at) + " · " + kr.snu.etlassistant.etl.EtlLogic.remaining(r.at, now)
+    fun whenLabel(r: Row, now: Instant): String = r.timeText
+        ?: (NoticeText.dateLabel(r.at) + " · " + kr.snu.etlassistant.etl.EtlLogic.remaining(r.at, now))
 }

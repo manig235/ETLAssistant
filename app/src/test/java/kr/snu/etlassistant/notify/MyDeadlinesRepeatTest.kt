@@ -171,7 +171,8 @@ class MyDeadlinesRepeatTest {
         assertEquals(7, upcomingDaily.size) // 11/23~11/29 매일
         assertTrue(upcomingDaily.first().subtitle.contains("🔁 매일"))
         assertEquals(1, s.overdue.count { it.mine?.id == 10L }) // 11/22 회차만
-        assertEquals(listOf("월세"), s.later.flatMap { it.rows }.map { it.title })
+        // 7일 창 밖의 다음 회차 하나도 "그 이후"에 보인다(매일 반복 11/30 21:00, 월세 11/30 23:59).
+        assertEquals(listOf("실험 보고서", "월세"), s.later.flatMap { it.rows }.map { it.title })
         val all = (s.overdue + s.upcoming.flatMap { it.rows } + s.later.flatMap { it.rows }).map { it.id }
         assertEquals(all.size, all.distinct().size)
     }

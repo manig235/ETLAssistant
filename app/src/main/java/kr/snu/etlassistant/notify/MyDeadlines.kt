@@ -37,16 +37,44 @@ data class MyDeadline(
     val skipDates: Set<LocalDate> = emptySet(),
     /** 펼친 회차일 때 그 회차의 날짜(KST). 저장하지 않는다. 이때 [due]·[done]·[reminders]는 그 회차의 값이다. */
     val occurrence: LocalDate? = null,
-)
+    /** 종류(2026-11-24). 예전 저장값은 모두 [MyKind.DEADLINE]. 시험이면 [due]가 시작 시각이고 반복은 없다. */
+    val kind: MyKind = MyKind.DEADLINE,
+    /** 시험 끝 시각(선택, [due]보다 뒤). 마감에는 쓰지 않는다. */
+    val end: Instant? = null,
+    /** 시험 장소(선택, 예: 301동 118호). */
+    val location: String = "",
+    /** 시험 과목(선택, 과목명 그대로 또는 직접 입력). */
+    val course: String = "",
+    /** 시험 준비물(선택, 한 줄: "공학용 계산기, 신분증"). */
+    val supplies: String = "",
+    /** 공지 알림의 "내 일정에 등록"으로 넣었으면 그 공지 ID(같은 공지로 두 번 넣지 않게). */
+    val sourceAnnouncementId: Long? = null,
+) {
+    val isExam: Boolean get() = kind == MyKind.EXAM
+
+    /** 끝난 시각: 시험은 끝 시각(없으면 시작), 마감은 마감 시각. */
+    val over: Instant get() = end ?: due
+}
+
+/** 내 마감의 종류. */
+enum class MyKind(val id: String, val label: String) {
+    DEADLINE("deadline", "마감"), EXAM("exam", "시험");
+
+    companion object {
+        fun parse(s: String?): MyKind? = values().firstOrNull { it.id == s?.trim()?.lowercase() }
+    }
+}
 
 /**
  * 반복 규칙. 매주·격주는 [weekdays](비면 시작일의 요일), 매월은 시작일과 같은 날짜(없는 달은 그달 말일).
  * 격주는 시작일이 든 주(월요일 시작)부터 두 주마다. [until]은 그날(KST)까지 포함, null이면 끝없음.
+ * [count]는 첫 회차부터 센 총 회차 수(완료·건너뛴 회차 포함, 2026-11-24). [until]과 함께 있으면 먼저 닿는 쪽에서 끝난다.
  */
 data class MyRepeat(
     val freq: Freq,
     val weekdays: Set<DayOfWeek> = emptySet(),
     val until: LocalDate? = null,
+    val count: Int? = null,
 ) {
     enum class Freq(val id: String, val label: String) {
         DAILY("daily", "매일"), WEEKLY("weekly", "매주"), BIWEEKLY("biweekly", "격주"), MONTHLY("monthly", "매월");
@@ -82,11 +110,25 @@ object MyDeadlines {
     /** 매주·격주의 요일(비어 있으면 시작일의 요일). */
     fun weekdaysOf(d: MyDeadline): Set<DayOfWeek> = d.repeat?.weekdays?.ifEmpty { null } ?: setOf(startDate(d).dayOfWeek)
 
+    const val COUNT_MAX = 999
+
+    /** 반복 끝은 날짜(until)와 횟수(count) 중 하나만. 둘 다 주면 오류 문구. */
+    fun repeatEndConflict(hasUntil: Boolean, hasCount: Boolean): String? =
+        if (hasUntil && hasCount) "반복 끝은 until(날짜)과 count(횟수) 중 하나만 줄 수 있습니다" else null
+
     /** [date](KST)가 이 마감의 회차인가. 건너뛴 회차는 아니다. */
     fun matches(d: MyDeadline, date: LocalDate): Boolean {
         val start = startDate(d)
         val r = d.repeat ?: return date == start
-        if (date.isBefore(start) || (r.until != null && date.isAfter(r.until)) || date in d.skipDates) return false
+        if (date.isBefore(start) || date in d.skipDates) return false
+        val last = lastDate(d)
+        if (last != null && date.isAfter(last)) return false
+        return ruleMatches(d, r, start, date)
+    }
+
+    /** 끝(until·count)과 건너뛰기를 보지 않은 규칙만의 판정. */
+    private fun ruleMatches(d: MyDeadline, r: MyRepeat, start: LocalDate, date: LocalDate): Boolean {
+        if (date.isBefore(start)) return false
         return when (r.freq) {
             MyRepeat.Freq.DAILY -> true
             MyRepeat.Freq.WEEKLY -> date.dayOfWeek in weekdaysOf(d)
@@ -98,6 +140,81 @@ object MyDeadlines {
     }
 
     private fun monday(date: LocalDate) = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+
+    /** [count]번째 회차 날짜 캐시(규칙·시작 날짜별). 회차 판정마다 다시 세지 않게. */
+    private val countCache = object : LinkedHashMap<Pair<MyRepeat, LocalDate>, LocalDate>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<MyRepeat, LocalDate>, LocalDate>?) = size > 64
+    }
+
+    /** 첫 회차부터 센 [MyRepeat.count]번째 회차 날짜(건너뛴 회차도 센다, until은 보지 않는다). count가 없으면 null. */
+    fun countLastDate(d: MyDeadline): LocalDate? {
+        val r = d.repeat ?: return null
+        val n = r.count ?: return null
+        val start = startDate(d)
+        val key = r.copy(until = null) to start
+        synchronized(countCache) { countCache[key]?.let { return it } }
+        var date = start
+        var seen = 0
+        var last = start
+        val limit = start.plusDays(n.toLong() * 31 + 31)
+        while (!date.isAfter(limit)) {
+            if (ruleMatches(d, r, start, date)) {
+                seen++
+                last = date
+                if (seen >= n) break
+            }
+            date = date.plusDays(1)
+        }
+        synchronized(countCache) { countCache[key] = last }
+        return last
+    }
+
+    /** 첫 회차부터 [through]까지(포함)의 회차 수(건너뛴 회차도 센다, 끝은 보지 않는다). */
+    fun occurrenceCount(d: MyDeadline, through: LocalDate): Int {
+        val r = d.repeat ?: return if (through.isBefore(startDate(d))) 0 else 1
+        val start = startDate(d)
+        var date = start
+        var n = 0
+        while (!date.isAfter(through)) {
+            if (ruleMatches(d, r, start, date)) n++
+            date = date.plusDays(1)
+        }
+        return n
+    }
+
+    /** 마지막 회차가 될 수 있는 날짜: until과 count 중 먼저 닿는 쪽. 둘 다 없으면 null(끝없음). */
+    fun lastDate(d: MyDeadline): LocalDate? {
+        val r = d.repeat ?: return startDate(d)
+        val byCount = countLastDate(d)
+        return listOfNotNull(r.until, byCount).minOrNull()
+    }
+
+    /** 실제 마지막 회차(건너뛴 회차 제외). 끝이 없으면 null. */
+    fun lastOccurrence(d: MyDeadline): MyDeadline? {
+        if (d.repeat == null) return d
+        val last = lastDate(d) ?: return null
+        var date = last
+        val start = startDate(d)
+        while (!date.isBefore(start)) {
+            if (matches(d, date)) return occurrenceAt(d, date)
+            date = date.minusDays(1)
+        }
+        return null
+    }
+
+    /** 반복 끝 안내: `마지막 마감: 2027/01/06(수) 23:59 · 총 12번`, 끝이 없으면 `끝 없이 반복`. 회차가 없으면 `해당하는 날이 없어요`. */
+    fun endSummary(d: MyDeadline): String {
+        val r = d.repeat ?: return ""
+        if (r.until == null && r.count == null) return "끝 없이 반복"
+        // 규칙상 마지막 회차(건너뛴 회차여도 회차로 센다: 횟수와 맞게).
+        val start = startDate(d)
+        var lastRule = lastDate(d) ?: return "끝 없이 반복"
+        while (!lastRule.isBefore(start) && !ruleMatches(d, r, start, lastRule)) lastRule = lastRule.minusDays(1)
+        if (lastRule.isBefore(start)) return "반복 기간 안에 해당하는 날이 없어요"
+        val total = occurrenceCount(d, lastRule)
+        val z = occurrenceAt(d, lastRule).due.atZone(EtlLogic.KST)
+        return "마지막 마감: %d/%02d/%02d(%s) %02d:%02d · 총 %d번".format(z.year, z.monthValue, z.dayOfMonth, WEEKDAY_KO[z.dayOfWeek.value - 1], z.hour, z.minute, total)
+    }
 
     /** 반복 마감의 [date] 회차. 마감 시각은 같고, 알림 시각은 마감과의 간격을 유지한다. */
     fun occurrenceAt(d: MyDeadline, date: LocalDate): MyDeadline {
@@ -128,7 +245,8 @@ object MyDeadlines {
         val r = d.repeat ?: return d.takeIf { !it.done && it.due.isAfter(after) }
         var date = maxOf(startDate(d), after.atZone(EtlLogic.KST).toLocalDate().minusDays(1))
         val last = date.plusDays(SEARCH_DAYS)
-        while (!date.isAfter(last) && (r.until == null || !date.isAfter(r.until))) {
+        val end = lastDate(d)
+        while (!date.isAfter(last) && (end == null || !date.isAfter(end))) {
             if (matches(d, date)) {
                 val o = occurrenceAt(d, date)
                 if (!o.done && o.due.isAfter(after)) return o
@@ -167,8 +285,10 @@ object MyDeadlines {
     fun agendaItems(list: List<MyDeadline>, now: Instant, until: Instant): List<MyDeadline> = list.flatMap { d ->
         if (d.repeat == null) return@flatMap listOf(d)
         val upcoming = occurrences(d, now.plusMillis(1), until)
-        val extra = if (upcoming.none { !it.done }) nextOccurrence(d, now) else null
-        (listOfNotNull(lastMissed(d, now)) + upcoming + listOfNotNull(extra)).distinctBy { it.occurrence }
+        // [until] 뒤의 다음 미완료 회차 하나("그 이후"에 보인다). 예전에는 [until] 안에 회차가 있으면 빠져서
+        // 매주 반복이 "그 이후 마감 0개"로 보였다(S22 실기기 보고, 2026-11-24).
+        val after = nextOccurrence(d, maxOf(now, until.minusMillis(1)))
+        (listOfNotNull(lastMissed(d, now)) + upcoming + listOfNotNull(after)).distinctBy { it.occurrence }
     }
 
     /** 알림·브리핑에서 쓰는 과제 ID. 반복 회차는 회차마다 달라야 알림 기록(`deadline-m:…`)이 회차별로 남는다. */
@@ -196,7 +316,7 @@ object MyDeadlines {
             MyRepeat.Freq.WEEKLY, MyRepeat.Freq.BIWEEKLY -> "${r.freq.label} " + weekdaysOf(d).sorted().joinToString("·") { WEEKDAY_KO[it.value - 1].toString() }
             MyRepeat.Freq.MONTHLY -> "매월 ${startDate(d).dayOfMonth}일"
         }
-        return base + (r.until?.let { " · ${it.monthValue}/${it.dayOfMonth}까지" } ?: "")
+        return base + (r.until?.let { " · ${it.monthValue}/${it.dayOfMonth}까지" } ?: "") + (r.count?.let { " · ${it}번" } ?: "")
     }
 
     /** 반복 확인: 끝 날짜는 시작 날짜 뒤, 회차가 하나는 있어야 한다. 문제가 없으면 null. */
@@ -204,6 +324,7 @@ object MyDeadlines {
         val r = d.repeat ?: return null
         return when {
             r.until != null && r.until.isBefore(startDate(d)) -> "반복 끝 날짜는 시작 날짜보다 뒤여야 해요"
+            r.count != null && (r.count < 1 || r.count > COUNT_MAX) -> "반복 횟수는 1~${COUNT_MAX}번이어야 해요"
             firstOccurrence(d) == null -> "반복 기간 안에 해당하는 날이 없어요"
             else -> null
         }
@@ -221,8 +342,12 @@ object MyDeadlines {
         return WEEKDAY_KO.indexOf(t[0]).takeIf { it >= 0 && (t.length == 1 || t == "${t[0]}요일") }?.let { DayOfWeek.of(it + 1) }
     }
 
-    /** 알림·브리핑용으로 바꾼다. 완료한 항목은 "제출됨", 지난 미완료 항목은 "누락"으로 본다. 반복 마감은 [active] 회차만. */
-    fun toItems(list: List<MyDeadline>, now: Instant): List<AssignmentItem> = active(list, now).map { d ->
+    /**
+     * 알림·브리핑용으로 바꾼다. 완료한 항목은 "제출됨", 지난 미완료 항목은 "누락"으로 본다. 반복 마감은 [active] 회차만.
+     * 시험은 넣지 않는다: 마감 임박·누락 규칙이 맞지 않고, 시험 알림은 직접 정한 알림 시각([MyDeadline.reminders], 기본값 [defaultExamReminders])과
+     * 브리핑의 시험 섹션([examLines])으로 따로 보낸다.
+     */
+    fun toItems(list: List<MyDeadline>, now: Instant): List<AssignmentItem> = active(list.filter { !it.isExam }, now).map { d ->
         AssignmentItem(
             courseId = COURSE_ID,
             courseName = COURSE_NAME,
@@ -243,6 +368,66 @@ object MyDeadlines {
         else snapshot.copy(assignments = SnapshotFetcher.sortAssignments(snapshot.assignments + toItems(mine, now)))
 
     /** 입력 확인. 문제가 없으면 null, 있으면 사용자에게 보일 문구. */
+    const val LOCATION_MAX = 40
+    const val COURSE_MAX = 60
+    const val SUPPLIES_MAX = 100
+
+    /** 시험 확인: 끝은 시작보다 뒤, 장소·과목·준비물 길이, 반복 없음. 마감이면 null. */
+    fun validateExam(d: MyDeadline): String? {
+        if (!d.isExam) return null
+        return when {
+            d.end != null && !d.end.isAfter(d.due) -> "끝 시각은 시작 시각보다 뒤여야 해요"
+            d.end != null && Duration.between(d.due, d.end) > Duration.ofHours(24) -> "시험 시간은 24시간을 넘을 수 없어요"
+            d.location.length > LOCATION_MAX -> "장소는 ${LOCATION_MAX}자까지 쓸 수 있어요"
+            d.course.length > COURSE_MAX -> "과목은 ${COURSE_MAX}자까지 쓸 수 있어요"
+            d.supplies.length > SUPPLIES_MAX -> "준비물은 ${SUPPLIES_MAX}자까지 쓸 수 있어요"
+            d.repeat != null -> "시험은 반복할 수 없어요"
+            else -> null
+        }
+    }
+
+    /** 준비물 정리: 줄바꿈·쉼표·가운뎃점으로 나눈 항목을 ", "로 잇는다(빈 항목·중복 제거). */
+    fun normalizeSupplies(s: String?): String =
+        s.orEmpty().split('\n', ',', '，', '·', '/', ';').map { NoticeText.clean(it).trim() }.filter { it.isNotEmpty() }.distinct()
+            .joinToString(", ").take(SUPPLIES_MAX)
+
+    /** 시험 기본 알림(직접 정하지 않았을 때): 전날 20:00, 시작 2시간 전. 이미 지난 시각은 뺀다. */
+    fun defaultExamReminders(start: Instant, now: Instant): List<Instant> {
+        val eve = start.atZone(EtlLogic.KST).toLocalDate().minusDays(1).atTime(20, 0).atZone(EtlLogic.KST).toInstant()
+        return normalizeReminders(listOf(eve, start.minus(Duration.ofHours(2)))).filter { it.isAfter(now) && it.isBefore(start) }
+    }
+
+    /** 시험 제목: `[시험] 자료구조 중간고사`(과목이 없거나 제목에 이미 있으면 제목만). */
+    fun examTitle(d: MyDeadline): String {
+        val course = NoticeText.clean(d.course)
+        val title = NoticeText.clean(d.title)
+        return "[시험] " + if (course.isEmpty() || title.contains(course)) title else "$course $title"
+    }
+
+    /** `11/25(수) 10:00~12:00`(끝이 없으면 시작만, 끝이 다른 날이면 날짜도). */
+    fun examTimeLabel(d: MyDeadline): String {
+        val e = d.end ?: return NoticeText.dateLabel(d.due)
+        val ez = e.atZone(EtlLogic.KST)
+        val sameDay = ez.toLocalDate() == d.due.atZone(EtlLogic.KST).toLocalDate()
+        return NoticeText.dateLabel(d.due) + "~" + if (sameDay) "%02d:%02d".format(ez.hour, ez.minute) else NoticeText.dateLabel(e)
+    }
+
+    /**
+     * 브리핑의 시험 줄: 시작이 [days]일 안이거나 지금 보고 있는 시험. 오늘·내일은 앞에 [오늘]/[내일].
+     * `• [내일] 11/25(수) 10:00~12:00 · [시험] 자료구조 중간고사 · 301동 118호`
+     */
+    fun examLines(list: List<MyDeadline>, now: Instant, days: Long = 7): List<String> {
+        val today = now.atZone(EtlLogic.KST).toLocalDate()
+        return list.filter { it.isExam && !it.done && it.over.isAfter(now) && it.due.isBefore(now.plus(Duration.ofDays(days))) }
+            .sortedWith(compareBy({ it.due }, { it.id }))
+            .map { d ->
+                val tag = when (d.due.atZone(EtlLogic.KST).toLocalDate()) { today -> "[오늘] "; today.plusDays(1) -> "[내일] "; else -> "" }
+                "• $tag${examTimeLabel(d)} · ${NoticeText.cut(examTitle(d), 60)}" +
+                    (d.location.takeIf { it.isNotBlank() }?.let { " · ${NoticeText.clean(it)}" } ?: "") +
+                    (d.supplies.takeIf { it.isNotBlank() && tag.isNotEmpty() }?.let { " · 준비물: ${NoticeText.cut(NoticeText.clean(it), 40)}" } ?: "")
+            }
+    }
+
     fun validate(title: String, memo: String, countWithoutThis: Int): String? = when {
         title.isBlank() -> "제목을 입력하세요"
         title.trim().length > TITLE_MAX -> "제목은 ${TITLE_MAX}자까지 쓸 수 있어요"
@@ -290,11 +475,16 @@ object MyDeadlines {
         }
     }
 
-    /** 지금 울릴 알림: 시각이 지났고 마감 전이며 아직 안 보낸 것(폰이 꺼져 있었으면 마감 전까지는 늦게라도 보낸다). 반복 마감은 회차마다. */
-    fun reminderNotices(list: List<MyDeadline>, now: Instant, fired: Set<String>): List<Notice> = reminderCandidates(list, now).flatMap { d ->
+    /**
+     * 지금 울릴 알림: 시각이 지났고 마감 전이며 아직 안 보낸 것(폰이 꺼져 있었으면 마감 전까지는 늦게라도 보낸다). 반복 마감은 회차마다.
+     * 시험은 앞에 정보(시각·장소·준비물), 뒤에 응원 문구([ExamCheer], [casual]이면 반말)를 붙인다.
+     */
+    fun reminderNotices(list: List<MyDeadline>, now: Instant, fired: Set<String>, casual: Boolean = false): List<Notice> = reminderCandidates(list, now).flatMap { d ->
         if (d.done || !d.due.isAfter(now)) return@flatMap emptyList()
         val due = d.reminders.filter { !it.isAfter(now) && reminderKey(d, it) !in fired }
-        if (due.isEmpty()) emptyList() else listOf(
+        if (due.isEmpty()) emptyList()
+        else if (d.isExam) listOf(examReminder(d, due.max(), now, casual).copy(firedKeys = due.map { reminderKey(d, it) }))
+        else listOf(
             Notice(
                 channel = Channel.DEADLINE,
                 title = NoticeText.cut("알림 · ${NoticeText.clean(d.title)}", NoticeText.TITLE_MAX),
@@ -306,11 +496,57 @@ object MyDeadlines {
         )
     }
 
-    /** 다음 알림 시각(없으면 null). */
+    /** 다음 알림 시각(없으면 null). 시험 끝 시각(수고했어요 알림)도 넣는다. */
     fun nextReminderAt(list: List<MyDeadline>, now: Instant, fired: Set<String>): Instant? =
-        reminderCandidates(list, now).filter { !it.done && it.due.isAfter(now) }
-            .flatMap { d -> d.reminders.filter { it.isAfter(now) && it.isBefore(d.due) && reminderKey(d, it) !in fired } }
+        (reminderCandidates(list, now).filter { !it.done && it.due.isAfter(now) }
+            .flatMap { d -> d.reminders.filter { it.isAfter(now) && it.isBefore(d.due) && reminderKey(d, it) !in fired } } +
+            list.mapNotNull { d -> d.end?.takeIf { d.isExam && it.isAfter(now) && examDoneKey(d) !in fired } })
             .minOrNull()
+
+    /** 시험 알림 본문의 정보 부분: `11/25(수) 10:00~12:00 (1일 2시간 남음) · 301동 118호 · 준비물: 공학용 계산기, 신분증`. */
+    fun examInfo(d: MyDeadline, now: Instant): String = examTimeLabel(d) + " (${EtlLogic.remaining(d.due, now)})" +
+        (d.location.takeIf { it.isNotBlank() }?.let { " · ${NoticeText.clean(it)}" } ?: "") +
+        (d.supplies.takeIf { it.isNotBlank() }?.let { " · 준비물: ${NoticeText.clean(it)}" } ?: "")
+
+    /** 시험 알림: 제목 `시험 · 중간고사 · 자료구조`, 본문 앞은 시각·장소·준비물, 뒤는 응원 문구. */
+    fun examReminder(d: MyDeadline, at: Instant, now: Instant, casual: Boolean): Notice {
+        val info = examInfo(d, now)
+        val cheer = ExamCheer.message(ExamCheer.phaseOf(at, d.due), d.id, at, d.course, d.due, d.location, d.supplies, casual)
+        val course = NoticeText.clean(d.course).takeIf { it.isNotEmpty() && !d.title.contains(it) }
+        return Notice(
+            channel = Channel.DEADLINE,
+            title = NoticeText.cut("시험 · ${NoticeText.clean(d.title)}" + (course?.let { " · $it" } ?: ""), NoticeText.TITLE_MAX),
+            text = NoticeText.cut("$info · $cheer", NoticeText.LINE_MAX),
+            bigText = "$info\n$cheer",
+            tag = "mine-remind:${itemId(d)}",
+        )
+    }
+
+    fun examDoneKey(d: MyDeadline) = "exam-done:${d.id}"
+
+    /** 수고했어요 알림을 보낼 수 있는 기간(끝난 뒤). 그보다 늦게 확인하면 보내지 않는다. */
+    val EXAM_DONE_WINDOW: Duration = Duration.ofHours(3)
+
+    /**
+     * 끝 시각이 있는 시험이 방금 끝났으면 "수고했어요" 알림. [enabled]가 꺼져 있거나 방해 금지 중([quiet])이면 보내지 않고
+     * 다시 보내지 않도록 기록할 키만 돌려준다([Pair.second]).
+     */
+    fun examDoneNotices(list: List<MyDeadline>, now: Instant, fired: Set<String>, enabled: Boolean, quiet: Boolean, casual: Boolean): Pair<List<Notice>, List<String>> {
+        val due = list.filter { d -> d.isExam && !d.done && d.end != null && !d.end.isAfter(now) && now.isBefore(d.end.plus(EXAM_DONE_WINDOW)) && examDoneKey(d) !in fired }
+        if (due.isEmpty()) return emptyList<Notice>() to emptyList()
+        if (!enabled || quiet) return emptyList<Notice>() to due.map(::examDoneKey)
+        return due.map { d ->
+            val cheer = ExamCheer.message(ExamCheer.Phase.AFTER, d.id, d.end!!, d.course, d.due, d.location, d.supplies, casual)
+            Notice(
+                channel = Channel.DEADLINE,
+                title = NoticeText.cut((if (casual) "수고했어 · " else "수고했어요 · ") + examTitle(d).removePrefix("[시험] "), NoticeText.TITLE_MAX),
+                text = NoticeText.cut(cheer, NoticeText.LINE_MAX),
+                bigText = cheer,
+                tag = "exam-done:${d.id}",
+                firedKeys = listOf(examDoneKey(d)),
+            )
+        } to emptyList()
+    }
 
     fun reminderLabel(d: MyDeadline): String = d.reminders.joinToString(", ") { r ->
         val z = r.atZone(EtlLogic.KST)
@@ -337,17 +573,29 @@ object MyDeadlines {
                 else -> (listOfNotNull(lastMissed(d, now)) + occurrences(d, window.start, window.endExclusive)).distinctBy { it.occurrence }
             }
         }.filter { d ->
+            // 끝난 시험은 "지난 미완료"가 아니다(기간 안이면 그대로 보인다).
+            if (d.isExam) return@filter (includeDone || (!d.done && d.over.isAfter(now))) && (window == null || window.contains(d.due) || (!d.due.isAfter(now) && d.over.isAfter(now)))
             val overdue = !d.done && !d.due.isAfter(now)
             (includeDone || !d.done) && (window == null || overdue || window.contains(d.due))
         }.sortedWith(compareBy({ it.due }, { it.id })).forEach { d ->
             rows.put(
                 JSONObject()
                     .put("id", d.id)
+                    .put("kind", d.kind.id)
                     .put("title", d.title)
                     .put("due_kst", EtlLogic.fmtKst(d.due))
                     .put("remaining", EtlLogic.remaining(d.due, now))
+                    .apply {
+                        if (d.isExam) {
+                            put("start_kst", EtlLogic.fmtKst(d.due))
+                            d.end?.let { put("end_kst", EtlLogic.fmtKst(it)) }
+                            if (d.location.isNotBlank()) put("location", d.location)
+                            if (d.course.isNotBlank()) put("course", d.course)
+                            if (d.supplies.isNotBlank()) put("supplies", d.supplies)
+                        }
+                    }
                     .put("done", d.done)
-                    .put("overdue", !d.done && !d.due.isAfter(now))
+                    .put("overdue", !d.isExam && !d.done && !d.due.isAfter(now))
                     .apply { if (d.reminders.isNotEmpty()) put("reminders_kst", JSONArray(d.reminders.map { EtlLogic.fmtKst(it) })) }
                     .apply { if (d.memo.isNotBlank()) put("memo", d.memo) }
                     .apply {
@@ -360,7 +608,7 @@ object MyDeadlines {
         }
         return JSONObject()
             .put("now_kst", EtlLogic.fmtKst(now))
-            .put("source", "사용자가 앱의 '내 마감'에 직접 등록한 마감(eTL 과제 아님)")
+            .put("source", "사용자가 앱의 '내 마감'에 직접 등록한 마감과 시험(kind=exam, due_kst=시작 시각). eTL 과제 아님")
             .put("count", rows.length())
             .put("items", rows)
     }
@@ -371,6 +619,7 @@ object MyDeadlines {
         return JSONObject().put("freq", r.freq.id)
             .apply { if (r.freq == MyRepeat.Freq.WEEKLY || r.freq == MyRepeat.Freq.BIWEEKLY) put("weekdays", JSONArray(weekdaysOf(d).sorted().map { weekdayId(it) })) }
             .apply { r.until?.let { put("until", it.toString()) } }
+            .apply { r.count?.let { put("count", it) } }
     }
 
     /** "YYYY-MM-DD HH:MM"(또는 T 구분, 초 허용)을 KST 시각으로. 날짜만 오면 그날 23:59. 못 읽으면 null. */
@@ -387,9 +636,23 @@ object MyDeadlines {
         }
     }
 
+    /** 시험 끝: "YYYY-MM-DD HH:MM" 또는 [start] 날짜(KST)의 "HH:MM". 날짜만은 받지 않는다. 못 읽으면 null. */
+    fun parseEnd(s: String?, start: Instant): Instant? {
+        val t = s?.trim() ?: return null
+        if (t.length > 10) return parseDue(t)
+        val m = Regex("^(\\d{1,2}):(\\d{2})$").find(t) ?: return null
+        return try {
+            start.atZone(EtlLogic.KST).toLocalDate().atTime(m.groupValues[1].toInt(), m.groupValues[2].toInt()).atZone(EtlLogic.KST).toInstant()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** 채팅에 보일 한 줄: `장학금 서류 · 11/23(월) 23:59`. */
-    fun line(d: MyDeadline): String = "${d.title} · ${NoticeText.dateLabel(d.due)}" +
-        (if (d.repeat != null) " · 🔁 ${repeatLabel(d)}" else "")
+    fun line(d: MyDeadline): String =
+        if (d.isExam) examTitle(d) + " · " + examTimeLabel(d) + (d.location.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
+            (d.supplies.takeIf { it.isNotBlank() }?.let { " · 준비물: $it" } ?: "")
+        else "${d.title} · ${NoticeText.dateLabel(d.due)}" + (if (d.repeat != null) " · 🔁 ${repeatLabel(d)}" else "")
 
     fun toJson(list: List<MyDeadline>): String = JSONArray().also { arr ->
         list.forEach { d ->
@@ -401,10 +664,20 @@ object MyDeadlines {
                     .put("memo", d.memo)
                     .put("done", d.done)
                     .put("reminders", JSONArray(d.reminders.map { it.toEpochMilli() }))
+                    .apply { d.sourceAnnouncementId?.let { put("srcAnn", it) } }
+                    .apply {
+                        if (!d.isExam) return@apply
+                        put("kind", d.kind.id)
+                        d.end?.let { put("end", it.toEpochMilli()) }
+                        if (d.location.isNotEmpty()) put("location", d.location)
+                        if (d.course.isNotEmpty()) put("course", d.course)
+                        if (d.supplies.isNotEmpty()) put("supplies", d.supplies)
+                    }
                     .apply {
                         val r = d.repeat ?: return@apply
                         put("repeat", JSONObject().put("freq", r.freq.id).put("weekdays", JSONArray(r.weekdays.sorted().map { it.value }))
-                            .apply { r.until?.let { put("until", it.toString()) } })
+                            .apply { r.until?.let { put("until", it.toString()) } }
+                            .apply { r.count?.let { put("count", it) } })
                         put("doneDates", JSONArray(d.doneDates.sorted().map { it.toString() }))
                         put("skipDates", JSONArray(d.skipDates.sorted().map { it.toString() }))
                     }
@@ -422,14 +695,22 @@ object MyDeadlines {
             val id = o.optLong("id", 0L)
             val title = o.optString("title", "").trim()
             if (id == 0L || title.isEmpty() || !o.has("due")) continue
+            val kind = MyKind.parse(o.optString("kind", "")) ?: MyKind.DEADLINE
+            val exam = kind == MyKind.EXAM
             out += MyDeadline(
+                sourceAnnouncementId = if (o.has("srcAnn") && !o.isNull("srcAnn")) o.optLong("srcAnn").takeIf { it > 0 } else null,
+                kind = kind,
+                end = if (exam && o.has("end") && !o.isNull("end")) Instant.ofEpochMilli(o.optLong("end")).takeIf { it.toEpochMilli() > o.optLong("due") } else null,
+                location = if (exam) o.optString("location", "").take(LOCATION_MAX) else "",
+                course = if (exam) o.optString("course", "").take(COURSE_MAX) else "",
+                supplies = if (exam) o.optString("supplies", "").take(SUPPLIES_MAX) else "",
                 id = id,
                 title = title.take(TITLE_MAX),
                 due = Instant.ofEpochMilli(o.optLong("due")),
                 memo = o.optString("memo", "").take(MEMO_MAX),
                 done = o.optBoolean("done", false),
                 reminders = o.optJSONArray("reminders")?.let { a -> (0 until a.length()).map { Instant.ofEpochMilli(a.optLong(it)) } }.orEmpty(),
-                repeat = o.optJSONObject("repeat")?.let(::repeatFromJson),
+                repeat = if (exam) null else o.optJSONObject("repeat")?.let(::repeatFromJson),
                 doneDates = dates(o.optJSONArray("doneDates")),
                 skipDates = dates(o.optJSONArray("skipDates")),
             )
@@ -442,7 +723,8 @@ object MyDeadlines {
         val freq = MyRepeat.Freq.parse(o.optString("freq")) ?: return null
         val days = o.optJSONArray("weekdays")?.let { a -> (0 until a.length()).mapNotNull { a.optInt(it).takeIf { v -> v in 1..7 }?.let(DayOfWeek::of) } }.orEmpty()
         val until = o.optString("until", "").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        return MyRepeat(freq, days.toSet(), until)
+        val count = if (o.has("count") && !o.isNull("count")) o.optInt("count", 0).takeIf { it in 1..COUNT_MAX } else null
+        return MyRepeat(freq, days.toSet(), until, count)
     }
 
     private fun dates(a: JSONArray?): Set<LocalDate> =

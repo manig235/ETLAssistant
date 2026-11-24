@@ -95,6 +95,8 @@ data class Notice(
      */
     val prefill: String? = null,
     val prefillAction: String? = null,
+    /** 시험·과제 공지의 "내 일정에 등록" 초안([ScheduleDraft.toJson]). 있으면 그 버튼을 단다. */
+    val draft: String? = null,
 )
 
 /**
@@ -169,6 +171,10 @@ data class NotifySettings(
     val submitAlerts: Boolean = true,
     /** 새 강의자료 알림(4시간마다 과목별 파일 목록 첫 쪽을 본다). */
     val newFileAlerts: Boolean = true,
+    /** 끝 시각이 있는 시험이 끝나면 "수고했어요" 알림(2026-11-24, 기본 켬, 방해 금지 시간이면 보내지 않음). */
+    val examDoneAlerts: Boolean = true,
+    /** 채팅 화면을 열 때 등록 안 한 시험·과제 공지를 하단 시트로 보여 준다(기본 켬, 새 공지가 있을 때만 자동). */
+    val pendingSheet: Boolean = true,
 ) {
     /** 어떤 알림이든 켜져 있는가(전부 꺼져 있으면 예약 작업을 만들지 않는다). */
     val anyEnabled: Boolean get() = deadlineAlerts || announcementAlerts || briefEnabled || changeAlerts || classAlerts || submitAlerts || newFileAlerts
