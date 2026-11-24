@@ -21,6 +21,8 @@ data class SubmitCheck(
      * (이때는 `submissions/self`를 한 번 더 받아 다시 판정한다, [SubmissionCheck.evaluate]).
      */
     val attachmentsKnown: Boolean = true,
+    /** 제출한 첨부 파일 수(첨부 목록을 봤을 때만, 파일이 없는 글·링크 제출은 null). 정상 제출 알림의 "파일 N개"에 쓴다. */
+    val files: Int? = null,
 )
 
 object SubmissionCheck {
@@ -44,7 +46,8 @@ object SubmissionCheck {
             }
             if (upload && attachments.length() == 0) problems += NO_ATTACHMENT
         }
-        return SubmitCheck(late, problems, attachmentsKnown = attachments != null || !upload)
+        val files = attachments?.length()?.takeIf { upload || it > 0 }
+        return SubmitCheck(late, problems, attachmentsKnown = attachments != null || !upload, files = files)
     }
 
     const val NO_ATTACHMENT = "파일 업로드 과제인데 첨부 파일이 없음"

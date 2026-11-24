@@ -244,6 +244,8 @@ object NotificationPlanner {
             url = NoticeText.assignmentUrl(a),
             tag = "deadline:${a.courseId}:${a.assignmentId}",
             firedKeys = fired,
+            agenda = a.courseId == MyDeadlines.COURSE_ID,
+            mineItemId = a.assignmentId.takeIf { a.courseId == MyDeadlines.COURSE_ID },
         )
     }
 
@@ -259,6 +261,8 @@ object NotificationPlanner {
             url = NoticeText.collectionUrl(items.map { it.courseId }),
             tag = "deadline:wm$w",
             firedKeys = fired,
+            // 내 마감만 묶였으면 내 일정을 연다(eTL 과제가 섞이면 eTL).
+            agenda = items.all { it.courseId == MyDeadlines.COURSE_ID },
         )
     }
 

@@ -70,6 +70,11 @@ enum class Channel(val id: String) {
     UPDATE("update_v2"),
     /** 제출 직후 점검에서 문제를 찾았을 때(2026-11-23). 팝업(HIGH). */
     SUBMIT("submit_check"),
+    /**
+     * 정상 제출(늦음만 있는 제출 포함) 확인(2026-11-24). 조용히: 소리·진동·팝업 없이 알림창에만(LOW).
+     * DEFAULT는 소리가 나서 LOW로 만든다. 같은 제출은 [SUBMIT]과 같은 키(`submit:…`)라 둘 중 하나만 온다.
+     */
+    SUBMIT_OK("submit_ok"),
     /** 새 강의자료(2026-11-23). 급하지 않고 한 번에 여러 과목이 올 수 있어 팝업 없이 알림창에만(DEFAULT). */
     NEW_FILES("new_files"),
 }
@@ -97,6 +102,12 @@ data class Notice(
     val prefillAction: String? = null,
     /** 시험·과제 공지의 "내 일정에 등록" 초안([ScheduleDraft.toJson]). 있으면 그 버튼을 단다. */
     val draft: String? = null,
+    /**
+     * 내 마감·시험 알림(2026-11-24): [url]이 없을 때 본문을 누르면 채팅 대신 "내 일정"을 연다(뒤로 가면 채팅).
+     * [mineItemId]는 그 항목([MyDeadlines.itemId], 반복 회차 포함)이고, 있으면 내 일정에서 그 항목의 창을 연다(위젯·캘린더와 같음).
+     */
+    val agenda: Boolean = false,
+    val mineItemId: Long? = null,
 )
 
 /**
@@ -169,6 +180,8 @@ data class NotifySettings(
     val classLeadMinutes: Int = 10,
     /** 제출 직후 점검: 새로 낸 제출에 문제(누락 표시, 빈 파일, 허용되지 않은 확장자·방식, 첨부 없음)가 있으면 알린다. */
     val submitAlerts: Boolean = true,
+    /** 정상 제출도 조용히 알린다("제출 확인됐어요", 2026-11-24, 기본 켬). [submitAlerts]가 켜져 있을 때만 쓴다. */
+    val submitOkAlerts: Boolean = true,
     /** 새 강의자료 알림(4시간마다 과목별 파일 목록 첫 쪽을 본다). */
     val newFileAlerts: Boolean = true,
     /** 끝 시각이 있는 시험이 끝나면 "수고했어요" 알림(2026-11-24, 기본 켬, 방해 금지 시간이면 보내지 않음). */

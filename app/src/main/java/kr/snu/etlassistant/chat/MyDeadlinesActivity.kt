@@ -155,7 +155,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
                 onHiddenCourses = { startActivity(Intent(this, CourseAlertsActivity::class.java)) },
                 alertsOn = remember { NotifySettingsStore(this).load().deadlineAlerts },
                 mineTotal = mine.size,
-                initialDeadline = draftExisting ?: remember { store.load().firstOrNull { it.id == intent.getLongExtra(kr.snu.etlassistant.widget.HomeWidgets.EXTRA_DEADLINE_ID, Long.MIN_VALUE) } },
+                initialDeadline = draftExisting ?: remember { kr.snu.etlassistant.notify.MyDeadlines.findByItemId(store.load(), intent.getLongExtra(kr.snu.etlassistant.widget.HomeWidgets.EXTRA_DEADLINE_ID, Long.MIN_VALUE)) },
                 draft = draftState,
                 onDraftDone = { draftState = null; draftExisting = null },
                 // "✨ 비서가 공지 읽고 채우기": 창을 닫고 채팅 입력창에 요청을 채운다(보내지는 않는다). 공지 내용은 이때만 비서(OpenAI)로 간다.

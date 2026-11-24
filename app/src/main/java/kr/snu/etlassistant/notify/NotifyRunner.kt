@@ -67,7 +67,7 @@ object NotifyRunner {
             val changes = if ((settings.changeAlerts || settings.submitAlerts) && etlOk && !quiet) {
                 val (newState, notices) = AssignmentWatch.diff(
                     watchStore.load(), snapshot, now, courses::muted,
-                    changes = settings.changeAlerts, submits = settings.submitAlerts,
+                    changes = settings.changeAlerts, submits = settings.submitAlerts, submitOk = settings.submitOkAlerts,
                 )
                 watchStore.save(newState)
                 val fired = stateStore.load().fired.keys

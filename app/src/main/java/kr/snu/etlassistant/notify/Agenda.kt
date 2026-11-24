@@ -52,10 +52,12 @@ object SnapshotCacheLogic {
 
     private fun checkJson(c: kr.snu.etlassistant.etl.SubmitCheck): JSONObject =
         JSONObject().put("late", c.late).put("problems", JSONArray(c.problems)).put("attKnown", c.attachmentsKnown)
+            .apply { c.files?.let { put("files", it) } }
 
     private fun checkFrom(o: JSONObject): kr.snu.etlassistant.etl.SubmitCheck {
         val p = o.optJSONArray("problems") ?: JSONArray()
-        return kr.snu.etlassistant.etl.SubmitCheck(o.optBoolean("late"), (0 until p.length()).map { p.optString(it) }, o.optBoolean("attKnown", true))
+        return kr.snu.etlassistant.etl.SubmitCheck(o.optBoolean("late"), (0 until p.length()).map { p.optString(it) }, o.optBoolean("attKnown", true),
+            if (o.has("files") && !o.isNull("files")) o.optInt("files") else null)
     }
 }
 

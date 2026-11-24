@@ -674,7 +674,10 @@ private fun NotifySection(s: SettingsState, a: SettingsActions) {
             }
             SwitchRow("새 공지 알림", "수강 중인 강의에 새 공지가 올라오면 알려줘요(보강·휴강 공지는 따로 표시)", n.announcementAlerts) { v -> a.updateNotify { it.copy(announcementAlerts = v) } }
             SwitchRow("새 과제·마감 변경·성적 알림", "과제가 새로 올라오거나, 마감이 바뀌거나, 점수가 등록되면 알려줘요", n.changeAlerts) { v -> a.updateNotify { it.copy(changeAlerts = v) } }
-            SwitchRow("제출 직후 확인", "과제를 내면 eTL 제출 기록을 살펴보고 빈 파일·허용되지 않은 형식·첨부 없음 같은 문제가 있을 때만 알려줘요", n.submitAlerts) { v -> a.updateNotify { it.copy(submitAlerts = v) } }
+            SwitchRow("제출 직후 확인", "과제를 내면 eTL 제출 기록을 살펴보고 빈 파일·허용되지 않은 형식·첨부 없음 같은 문제가 있으면 바로 알려줘요", n.submitAlerts) { v -> a.updateNotify { it.copy(submitAlerts = v) } }
+            if (n.submitAlerts) {
+                SwitchRow("정상 제출도 알리기", "문제가 없을 때도 \"제출 확인됐어요\"를 소리·팝업 없이 알림창에 남겨요", n.submitOkAlerts) { v -> a.updateNotify { it.copy(submitOkAlerts = v) } }
+            }
             SwitchRow("새 강의자료 알림", "4시간마다 과목별 파일 목록을 보고 새 자료가 올라오면 알려줘요. 누르면 비서에게 받아 달라고 할 수 있어요", n.newFileAlerts) { v -> a.updateNotify { it.copy(newFileAlerts = v) } }
             SwitchRow("앱을 열 때 등록할 공지 보여 주기", "아직 넣지 않은 시험·과제·동영상 강의·보강·휴강 공지가 새로 오면 채팅 화면에서 한 번 보여 줘요", n.pendingSheet) { v -> a.updateNotify { it.copy(pendingSheet = v) } }
             SwitchRow("시험 끝나면 수고했어요 알림", "내 일정에 넣은 시험에 끝 시각이 있으면 끝난 뒤 한 번 알려줘요(방해 금지 시간에는 보내지 않아요)", n.examDoneAlerts) { v -> a.updateNotify { it.copy(examDoneAlerts = v) } }

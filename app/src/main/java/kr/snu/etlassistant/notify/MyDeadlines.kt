@@ -294,6 +294,12 @@ object MyDeadlines {
     /** 알림·브리핑에서 쓰는 과제 ID. 반복 회차는 회차마다 달라야 알림 기록(`deadline-m:…`)이 회차별로 남는다. */
     fun itemId(d: MyDeadline): Long = d.occurrence?.let { d.id * 100_000 + it.toEpochDay() } ?: d.id
 
+    /**
+     * [itemId]로 저장된 내 마감을 찾는다(알림·위젯·캘린더가 넘긴 ID). 원래 ID이거나 반복 회차 ID(`id * 100000 + epochDay`)면 그 항목.
+     */
+    fun findByItemId(list: List<MyDeadline>, itemId: Long): MyDeadline? =
+        list.firstOrNull { it.id == itemId } ?: list.firstOrNull { it.repeat != null && it.id == itemId / 100_000 }
+
     /** 완료 표시/취소. 반복 마감은 [occurrence] 회차만 바꾼다. [d]는 저장된 원래 항목. */
     fun setDone(d: MyDeadline, occurrence: LocalDate?, done: Boolean, now: Instant): MyDeadline =
         if (d.repeat == null || occurrence == null) d.copy(done = done)
@@ -492,6 +498,8 @@ object MyDeadlines {
                     (if (d.memo.isNotBlank()) " · ${NoticeText.clean(d.memo)}" else ""), NoticeText.LINE_MAX),
                 tag = "mine-remind:${itemId(d)}",
                 firedKeys = due.map { reminderKey(d, it) },
+                agenda = true,
+                mineItemId = itemId(d),
             )
         )
     }
@@ -519,6 +527,8 @@ object MyDeadlines {
             text = NoticeText.cut("$info · $cheer", NoticeText.LINE_MAX),
             bigText = "$info\n$cheer",
             tag = "mine-remind:${itemId(d)}",
+            agenda = true,
+            mineItemId = itemId(d),
         )
     }
 
@@ -544,6 +554,8 @@ object MyDeadlines {
                 bigText = cheer,
                 tag = "exam-done:${d.id}",
                 firedKeys = listOf(examDoneKey(d)),
+                agenda = true,
+                mineItemId = d.id,
             )
         } to emptyList()
     }

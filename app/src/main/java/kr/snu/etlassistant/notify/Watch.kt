@@ -87,8 +87,9 @@ object AssignmentWatch {
      * 과제가 하나도 오지 않고 오류만 있으면 상태를 바꾸지 않는다(빈 결과로 기준선을 다시 잡지 않는다).
      * [muted]인 과목(과목별 알림 끄기)은 알리지 않지만 기록은 갱신한다(다시 켰을 때 그동안의 변경이 몰려오지 않게).
      *
-     * 제출 직후 점검: 새 제출·다시 제출(제출 시각이 바뀜)이고 문제가 있을 때만 알린다(키 [submitKey]).
-     * 늦은 제출만 있으면 알리지 않는다(본인이 안다; "내 일정"에는 보인다). 파일 업로드인데 첨부 목록을 아직 못 봤으면
+     * 제출 직후 점검: 새 제출·다시 제출(제출 시각이 바뀜)에 문제가 있으면 [Channel.SUBMIT](팝업)으로 알린다(키 [submitKey]).
+     * 문제가 없으면(늦음만 있는 제출 포함) [submitOk]일 때 [Channel.SUBMIT_OK]로 조용히 "제출 확인됐어요"를 보낸다(2026-11-24).
+     * 둘은 같은 키를 써서 한 제출에 알림은 하나뿐이다. 파일 업로드인데 첨부 목록을 아직 못 봤으면
      * 제출 시각을 기록하지 않고 미뤄 다음 확인에서 다시 본다(조회기가 `submissions/self`를 받아 채운다).
      */
     fun diff(
@@ -98,6 +99,7 @@ object AssignmentWatch {
         muted: (Long) -> Boolean = { false },
         changes: Boolean = true,
         submits: Boolean = false,
+        submitOk: Boolean = false,
     ): Pair<WatchState, List<Notice>> {
         val items = snapshot.assignments.filter { it.courseId != MyDeadlines.COURSE_ID }
         if (items.isEmpty() && snapshot.errors.isNotEmpty()) return prev to emptyList()
@@ -133,8 +135,8 @@ object AssignmentWatch {
                     events += Event("성적", a, "$name · ${scoreText(rec.score)}$pts", "grade:$key:${rec.score}")
                 }
             }
-            if (submits && isNewSubmission(prev, a) && rec.submittedAt == a.submittedAt?.toEpochMilli() &&
-                a.check?.problems?.isNotEmpty() == true && !muted(a.courseId)
+            if (submits && isNewSubmission(prev, a) && rec.submittedAt == a.submittedAt?.toEpochMilli() && !muted(a.courseId) &&
+                (a.check?.problems?.isNotEmpty() == true || submitOk)
             ) submitEvents += a
             records[key] = rec
         }
@@ -142,7 +144,7 @@ object AssignmentWatch {
         val state = WatchState(true, records, submitInitialized = true)
         if (!changes) events.clear()
         events.removeAll { muted(it.item.courseId) }
-        val submitNotices = submitEvents.sortedBy { it.submittedAt }.map(::submitNotice)
+        val submitNotices = submitEvents.sortedBy { it.submittedAt }.map { if (it.check?.problems.isNullOrEmpty()) submitOkNotice(it) else submitNotice(it) }
         if (events.isEmpty()) return state to submitNotices
 
         val order = mapOf("마감 변경" to 0, "새 과제" to 1, "성적" to 2)
@@ -170,6 +172,28 @@ object AssignmentWatch {
                 tag = "change:summary",
             )
         ) + submitNotices
+    }
+
+    /**
+     * 문제없는 제출의 조용한 알림: 제목 `제출 확인됐어요`, 본문 `자료구조 HW1 · 파일 2개 · 11/24(화) 12:03`(늦으면 ` · 늦은 제출`).
+     * 다른 eTL 알림처럼 해요체로 고정한다. 누르면 eTL 과제를 연다.
+     */
+    private fun submitOkNotice(a: AssignmentItem): Notice {
+        val key = submitKey(a)
+        val parts = listOfNotNull(
+            "${NoticeText.course(a.courseName)} ${NoticeText.name(a.name)}",
+            a.check?.files?.takeIf { it > 0 }?.let { "파일 ${it}개" },
+            a.submittedAt?.let { NoticeText.dateLabel(it) },
+            "늦은 제출".takeIf { a.check?.late == true },
+        )
+        return Notice(
+            channel = Channel.SUBMIT_OK,
+            title = "제출 확인됐어요",
+            text = NoticeText.cut(parts.joinToString(" · "), NoticeText.LINE_MAX),
+            url = NoticeText.assignmentUrl(a),
+            tag = key,
+            firedKeys = listOf(key),
+        )
     }
 
     /** 제출에 문제가 있을 때의 알림. 문제 문구는 eTL 파일 이름이 들어갈 수 있어 정리해서 쓴다. */
