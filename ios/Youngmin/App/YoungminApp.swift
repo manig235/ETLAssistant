@@ -20,7 +20,6 @@ final class YoungminAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct YoungminApp: App {
     @UIApplicationDelegateAdaptor(YoungminAppDelegate.self) private var appDelegate
-    @State private var appearance = AppAppearanceStore.shared
     @State private var app: AppState?
 
     init() {
@@ -48,7 +47,6 @@ struct YoungminApp: App {
                     }
                 }
             }
-            .preferredColorScheme(appearance.mode.colorScheme)
             .tint(YMColor.brandPrimary)
         }
     }
@@ -56,6 +54,7 @@ struct YoungminApp: App {
 
 private struct AppSessionView: View {
     let app: AppState
+    @State private var appearance = AppAppearanceStore.shared
     var body: some View {
         Group {
             #if DEBUG && YOUNGMIN_NATIVE_CODEX
@@ -67,6 +66,7 @@ private struct AppSessionView: View {
             #endif
         }
         .environment(app)
+        .preferredColorScheme(appearance.mode.colorScheme)
         .safeAreaInset(edge: .top, spacing: 0) {
             if StudyDataProfile.isDemo {
                 Text("가상 eTL · 채팅은 실제 ChatGPT 계정을 사용해요")
@@ -84,6 +84,7 @@ private struct AppSessionView: View {
 
 private struct StudyDataChoiceView: View {
     let onChoose: (Bool) -> Void
+    @State private var appearance = AppAppearanceStore.shared
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -101,5 +102,6 @@ private struct StudyDataChoiceView: View {
                     .font(YMFont.caption1Regular).foregroundStyle(YMColor.labelSecondary)
             }.padding(24).frame(maxWidth: 560)
         }.frame(maxWidth: .infinity).background(YMColor.background.ignoresSafeArea())
+        .preferredColorScheme(appearance.mode.colorScheme)
     }
 }
