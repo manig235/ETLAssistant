@@ -261,7 +261,7 @@ private fun StatusCard(text: String, positive: Boolean = true) {
 private fun WelcomeStep(vm: OnboardingViewModel) {
     val context = LocalContext.current
     StepFrame(
-        title = "안녕하세요,\n영민이에요",
+        title = "안녕하세요,\n영민이예요",
         subtitle = "마감과 공지는 챙기고, 궁금한 건 물어보고, 강의 파일은 바로 받아 보세요.",
         header = {
             Image(

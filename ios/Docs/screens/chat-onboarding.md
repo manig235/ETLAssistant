@@ -109,7 +109,7 @@ Android `Toast`(화면 아래 검은 알약, 약 2초/LONG 3.5초)는 iOS에 없
   - 상태 카드 `StatusCard(text, positive)`: 모서리 16, 안쪽 16, 배경 surfacePositivePrimary(실패면 surfaceNegativePrimary), 아이콘 `CheckCircle` 22(틴트 foregroundPositivePrimary/foregroundNegativePrimary — 실패여도 같은 체크 아이콘) + 10 + 글 body1Medium foregroundNeutralPrimary.
 - 레이아웃(위→아래):
   1. header: 로고 이미지 `etl_logo`(남색 타일+로봇) 120×120dp, 모서리 24 클립, 가로 가운데. 접근성 "영민이 로고". 아래 28 여백.
-  2. 제목: "안녕하세요,\n영민이에요" (두 줄, 왼쪽 정렬).
+  2. 제목: "안녕하세요,\n영민이예요" (두 줄, 왼쪽 정렬).
   3. 부제: "마감과 공지는 챙기고, 궁금한 건 물어보고, 강의 파일은 바로 받아 보세요."
   4. 기능 행 3개(사이 20). 각 행 = 아이콘 타일 48×48 모서리 14 배경 surfaceBrandSubtle, 아이콘 26 foregroundBrandPrimary → 16 → [제목 headline1Bold foregroundNeutralPrimary / 2 / 설명 body2Regular foregroundNeutralSecondary]:
      - `NotificationsNone` "마감·공지 알림" / "마감이 다가오면 미리 알려드려요"

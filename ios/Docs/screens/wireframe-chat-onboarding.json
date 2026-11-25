@@ -12,7 +12,7 @@
      "wire": [
        {"type": "topbar", "label": "진행줄 1/5"},
        {"type": "image", "label": "영민이 로고 120"},
-       {"type": "heading", "label": "안녕하세요, 영민이에요"},
+       {"type": "heading", "label": "안녕하세요, 영민이예요"},
        {"type": "text", "label": "마감과 공지는 챙기고…"},
        {"type": "icon-row", "label": "마감·공지 알림"},
        {"type": "icon-row", "label": "채팅으로 물어보기"},
