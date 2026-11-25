@@ -47,15 +47,6 @@ jobs:
         env:
           CODEX_PROBE_COMPONENT: ${{ inputs.component }}
         run: bash .github/scripts/ios-codex-probe.sh
-      - name: Save Rust dependencies even after a compile failure
-        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - name: Upload native build diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -67,3 +58,12 @@ jobs:
             ios-codex-probe/*.json
           retention-days: 7
           if-no-files-found: warn
+      - name: Save Rust dependencies even after a compile failure
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}

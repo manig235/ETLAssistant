@@ -98,6 +98,19 @@ public final class ChatSettings: @unchecked Sendable {
         }
     }
 
+    /// Codex 엔진에 저장된 대화 중 삭제 재시도가 필요한 ID. Responses 파일 삭제와 별도로 보관한다.
+    public var pendingNativeThreadDeletes: Set<String> {
+        get {
+            guard let raw = store.string("pendingNativeThreadDeletes"), let items = try? ChatJSON(parsing: raw).array else { return [] }
+            return Set(items.compactMap(\.string).filter(ThreadPurge.isThreadId))
+        }
+        set {
+            let valid = newValue.filter(ThreadPurge.isThreadId)
+            if valid.isEmpty { store.remove("pendingNativeThreadDeletes") }
+            else { store.set(ChatJSON.array(valid.sorted().map(ChatJSON.string)).jsonString, for: "pendingNativeThreadDeletes") }
+        }
+    }
+
     /// 지금 저장된 선택(Kotlin `CodexSession.modelChoice`).
     public var modelChoice: ModelChoice {
         get { ModelChoice(model, effort) }

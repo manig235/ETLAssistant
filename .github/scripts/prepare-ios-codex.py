@@ -21,6 +21,22 @@ lock_text = "[[package]]".join(
     if "source = " not in block else block
     for block in blocks
 )
+mxc_revision = "b21120168d70befe12356411423266bfef168446"
+old_mxc = f'mxc-sdk = {{ git = "https://github.com/microsoft/mxc", rev = "{mxc_revision}" }}'
+assert old_mxc in text
+text = text.replace(old_mxc, 'mxc-sdk = { path = "../youngmin-vendor/mxc/src/mxc-sdk" }')
+mxc_source = f'source = "git+https://github.com/microsoft/mxc?rev={mxc_revision}#{mxc_revision}"\n'
+assert lock_text.count(mxc_source) == 1
+lock_text = lock_text.replace(mxc_source, "")
+dispatch = workspace.parent / "youngmin-vendor/mxc/src/mxc-sdk/src/core/mxc_engine/dispatch.rs"
+dispatch_text = dispatch.read_text()
+policy_log = "    crate::mxc_engine::run::log_policy_hash(request, logger);"
+assert dispatch_text.count(policy_log) == 2
+assert dispatch_text.count("    ensure_host_supported()?;") == 2
+# The module containing the logger is desktop-only. iOS already returns an
+# UnsupportedContainment error before this point; preserve that rejection.
+dispatch.write_text(dispatch_text.replace(policy_log,
+    '#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]\n' + policy_log))
 v8_revision = "90a65f887a0c0f048f3784afbcb320b373c8a2e0"
 v8 = workspace.parent / "youngmin-vendor/rusty-v8"
 assert tomllib.loads((v8 / "Cargo.toml").read_text())["package"]["version"] == "152.2.0"

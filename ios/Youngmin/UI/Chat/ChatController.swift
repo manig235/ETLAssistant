@@ -129,6 +129,7 @@ final class ChatController {
         hasEtlToken = AppStores.tokens.hasToken()
         notifyStatus = await LocalNotifications.shared.authorizationStatus()
         await auth.refreshAccount()
+        await purgeNativeThreads()
         scrollToBottomToken &+= 1
     }
 
@@ -396,10 +397,29 @@ final class ChatController {
         if busy { ToastCenter.shared.show("답변이 끝난 뒤에 지울 수 있어요"); return }
         guard let removed = chats.delete(id) else { return }
         if id == chatId { openChat(chats.newId()) }
-        if let t = removed.threadId, ThreadPurge.isThreadId(t), !threads.delete(t) {
-            settings.pendingThreadDeletes = settings.pendingThreadDeletes.union([t])
+        if let t = removed.threadId, ThreadPurge.isThreadId(t) {
+            if let nativeID = threads.load(t).first(where: { $0["type"]?.string == CodexEngine.threadMarker })?["thread_id"]?.string,
+               ThreadPurge.isThreadId(nativeID) {
+                settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.union([nativeID])
+                Task { await purgeNativeThreads() }
+            }
+            if !threads.delete(t) { settings.pendingThreadDeletes = settings.pendingThreadDeletes.union([t]) }
         }
         refreshConversations()
+    }
+
+    private func purgeNativeThreads() async {
+        guard let client = auth.codex else { return }
+        for id in settings.pendingNativeThreadDeletes {
+            do {
+                _ = try await client.request("thread/delete", ["threadId": .string(id)])
+                settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.subtracting([id])
+            } catch let error as CodexError where error.message == "thread not found: \(id)" {
+                settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.subtracting([id])
+            } catch {
+                // Keep the ID for the next foreground refresh, including after restart.
+            }
+        }
     }
 
     // MARK: 쓰기 승인

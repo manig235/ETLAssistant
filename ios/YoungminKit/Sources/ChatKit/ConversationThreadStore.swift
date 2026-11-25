@@ -1,7 +1,7 @@
 import Foundation
 
-/// 스레드 ID 규칙(Kotlin `codex.ThreadPurge` 중 iOS에 남는 부분). Codex rollout 파일은 iOS에 없으므로
-/// 지우기는 `ConversationThreadStore.delete`가 맡는다.
+/// 스레드 ID 규칙(Kotlin `codex.ThreadPurge`). Responses 파일은 ConversationThreadStore가,
+/// 네이티브 Codex 기록은 엔진의 thread/delete가 지운다.
 public enum ThreadPurge {
     public static func isThreadId(_ s: String) -> Bool {
         let parts = s.split(separator: "-", omittingEmptySubsequences: false)
@@ -10,8 +10,8 @@ public enum ThreadPurge {
     }
 }
 
-/// 대화마다 모델에 다시 보내는 Responses 항목 목록(새로 만듦). `store: false`라 서버에 대화가 남지 않으므로
-/// Codex 스레드(rollout 기록) 대신 앱이 `threads/{threadId}.json`에 보관한다. 대화 전문과 도구 결과가 들어 있다.
+/// Responses 항목 또는 네이티브 Codex 스레드 참조를 `threads/{threadId}.json`에 보관한다.
+/// Responses 모드에서는 대화 전문과 도구 결과가, Codex 모드에서는 엔진의 thread ID가 들어 있다.
 ///
 /// 대화를 지우면(`ChatStore.delete`가 돌려준 `threadId`) 이 파일도 바로 지운다. 지우기에 실패하면
 /// `ChatSettings.pendingThreadDeletes`에 남겨 다음 시작 때 `purgePending`으로 다시 지운다(안드로이드 규칙과 같음).

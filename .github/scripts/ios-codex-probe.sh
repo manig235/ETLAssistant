@@ -28,6 +28,14 @@ curl --fail --location --retry 3 \
 printf '%s  %s\n' "$V8_SHA256" "$OUT/v8.tar.gz" | shasum -a 256 -c -
 mkdir -p "$SOURCE/youngmin-vendor/rusty-v8"
 tar -xzf "$OUT/v8.tar.gz" -C "$SOURCE/youngmin-vendor/rusty-v8" --strip-components=1
+MXC_REVISION=b21120168d70befe12356411423266bfef168446
+MXC_SHA256=358b5227287fc3b3bcb1a5b0679970ceba38e1c5cf664b791743898a72c20777
+curl --fail --location --retry 3 \
+  "https://api.github.com/repos/microsoft/mxc/tarball/$MXC_REVISION" \
+  -o "$OUT/mxc.tar.gz"
+printf '%s  %s\n' "$MXC_SHA256" "$OUT/mxc.tar.gz" | shasum -a 256 -c -
+mkdir -p "$SOURCE/youngmin-vendor/mxc"
+tar -xzf "$OUT/mxc.tar.gz" -C "$SOURCE/youngmin-vendor/mxc" --strip-components=1
 python3 "$ROOT/.github/scripts/prepare-ios-codex.py" "$SOURCE" "${CODEX_PROBE_COMPONENT:-upstream}"
 
 rustup toolchain install "$TOOLCHAIN" --profile minimal --target "$TARGET"
@@ -51,6 +59,7 @@ if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   mkdir -p "$GENERATED"
   cp "target/$TARGET/dev-small/libyoungmin_codex_bridge.a" "$GENERATED/"
   cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"
+  cp "$SOURCE/youngmin-vendor/mxc/LICENSE" "$ROOT/ios/NativeCodex/Generated/MXC-LICENSE.txt"
   if [[ -f "$SOURCE/NOTICE" ]]; then cp "$SOURCE/NOTICE" "$ROOT/ios/NativeCodex/Generated/Codex-NOTICE.txt"; fi
 else
   cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \

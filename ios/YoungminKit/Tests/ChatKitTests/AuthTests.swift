@@ -433,12 +433,18 @@ private func form(_ body: Data?) -> [String: String] {
         s.casualTone = true
         s.currentChatId = "c1"
         s.pendingThreadDeletes = ["b", "a"]
+        let nativeID = "019acf00-1234-7123-8123-123456789abc"
+        s.pendingNativeThreadDeletes = [nativeID, "invalid"]
         #expect(store.string("model") == "gpt-x" && store.string("effort") == "high")
         #expect(store.string("casualTone") == "true")
         #expect(store.string("currentChatId") == "c1")
         #expect(s.pendingThreadDeletes == ["a", "b"])
+        #expect(ChatSettings(store).pendingNativeThreadDeletes == [nativeID])
         s.model = nil
         s.pendingThreadDeletes = []
+        #expect(s.pendingNativeThreadDeletes == [nativeID])
+        s.pendingNativeThreadDeletes = []
+        #expect(store.string("pendingNativeThreadDeletes") == nil)
         #expect(store.string("model") == nil && store.string("pendingThreadDeletes") == nil)
         #expect(s.toneInstructions().contains("반말"))
         #expect(ChatSettings.toneInstructions(casual: false).hasPrefix("말투: 친근한 해요체"))

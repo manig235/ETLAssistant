@@ -37,3 +37,5 @@ Actions → **iOS Native Codex IPA** → **Run workflow**.
 공식 릴리스 소스에서 workspace 버전과 Cargo.lock 로컬 패키지 버전의 차이를 보정한다. 외부 의존성 버전·체크섬은 유지한다. 사용하지 않는 V8도 같은 고정 커밋의 검증된 아카이브에서 Cargo 정보를 읽도록 하여 Chromium 하위 저장소 다운로드를 피한다. 이 앱의 Rust 실행 의존성에는 V8이 포함되지 않는다.
 
 참고: [공식 app-server 문서](https://learn.chatgpt.com/docs/app-server.md), [고정한 공식 소스](https://github.com/openai/codex/tree/29eb79e9866b3262a777fdf8195c1b9e63684c91/codex-rs/app-server/src/in_process.rs).
+
+MXC 의존성에는 데스크톱 전용 정책 로그 함수 참조 두 곳에 플랫폼 조건을 추가한다. iOS 실행 요청을 거부하는 기존 `ensure_host_supported` 검사는 유지한다. 같은 고정 커밋 소스를 검증해 사용하며, 샌드박스 실행을 허용하는 우회 경로는 추가하지 않는다.

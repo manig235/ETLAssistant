@@ -1,5 +1,5 @@
 //! In-process JSON-RPC transport for the official Codex app-server.
-//! No listening socket, helper executable, or token transfer through Swift.
+//! No RPC socket, helper executable, or token transfer through Swift.
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
