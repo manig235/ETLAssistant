@@ -5,11 +5,13 @@ on:
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
+      - '.github/scripts/ios-simulator.sh'
   push:
     branches: [main, ios-port, 'codex/ios-*']
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
+      - '.github/scripts/ios-simulator.sh'
   workflow_dispatch:
 
 permissions:
