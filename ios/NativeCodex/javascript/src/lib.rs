@@ -1,6 +1,6 @@
-//! An isolated JavaScriptCore cell, with no process, file or network bindings.
+//! An isolated QuickJS interpreter cell, with no process, file or network bindings.
 //! The embedder supplies only the tools enabled for this particular execution.
-mod jsc;
+mod quickjs;
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -108,7 +108,7 @@ impl Cell {
             .stack_size(4 * 1024 * 1024)
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    jsc::run(&running, source, tools, store)
+                    quickjs::run(&running, source, tools, store)
                 }));
                 let error = match result {
                     Ok(result) => result.err(),

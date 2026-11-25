@@ -196,3 +196,26 @@ fn tools_not_in_the_allowlist_cannot_be_invoked() {
     assert_eq!(output(&complete(&cell)), "blocked");
     assert_eq!(host.calls.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn microtask_loop_can_be_terminated() {
+    let (cell, _) = start("while (true) await Promise.resolve();", Arc::default());
+    std::thread::sleep(Duration::from_millis(30));
+    cell.terminate();
+    assert_eq!(complete(&cell).status, Status::Terminated);
+}
+#[test]
+fn embedded_nul_and_unicode_roundtrip() {
+    let (cell, _) = start("store('한글', '앞\\u0000뒤😀'); text(load('한글'));", Arc::default());
+    let result = complete(&cell);
+    assert_eq!(result.status, Status::Completed(None));
+    assert_eq!(output(&result), "앞\0뒤😀");
+}
+#[test]
+fn memory_limit_reports_an_error_without_killing_the_host() {
+    let (cell, _) = start("const data=[]; while (true) data.push(new Array(100000).fill(42));", Arc::default());
+    let result = complete(&cell);
+    assert!(matches!(result.status, Status::Completed(Some(_))));
+    let (next, _) = start("text(42);", Arc::default());
+    assert_eq!(output(&complete(&next)), "42");
+}

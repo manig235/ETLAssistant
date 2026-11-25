@@ -94,6 +94,7 @@ elif [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   if [[ -z "$native_libs" ]]; then echo 'Rust did not report its required native system libraries.' >&2; exit 1; fi
   printf '%s\n' "$native_libs" > "$GENERATED/native-static-libs.txt"
   cp "$library" "$GENERATED/"
+  cp "$ROOT/ios/NativeCodex/javascript/vendor/quickjs/LICENSE" "$ROOT/ios/NativeCodex/Generated/QuickJS-LICENSE.txt"
   cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"
   cp "$SOURCE/youngmin-vendor/mxc/LICENSE.md" "$ROOT/ios/NativeCodex/Generated/MXC-LICENSE.txt"
   if [[ -f "$SOURCE/NOTICE" ]]; then cp "$SOURCE/NOTICE" "$ROOT/ios/NativeCodex/Generated/Codex-NOTICE.txt"; fi

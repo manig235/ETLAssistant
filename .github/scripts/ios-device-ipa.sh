@@ -35,6 +35,7 @@ xcodebuild build \
 
 # Package a copy, keeping the normal app/extension build products intact.
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
+  python3 .github/scripts/check-ios-private-apis.py "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/Youngmin"
   cp ios/NativeCodex/Generated/*LICENSE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"
   if compgen -G 'ios/NativeCodex/Generated/*NOTICE*' > /dev/null; then
     cp ios/NativeCodex/Generated/*NOTICE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"
