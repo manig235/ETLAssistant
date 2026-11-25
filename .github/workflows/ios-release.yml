@@ -1,0 +1,192 @@
+name: iOS Release Archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      method:
+        description: 배포 방식 (app-store-connect = TestFlight·App Store, release-testing = Ad Hoc)
+        type: choice
+        options: [app-store-connect, release-testing]
+        default: app-store-connect
+      extensions:
+        description: 확장 (app-only = 앱만, full = 위젯·공유 확장 포함)
+        type: choice
+        options: [app-only, full]
+        default: app-only
+      upload:
+        description: 서명한 IPA를 App Store Connect에 업로드 (app-store-connect만)
+        type: boolean
+        default: false
+      fast:
+        description: 엔진 최적화를 생략한 빠른 확인 빌드 (배포에는 끈다)
+        type: boolean
+        default: false
+      build_number:
+        description: CFBundleVersion 직접 지정 (비우면 프로젝트 빌드.실행 번호)
+        type: string
+        default: ''
+      runtime_proof_run:
+        description: 동일 실행기 코드의 검증을 이미 통과한 실행 번호 (선택)
+        type: string
+        default: ''
+  # Unsigned verification of the release path while it lives on this branch.
+  push:
+    branches: [claude/ios-release-archive]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      fast: ${{ steps.mode.outputs.fast }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check committed Release configuration and helpers
+        run: |
+          python3 .github/scripts/ios-release-helper.py config-check
+          python3 scripts/test-ios-release.py
+          python3 scripts/test-ios-device-ipa.py
+      - name: Lint release shell scripts
+        run: shellcheck -S warning .github/scripts/ios-archive.sh .github/scripts/ios-device-ipa.sh .github/scripts/ios-simulator.sh
+      - name: Select engine build
+        id: mode
+        env:
+          FAST: ${{ github.event_name == 'push' || inputs.fast }}
+        run: echo "fast=$FAST" >> "$GITHUB_OUTPUT"
+
+  native-cache:
+    needs: release-checks
+    runs-on: macos-26-intel
+    timeout-minutes: 5
+    outputs:
+      compiled: ${{ steps.lookup.outputs.cache-hit }}
+      runtime-verified: ${{ steps.proof.outputs.verified }}
+      runtime-pending: ${{ steps.proof.outputs.pending }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check whether this exact engine was already tested and built
+        id: lookup
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          lookup-only: true
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ needs.release-checks.outputs.fast == 'true' && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+      - name: Verify explicitly supplied execution-test results
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_RUN_ID: ${{ inputs.runtime_proof_run }}
+          PROOF_ALLOW_PENDING: '1'
+        run: python3 .github/scripts/ios-runtime-proof.py
+
+  javascript-runtime-tests:
+    needs: native-cache
+    if: ${{ needs.native-cache.outputs.compiled != 'true' && needs.native-cache.outputs.runtime-verified != 'true' && needs.native-cache.outputs.runtime-pending != 'true' }}
+    uses: ./.github/workflows/ios-code-mode-probe.yml
+
+  release-archive:
+    needs: [release-checks, native-cache, javascript-runtime-tests]
+    if: ${{ always() && !cancelled() && needs.native-cache.result == 'success' && (needs.javascript-runtime-tests.result == 'success' || needs.javascript-runtime-tests.result == 'skipped') }}
+    runs-on: macos-26-intel
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Restore native Rust dependencies
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ needs.release-checks.outputs.fast == 'true' && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
+      - name: Build the embedded official Codex library
+        id: native-engine
+        env:
+          CODEX_PROBE_COMPONENT: bridge
+          CODEX_PROBE_OPERATION: build
+          CODEX_NATIVE_OPT_LEVEL: ${{ needs.release-checks.outputs.fast == 'true' && '0' || '1' }}
+          CODEX_REUSE_COMPILED_LIBRARY: ${{ steps.rust-cache.outputs.cache-matched-key != '' }}
+          CODEX_NATIVE_CACHE_KEY: ${{ steps.rust-cache.outputs.cache-primary-key }}
+        run: bash .github/scripts/ios-codex-probe.sh
+      - name: Test Swift authentication transport and chat integration
+        if: ${{ needs.release-checks.outputs.fast != 'true' }}
+        run: swift test --package-path ios/YoungminKit
+      - name: Require successful execution proof before signing or uploading
+        id: runtime-proof
+        if: ${{ needs.native-cache.outputs.runtime-pending == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_RUN_ID: ${{ inputs.runtime_proof_run }}
+          PROOF_WAIT_SECONDS: '1800'
+        run: python3 .github/scripts/ios-runtime-proof.py
+      - name: Archive, verify, export and upload
+        env:
+          YOUNGMIN_EXPORT_METHOD: ${{ inputs.method || 'app-store-connect' }}
+          YOUNGMIN_EXTENSIONS: ${{ inputs.extensions || 'app-only' }}
+          YOUNGMIN_UPLOAD: ${{ inputs.upload && '1' || '0' }}
+          YOUNGMIN_BUILD_NUMBER: ${{ inputs.build_number }}
+          # Only used when the signing secrets below are absent.
+          YOUNGMIN_SIGNING_DRY_RUN: '1'
+          IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_PROFILE_APP_BASE64: ${{ secrets.IOS_PROFILE_APP_BASE64 }}
+          IOS_PROFILE_WIDGETS_BASE64: ${{ inputs.extensions == 'full' && secrets.IOS_PROFILE_WIDGETS_BASE64 || '' }}
+          IOS_PROFILE_SHARE_BASE64: ${{ inputs.extensions == 'full' && secrets.IOS_PROFILE_SHARE_BASE64 || '' }}
+          ASC_KEY_ID: ${{ inputs.upload && secrets.ASC_KEY_ID || '' }}
+          ASC_ISSUER_ID: ${{ inputs.upload && secrets.ASC_ISSUER_ID || '' }}
+          ASC_KEY_P8: ${{ inputs.upload && secrets.ASC_KEY_P8 || '' }}
+        run: bash .github/scripts/ios-archive.sh
+      - name: Upload archive and IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: youngmin-release-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            ios-release-output/Youngmin.xcarchive.zip
+            ios-release-output/export/*.ipa
+            ios-release-output/export/*.sha256
+            ios-release-output/ExportOptions.plist
+            ios-release-output/summary.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-release-logs-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            ios-codex-probe/*.log
+            ios-codex-probe/*.txt
+            ios-release-output/*.log
+            ios-release-output/summary.json
+          retention-days: 7
+      - name: Save native compilation cache
+        # Branch caches would evict the shared 8 GB engine cache; only the default branch saves.
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ${{ steps.native-engine.outcome == 'success' && (needs.native-cache.outputs.runtime-pending != 'true' || steps.runtime-proof.outcome == 'success') && steps.rust-cache.outputs.cache-primary-key || format('{0}-partial-{1}-{2}', steps.rust-cache.outputs.cache-primary-key, github.run_id, github.run_attempt) }}
