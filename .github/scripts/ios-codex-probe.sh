@@ -61,16 +61,24 @@ if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL="${CODEX_NATIVE_OPT_LEVEL:-1}"
   if [[ "$SDK" == iphonesimulator ]]; then export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=0; fi
   export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
-  cargo +"$TOOLCHAIN" rustc --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small -- --print native-static-libs \
-    2>&1 | tee "$OUT/cargo-build.log"
+  library="target/$TARGET/dev-small/libyoungmin_codex_bridge.a"
+  if [[ "${CODEX_REUSE_COMPILED_LIBRARY:-false}" == true && "$SDK" == iphoneos && -s "$library" ]]; then
+    # The exact cache key includes all patched source and bridge inputs. A
+    # finished static library can survive a later packaging-only failure.
+    echo 'Reusing the compiled native library from the exact source cache.'
+    native_libs="$(cat "$ROOT/ios/NativeCodex/native-static-libs.txt")"
+  else
+    cargo +"$TOOLCHAIN" rustc --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small -- --print native-static-libs \
+      2>&1 | tee "$OUT/cargo-build.log"
+    native_libs="$(sed -n 's/^note: native-static-libs: //p' "$OUT/cargo-build.log" | tail -n 1)"
+  fi
   GENERATED="$ROOT/ios/NativeCodex/Generated/$SDK/$ARCH"
   mkdir -p "$GENERATED"
-  native_libs="$(sed -n 's/^note: native-static-libs: //p' "$OUT/cargo-build.log" | tail -n 1)"
   if [[ -z "$native_libs" ]]; then echo 'Rust did not report its required native system libraries.' >&2; exit 1; fi
   printf '%s\n' "$native_libs" > "$GENERATED/native-static-libs.txt"
-  cp "target/$TARGET/dev-small/libyoungmin_codex_bridge.a" "$GENERATED/"
+  cp "$library" "$GENERATED/"
   cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"
-  cp "$SOURCE/youngmin-vendor/mxc/LICENSE" "$ROOT/ios/NativeCodex/Generated/MXC-LICENSE.txt"
+  cp "$SOURCE/youngmin-vendor/mxc/LICENSE.md" "$ROOT/ios/NativeCodex/Generated/MXC-LICENSE.txt"
   if [[ -f "$SOURCE/NOTICE" ]]; then cp "$SOURCE/NOTICE" "$ROOT/ios/NativeCodex/Generated/Codex-NOTICE.txt"; fi
   printf 'Built %s static library for %s.\n' "$PACKAGE" "$TARGET" > "$OUT/result.txt"
 else
