@@ -1,4 +1,5 @@
 import ChatKit
+import ETLKit
 import NotifyKit
 import SwiftUI
 
@@ -46,6 +47,7 @@ private struct SettingsContent: View {
     @State private var showModelPicker = false
     @State private var showCourseAlerts = false
     @State private var picking: TimeTarget?
+    @State private var profileMessage: String?
 
     enum TimeTarget: Identifiable, Hashable {
         case brief(Int), quietStart, quietEnd
@@ -65,9 +67,12 @@ private struct SettingsContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 accountSection
-                etlSection
+                studyDataSection
+                if !StudyDataProfile.isDemo { etlSection }
                 notifySection
+                if !StudyDataProfile.isDemo {
                 SettingsSection(title: "캘린더") { YMCard { NavigationLink { CalendarSettingsView() } label: { SettingsLinkRowLabel(title: "캘린더 연동", desc: CalendarSyncService.summary()) }.buttonStyle(YMPressStyle()) } }
+                }
                 SettingsSection(title: "받은 파일") { YMCard { CleanupSettingsContent() } } // 받은 파일 자동 정리(Kotlin `DownloadCleanupSettingsContent`)
                 toneSection
                 modelSection
@@ -122,6 +127,30 @@ private struct SettingsContent: View {
             if let chat = app.chat { ChatModelPicker(controller: chat) }
         }
         .navigationDestination(isPresented: $showCourseAlerts) { courseAlerts() }
+    }
+
+    private var studyDataSection: some View {
+        SettingsSection(title: "학습 데이터") {
+            YMCard {
+                Text(StudyDataProfile.isDemo ? "가상 eTL 테스트 중" : "실제 eTL 사용 중")
+                    .font(YMFont.body1Bold).foregroundStyle(YMColor.label)
+                SettingsCaption(StudyDataProfile.isDemo
+                    ? "학교 토큰 없이 가상 과목·과제·공지·파일을 조회해요. 답변은 실제 AI가 만들고, 내 일정 변경도 승인한 뒤 가상 저장소에 적용해요. 실제 캘린더·위젯은 연결하지 않아요."
+                    : "가상 eTL로 바꿔도 실제 토큰·과제·내 일정·대화는 따로 보관해요.")
+                    .padding(.top, 8)
+                SettingsSoftButton(StudyDataProfile.isDemo ? "실제 eTL로 전환 예약" : "가상 eTL로 전환 예약") {
+                    StudyDataProfile.selectNextLaunch(demo: !StudyDataProfile.isDemo)
+                    profileMessage = "전환을 예약했어요. 앱 전환 화면에서 영민이를 완전히 종료한 뒤 다시 열어 주세요. 현재 작업은 지금 모드에서 계속돼요."
+                }.padding(.top, 12)
+                if StudyDataProfile.isDemo {
+                    SettingsSoftButton("가상 데이터 초기화 예약") {
+                        StudyDataProfile.selectNextLaunch(demo: true, reset: true)
+                        profileMessage = "다음 실행에 가상 대화·파일·내 일정을 초기화해요. 앱을 완전히 종료한 뒤 다시 열어 주세요. 실제 데이터와 ChatGPT 로그인은 유지돼요."
+                    }.padding(.top, 8)
+                }
+                if let profileMessage { SettingsCaption(profileMessage).padding(.top, 12) }
+            }
+        }
     }
 
     // MARK: 1. ChatGPT 계정

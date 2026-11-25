@@ -18,7 +18,7 @@ actor NativeCodexTransport: CodexTransport {
 
     func start() async throws {
         guard handle == 0 else { return }
-        let home = AppPaths.directory("codex").path
+        let home = AppPaths.codexHome.path
         handle = home.withCString { home in AppPaths.root.path.withCString { ym_codex_start(home, $0) } }
         guard handle != 0 else { throw CodexError("앱 내부 Codex를 시작하지 못했어요") }
         polling = Task { [weak self] in

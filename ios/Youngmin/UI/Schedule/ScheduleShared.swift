@@ -62,6 +62,7 @@ enum SchedFormat {
 @MainActor
 enum SchedLinks {
     static func openEtl(_ url: String?) {
+        guard !StudyDataProfile.isDemo else { ToastCenter.shared.show("가상 eTL 자료는 실제 학교 사이트에서 열 수 없어요"); return }
         guard let web = LearningXLink.webUrl(url), let webURL = URL(string: web) else { return }
         if let app = LearningXLink.fromWebUrl(web).flatMap(URL.init(string:)) {
             UIApplication.shared.open(app, options: [:]) { ok in

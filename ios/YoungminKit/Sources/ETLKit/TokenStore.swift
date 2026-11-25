@@ -38,7 +38,13 @@ open class SecretSlot: @unchecked Sendable {
 
 /// eTL 액세스 토큰.
 public final class TokenStore: SecretSlot, @unchecked Sendable {
-    public init(store: SecretStore = KeychainSecretStore()) { super.init(store: store, blobKey: "token_blob") }
+    public init(store: SecretStore = KeychainSecretStore()) {
+        if StudyDataProfile.isDemo {
+            let local = InMemorySecretStore()
+            try? local.setSecret(FakeEtl.token, for: "token_blob")
+            super.init(store: local, blobKey: "token_blob")
+        } else { super.init(store: store, blobKey: "token_blob") }
+    }
     public func hasToken() -> Bool { has() }
 }
 

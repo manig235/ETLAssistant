@@ -3,6 +3,8 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 mkdir -p ios-device-output
+build_config="${YOUNGMIN_CONFIGURATION:-Debug}"
+case "$build_config" in Debug|Release) ;; *) echo "Unsupported build configuration" >&2; exit 1 ;; esac
 xcodebuild -version | tee ios-device-output/toolchain.log
 git rev-parse HEAD | tee ios-device-output/revision.log
 
@@ -17,14 +19,14 @@ if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
     'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
     "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge $native_system_libs"
     'INFOPLIST_KEY_YoungminAuthEngine=codex-in-process'
-    'INFOPLIST_KEY_YoungminCodeModeRuntime=javascriptcore'
+    'INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs'
     'INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91'
-    'CURRENT_PROJECT_VERSION=25'
+    'CURRENT_PROJECT_VERSION=26'
   )
 fi
 xcodebuild build \
   -project ios/Youngmin.xcodeproj -scheme Youngmin \
-  -configuration Debug -sdk iphoneos \
+  -configuration "$build_config" -sdk iphoneos \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$device_derived" \
   ARCHS=arm64 ONLY_ACTIVE_ARCH=NO ENABLE_DEBUG_DYLIB=NO \
@@ -35,14 +37,14 @@ xcodebuild build \
 
 # Package a copy, keeping the normal app/extension build products intact.
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
-  python3 .github/scripts/check-ios-private-apis.py "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/Youngmin"
-  cp ios/NativeCodex/Generated/*LICENSE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"
+  python3 .github/scripts/check-ios-private-apis.py "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app/Youngmin"
+  cp ios/NativeCodex/Generated/*LICENSE* "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app/"
   if compgen -G 'ios/NativeCodex/Generated/*NOTICE*' > /dev/null; then
-    cp ios/NativeCodex/Generated/*NOTICE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"
+    cp ios/NativeCodex/Generated/*NOTICE* "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app/"
   fi
 fi
 python3 .github/scripts/package-device-ipa.py \
-  --app "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app" \
+  --app "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app" \
   --output ios-device-output/Youngmin-unsigned.ipa \
   2>&1 | tee ios-device-output/package.log
 cp ios/INSTALL-WINDOWS.md ios-device-output/INSTALL-WINDOWS.md

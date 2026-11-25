@@ -22,9 +22,9 @@ if run_id:
     def api(path):
         return json.loads(command("gh", "api", f"repos/{repo}/{path}"))
     run = api(f"actions/runs/{run_id}")
-    workflow = api("actions/workflows/ios-native-codex-ipa.yml")
-    if run["workflow_id"] != workflow["id"] or run["event"] != "workflow_dispatch" or run.get("head_repository", {}).get("full_name") != repo:
-        raise SystemExit("Runtime proof is not an installable-app build from this repository")
+    workflows = [api("actions/workflows/" + name)["id"] for name in ["ios-native-codex-ipa.yml", "ios-code-mode-probe.yml"]]
+    if run["workflow_id"] not in workflows or run["event"] != "workflow_dispatch" or run.get("head_repository", {}).get("full_name") != repo:
+        raise SystemExit("Runtime proof is not an approved execution-test workflow from this repository")
     jobs = api(f"actions/runs/{run_id}/jobs?per_page=100")["jobs"]
     for name in ["javascript-tool-probe", "codex-code-mode-delegate"]:
         matching = [job for job in jobs if job["name"].split(" / ")[-1] == name]
@@ -32,7 +32,7 @@ if run_id:
             raise SystemExit(f"Runtime proof is missing a successful {name} job")
     revision = run["head_sha"]
     subprocess.run(["git", "fetch", "--no-tags", "--depth=1", "origin", revision], check=True)
-    paths = ["ios/NativeCodex/bridge", "ios/NativeCodex/javascript", "ios/NativeCodex/code-mode-check", "ios/NativeCodex/JavaScriptCoreProbe.swift", "ios/NativeCodex/native-static-libs.txt"]
+    paths = ["ios/NativeCodex/bridge", "ios/NativeCodex/javascript", "ios/NativeCodex/code-mode-check", "ios/NativeCodex/JavaScriptCoreProbe.swift", "ios/NativeCodex/native-static-libs.txt", ".github/workflows/ios-code-mode-probe.yml"]
     subprocess.run(["git", "diff", "--quiet", revision, "--", *paths], check=True)
     old_script = command("git", "show", f"{revision}:.github/scripts/ios-codex-probe.sh")
     new_script = Path(".github/scripts/ios-codex-probe.sh").read_text()

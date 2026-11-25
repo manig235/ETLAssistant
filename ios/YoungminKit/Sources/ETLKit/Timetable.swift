@@ -572,6 +572,7 @@ public enum CatalogClient {
     /// 참조마다 수업 시간·교수 정보 또는 오류. 한 번에 하나씩 묻는다.
     public static func fetch(_ refs: [[String: String]]) async -> [Result<TimetableLogic.CatalogCourse, Error>] {
         if refs.isEmpty { return [] }
+        if StudyDataProfile.isDemo { return refs.map { _ in .failure(CatalogError("가상 eTL에서는 실제 수강편람에 접속하지 않아요")) } }
         let cookie: String
         do {
             cookie = try await session()
@@ -616,6 +617,7 @@ public enum CatalogClient {
 
     /// 수강편람 '강의계획서' 탭(cc103ajax)의 원본 응답. 실패하면 사용자에게 보여 줄 문구를 담은 [CatalogError].
     public static func syllabus(_ ref: [String: String]) async throws -> JSONObject {
+        guard !StudyDataProfile.isDemo else { throw CatalogError("가상 eTL에서는 실제 수강편람에 접속하지 않아요") }
         do {
             return try await post(SYLLABUS_PATH, ref, try await session())
         } catch {
@@ -626,6 +628,7 @@ public enum CatalogClient {
     /// 강의계획서 첨부(shine.snu.ac.kr 공개 다운로드)를 [destination]에 쓴다. 로그인·eTL 토큰 없이 GET만 보낸다.
     /// 리다이렉트는 따라가지 않고, [maxBytes]를 넘으면 중단한다. 받은 바이트 수를 돌려준다.
     public static func downloadAttachment(_ url: String, to destination: URL, maxBytes: Int64) async throws -> Int64 {
+        guard !StudyDataProfile.isDemo else { throw CatalogError("가상 eTL에서는 실제 수강편람에 접속하지 않아요") }
         guard url.hasPrefix("https://shine.snu.ac.kr/"), let u = URL(string: url) else { throw CatalogError("수강편람 첨부 주소가 아니에요") }
         var req = URLRequest(url: u, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: TimeInterval(TIMEOUT_MS) / 1000)
         req.httpMethod = "GET"
@@ -819,6 +822,11 @@ public enum Timetable {
 
     /// 이번 학기 과목과 수업. 하루 동안, 또는 수강 과목이 바뀔 때까지 캐시를 쓴다. 조회에 실패한 과목은 이전에 알던 수업을 남긴다.
     public static func weekly(_ etl: EtlClient, _ store: TimetableStore, nowMs: Int64 = Timetable.nowMs(), force: Bool = false) async throws -> TimetableLogic.Weekly {
+        if let fake = etl.fake {
+            let result = fake.weekly(nowMs: nowMs)
+            store.save(result)
+            return store.withCustom(result)!
+        }
         let list = EtlLogic.currentCourses(try await etl.getAll("/api/v1/courses?enrollment_state=active&include[]=term&include[]=syllabus_body&per_page=100"))
         let ids = list.map { $0.optLong("id") }.sorted().map(String.init).joined(separator: ",")
         let cached = store.loadCatalog()

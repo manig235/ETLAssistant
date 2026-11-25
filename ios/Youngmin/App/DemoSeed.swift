@@ -11,7 +11,7 @@ enum DemoSeed {
 
     static var isActive: Bool {
         #if DEBUG
-        return UserDefaults.standard.bool(forKey: flagKey)
+        return !StudyDataProfile.isDemo && UserDefaults.standard.bool(forKey: flagKey)
         #else
         return false
         #endif

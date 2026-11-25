@@ -242,6 +242,7 @@ public final class BoardClient: @unchecked Sendable {
     /// eTL 호스트로만 보낸다. 오류 문구에는 [what]만 쓴다(URL에는 서명이 있을 수 있다).
     /// POST는 LearningX LTI 실행 경로(`/learningx/lti/…`)에만 보낸다.
     private func http(_ url: String, _ method: String, _ headers: [String: String], _ body: String?, _ what: String) async throws -> BoardHTTPResponse {
+        guard etl.fake == nil else { throw EtlException("가상 eTL에서는 외부 게시판에 접속하지 않아요", kind: "fake-unsupported") }
         guard let u = URL(string: url), BoardLogic.origin(u) == base else { throw EtlException(BoardClient.LAUNCH_FAILED, kind: "board-launch") }
         if method != "GET" {
             let path = URLComponents(url: u, resolvingAgainstBaseURL: true)?.percentEncodedPath ?? ""

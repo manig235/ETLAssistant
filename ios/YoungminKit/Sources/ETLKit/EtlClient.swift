@@ -57,14 +57,16 @@ public final class EtlClient: @unchecked Sendable {
 
     private let tokenValue: String
     public let origin: String
+    public let fake: FakeEtl?
     private let session: URLSession
 
     /// [token]이 형식에 맞지 않으면 [EtlException](토큰은 메시지에 넣지 않는다).
     /// [session]은 JSON 요청용(기본: 리다이렉트를 따라가지 않는 공용 세션).
-    public init(_ token: String, origin: String = EtlClient.BASE_URL, session: URLSession? = nil) throws {
+    public init(_ token: String, origin: String = EtlClient.BASE_URL, session: URLSession? = nil, fake: FakeEtl? = nil) throws {
         if !EtlClient.TOKEN_RE.matches(token) { throw EtlException("eTL 토큰이 없거나 형식이 올바르지 않아요") }
         self.tokenValue = token
-        self.origin = origin
+        self.fake = fake ?? ((StudyDataProfile.isDemo || token == FakeEtl.token) ? .shared : nil)
+        self.origin = self.fake == nil ? origin : FakeEtl.origin
         self.session = session ?? EtlClient.jsonSession
     }
 
@@ -108,6 +110,7 @@ public final class EtlClient: @unchecked Sendable {
     public func download(_ rawUrl: String, to destination: URL, maxBytes: Int64 = EtlClient.MAX_DOWNLOAD) async throws -> Download {
         guard let url = EtlClient.resolve("\(origin)/", rawUrl) else { throw EtlException("eTL 파일 주소를 해석할 수 없어요") }
         if !EtlClient.sameOrigin(url, origin) { throw EtlException("다운로드 주소가 eTL이 아니에요") }
+        if let fake { return try fake.download(url, to: destination, maxBytes: maxBytes) }
         let shownPath = URLComponents(string: url)?.percentEncodedPath ?? "?"
         let req = try open(url, withToken: true, json: false, readTimeoutMs: EtlClient.DOWNLOAD_READ_TIMEOUT_MS)
         let delegate = DownloadDelegate(origin: origin, token: tokenValue, shownPath: shownPath, destination: destination, maxBytes: maxBytes)
@@ -146,6 +149,8 @@ public final class EtlClient: @unchecked Sendable {
     }
 
     private func requestJsonUngated(_ url: String) async throws -> (Any, String?) {
+        try Task.checkCancellation()
+        if let fake { return (try fake.get(url), nil) }
         let path = EtlClient.pathOnly(url)
         let req = try open(url, withToken: true, json: true)
         let data: Data

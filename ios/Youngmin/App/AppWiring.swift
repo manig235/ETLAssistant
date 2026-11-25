@@ -88,6 +88,16 @@ enum AppWiring {
         HomeWidgetBridge.start(app: app)
         // 캘린더 연동: 내 마감·과목 필터 변경·캘린더 변경(EKEventStoreChanged, 5초)·앞으로 올 때 맞춘다(작업 A, Services/CalendarSyncService.swift).
         CalendarSyncService.start()
+        if StudyDataProfile.isDemo {
+            Task {
+                if let client = try? EtlClient(FakeEtl.token),
+                   let snapshot = try? await SnapshotFetcher.fetch(client, Date()) {
+                    SchedStores.snapshot.save(snapshot)
+                    _ = try? await Timetable.weekly(client, SchedStores.timetable)
+                    EtlEvents.dataChanged()
+                }
+            }
+        }
     }
 
     private static var dataChangedSubscription: EtlEvents.Subscription?

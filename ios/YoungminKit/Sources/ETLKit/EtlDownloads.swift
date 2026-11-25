@@ -28,7 +28,7 @@ public enum EtlDownloads {
     /// 사용자용 폴더(`Documents/etl`, 파일 앱에서 보인다).
     public static var userDirectory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = docs.appendingPathComponent("etl", isDirectory: true)
+        let url = docs.appendingPathComponent(StudyDataProfile.isDemo ? "etl-fake" : "etl", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

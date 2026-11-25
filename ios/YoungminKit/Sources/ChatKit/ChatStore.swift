@@ -3,9 +3,10 @@ import Foundation
 /// ChatKit의 파일 위치(새로 만듦, ETLKit `AppPaths`와 같은 규칙). ChatKit은 ETLKit을 가져오지 않으므로 따로 둔다.
 /// 앱 Application Support 아래 `Youngmin/`(백업 제외).
 public enum ChatPaths {
+    private static let demoProfile = UserDefaults.standard.string(forKey: "studyData.mode") == "fake"
     public static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        var url = base.appendingPathComponent("Youngmin", isDirectory: true)
+        var url = base.appendingPathComponent(demoProfile ? "Youngmin/FakeETL" : "Youngmin", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

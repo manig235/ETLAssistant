@@ -96,6 +96,7 @@ public final class CalendarEventKitStore: CalendarStore, @unchecked Sendable {
     }
 
     public var access: CalendarAccess {
+        if StudyDataProfile.isDemo { return .denied }
         switch EKEventStore.authorizationStatus(for: .event) {
         case .notDetermined: return .notDetermined
         case .restricted: return .restricted
@@ -107,6 +108,7 @@ public final class CalendarEventKitStore: CalendarStore, @unchecked Sendable {
     }
 
     public func requestAccess() async -> Bool {
+        guard !StudyDataProfile.isDemo else { return false }
         let granted = (try? await store.requestFullAccessToEvents()) ?? false
         // 권한이 바뀐 뒤에는 새로 읽어야 캘린더가 보인다.
         lock.withLock { storeValue = nil }

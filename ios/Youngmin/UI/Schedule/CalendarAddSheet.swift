@@ -1,3 +1,4 @@
+import ETLKit
 import EventKit
 import EventKitUI
 import NotifyKit
@@ -42,6 +43,7 @@ struct CalendarAddSheet: UIViewControllerRepresentable {
 extension MyScheduleModel {
     /// 행 하나를 캘린더 앱의 일정 추가 화면에 채울 값. 반복 내 마감은 반복 규칙을 함께 넘긴다. 넣을 수 없으면 nil.
     func calendarDraft(_ r: Agenda.Row) -> CalendarExport.InsertDraft? {
+        guard !StudyDataProfile.isDemo else { return nil }
         switch r.kind {
         case .MINE, .EXAM:
             guard let occ = r.mine, let series = seriesOf(occ) else { return nil }

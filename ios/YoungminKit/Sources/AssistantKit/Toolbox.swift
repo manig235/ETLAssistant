@@ -55,10 +55,13 @@ public final class Toolbox: @unchecked Sendable {
     // MARK: 앱 계약
 
     /// AGENTS.md(말투 지침 제외: 앱의 ChatController가 `ChatSettings.toneInstructions()`를 붙인다).
-    public var instructions: String { AssistantInstructions.agents }
+    private var profileInstructions: String {
+        StudyDataProfile.isDemo ? "\n현재 가상 eTL 테스트 모드다. 과목·과제·공지·파일은 가상 데이터이며 실제 학교 정보라고 말하지 않는다. 기존 도구로 조회하고 답한다. 내 마감·시험·휴강 변경은 가상 저장소에만 적용되지만 동일하게 매번 사용자의 변경 승인을 받는다. 실제 캘린더 연결은 이 모드에서 사용하지 않는다.\n" : ""
+    }
+    public var instructions: String { AssistantInstructions.agents + profileInstructions }
 
     /// 말투 지침까지 붙인 지침.
-    public func instructions(casualTone: Bool) -> String { AssistantInstructions.text(casualTone: casualTone) }
+    public func instructions(casualTone: Bool) -> String { AssistantInstructions.text(casualTone: casualTone) + profileInstructions }
 
     /// 등록한 도구 정의(이름·설명·스키마는 안드로이드와 같다).
     public var specs: [ToolSpec] { ToolSpecs.all }

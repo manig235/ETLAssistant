@@ -10,7 +10,8 @@
 - Swift 로직 테스트 745개가 통과했다. 여기에는 실제 계정 없이 검증하는 통신·도구 호출·대화 복원·중단 테스트가 포함된다.
 - build 23은 iOS arm64 컴파일·링크·패키징을 통과했고 사용자 기기에서 로그인 성공이 보고됐다. GPT-5.5만 남기던 필터로 모델 목록이 비는 문제가 확인됐다.
 - 시스템 JavaScriptCore로 비동기 도구 실행·오류·중단·격리 테스트 10개를 macOS와 iOS 시뮬레이터에서 통과했다. 이를 Codex에 연결한 build 25는 별도로 검증한다.
-- **실제 SNU Edu 계정으로 새 빌드의 모델 선택·답변·eTL 도구 호출까지 성공했는지는 사용자 기기에서 확인해야 한다.**
+- build 25에서 SNU Edu 계정으로 실제 iPad 채팅 성공이 사용자에게 확인됐다. eTL 전체 도구와 장기 백그라운드 동작까지 검증됐다는 뜻은 아니다.
+- build 26부터 실행기를 내장 QuickJS로 교체한다. Apple 비공개 시간 제한 함수를 제거했고, 로컬 Linux에서 실행·취소·메모리 제한을 포함한 16개 테스트가 통과했다. macOS·iOS·Codex 연결과 기기용 빌드는 CI에서 별도로 확인한다.
 
 기존 **iOS Device IPA** 워크플로는 SIWC 인증을 사용하는 앱을 만든다. 내장 Codex를 검증하는 동안 두 빌드를 구분하기 위해 새 워크플로를 사용한다.
 
@@ -20,17 +21,17 @@ Actions → **iOS Native Codex IPA** → **Run workflow**. 빠른 기기 테스�
 
 1. 빠른 빌드는 Rust 최적화와 이 작업 안의 중복 Swift 테스트를 생략한다. Swift 로직 검증은 별도 iOS CI에서 실행한다.
 2. Android와 같은 Codex `rust-v0.170.0`의 커밋 `29eb79e9866b3262a777fdf8195c1b9e63684c91`을 SHA-256 검증 후 받는다.
-3. JavaScriptCore 실행기와 Codex 세션·도구 delegate 연결 테스트가 통과하면, Rust 1.95.0으로 iOS arm64용 정적 라이브러리를 빌드한다.
-4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 build 25 IPA를 만든다.
+3. QuickJS 실행기와 Codex 세션·도구 delegate 연결 테스트가 통과하면, Rust 1.95.0으로 iOS arm64용 정적 라이브러리를 빌드한다.
+4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 Release 구성 build 26 IPA를 만든다.
 5. 성공하면 아티팩트의 `Youngmin-iPad-test.ipa` 한 파일을 Windows Sideloadly로 설치한다. 바깥쪽 ZIP으로 다시 묶지 않고 업로드한다. 설치 과정은 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)를 따른다.
 
-기기용 IPA 생성을 우선한다. 추가 네이티브 시뮬레이터 실행 검증은 별도로 진행할 수 있으며, 실제 SNU 로그인은 사용자 iPad에서 확인해야 한다.
+기기용 IPA 생성을 우선한다. 추가 네이티브 시뮬레이터 실행 검증은 별도로 진행할 수 있으며, 새 실행기의 실제 SNU 로그인·채팅은 사용자 iPad에서 다시 확인해야 한다.
 
 빌드에는 Apple 개발자 계정이나 사용자 ChatGPT 토큰이 필요 없다. 실제 로그인은 설치한 iPad의 공식 OpenAI 로그인 페이지에서 진행한다. 학교 워크스페이스 정책은 그대로 적용된다.
 
 ## 현재 지원 범위
 
-내장 엔진은 별도 자식 프로세스·셸·PTY·code-mode host를 실행하지 않도록 설정한다. Code Mode는 Apple의 시스템 JavaScriptCore를 사용하는 앱 내부 세션 provider에 연결한다. 셀마다 JavaScript context를 분리하고, 허용된 도구만 Codex가 제공한 delegate를 통해 호출하므로 eTL 쓰기 승인도 기존 경로를 따른다. 셀 사이의 `store`/`load`는 해당 Codex 세션 안에서만 공유한다. 중단·대기·비동기 도구 반환과 실행 시간 제한을 제공한다.
+내장 엔진은 별도 자식 프로세스·셸·PTY·code-mode host를 실행하지 않도록 설정한다. Code Mode는 앱에 소스와 함께 포함한 QuickJS 인터프리터를 사용하는 앱 내부 세션 provider에 연결한다. 셀마다 JavaScript context를 분리하고, 허용된 도구만 Codex가 제공한 delegate를 통해 호출하므로 eTL 쓰기 승인도 기존 경로를 따른다. 셀 사이의 `store`/`load`는 해당 Codex 세션 안에서만 공유한다. 중단·대기·비동기 도구 반환과 실행 시간 제한을 제공한다.
 
 GPT-5.5 고정값과 모델 화이트리스트를 제거하고, 공식 엔진이 계정에 대해 반환한 모델 목록과 기본 선택을 사용한다. GPT-5.6·6·6.1 계열을 목록에서 임의로 제외하지 않는다. 실제 제공 모델과 사용 가능량은 서버 계정 설정에 따른다.
 
@@ -49,3 +50,11 @@ GPT-5.5 고정값과 모델 화이트리스트를 제거하고, 공식 엔진이
 MXC 의존성에는 데스크톱 전용 정책 로그 함수 참조 두 곳에 플랫폼 조건을 추가한다. iOS 실행 요청을 거부하는 기존 `ensure_host_supported` 검사는 유지한다. 같은 고정 커밋 소스를 검증해 사용하며, 샌드박스 실행을 허용하는 우회 경로는 추가하지 않는다.
 
 iOS에서 데스크톱 인증서 파일을 찾을 수 없으면 기존 잠금 파일의 Mozilla 인증서 목록을 사용한다. 명시적인 SSL_CERT_FILE/SSL_CERT_DIR 설정은 그대로 우선하며, 인증서 체인과 호스트 이름 검증을 수행한다.
+
+## 실행기 교체와 배포 준비
+
+QuickJS 2026-06-04의 MIT 소스를 `javascript/vendor/quickjs`에 포함했다. 원본 URL·SHA-256은 `SOURCE.txt`, 라이선스는 `LICENSE`에 있다. OS·파일·네트워크 모듈(`quickjs-libc`), 외부 모듈 로더와 JIT는 연결하지 않는다. 실행 취소는 자체 인터프리터의 공개 `JS_SetInterruptHandler`로 처리하고, 셀마다 64MiB JS 힙과 120초 제한을 둔다.
+
+`check-ios-private-apis.py`가 이전 JavaScriptCore SPI 두 개가 소스와 최종 실행 파일의 import에 남아 있지 않은지 검사한다. 이 검사는 알려진 두 함수의 재유입 검사이며 앱 전체의 App Review 적합성 인증은 아니다.
+
+가상 eTL 사용법과 TestFlight에 남은 준비는 [TESTFLIGHT.md](TESTFLIGHT.md)를 따른다.

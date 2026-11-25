@@ -100,7 +100,7 @@ struct ChatView: View {
             await controller.refreshEnvironment()
             // Android 13+처럼 채팅을 처음 열 때 한 번만 알림 권한을 묻는다(`chat-notify-permission`).
             var askedPermission = false
-            if controller.notifyStatus == .notDetermined, !controller.demoMode,
+            if controller.notifyStatus == .notDetermined, !controller.demoMode, !StudyDataProfile.isDemo,
                !AppStores.ui.bool("notifyPermissionAsked", default: false) {
                 AppStores.ui.set(true, for: "notifyPermissionAsked")
                 askedPermission = true
@@ -111,7 +111,7 @@ struct ChatView: View {
             ChatMathRender.warmUp()
             FilesCleanupService.runIfDue()
             // 받은 파일 정리 기간을 아직 고르지 않은 기존 사용자에게 한 번 묻는다(알림 권한 창을 띄운 실행에는 다음에).
-            if !askedPermission, !controller.demoMode, ChatCleanupPrompt.pending {
+            if !askedPermission, !controller.demoMode, !StudyDataProfile.isDemo, ChatCleanupPrompt.pending {
                 pendingAutoBlocked = true
                 showCleanupPrompt = true
             }

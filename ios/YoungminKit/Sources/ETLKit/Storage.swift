@@ -26,8 +26,8 @@ public final class UserDefaultsStore: KeyValueStore, @unchecked Sendable {
     private let defaults: UserDefaults
     private let prefix: String
 
-    public init(namespace: String, defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+    public init(namespace: String, defaults: UserDefaults? = nil) {
+        self.defaults = defaults ?? StudyDataProfile.defaults
         self.prefix = namespace + "."
     }
 
@@ -107,11 +107,21 @@ public final class InMemorySecretStore: SecretStore, @unchecked Sendable {
 public enum AppPaths {
     public static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        var url = base.appendingPathComponent("Youngmin", isDirectory: true)
+        var url = base.appendingPathComponent(StudyDataProfile.isDemo ? "Youngmin/FakeETL" : "Youngmin", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try? url.setResourceValues(values)
+        return url
+    }
+
+    /// The native engine's Keychain account is shared; course data and threads are not.
+    public static var codexHome: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let url = base.appendingPathComponent("Youngmin/codex", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        var excluded = url; try? excluded.setResourceValues(values)
         return url
     }
 

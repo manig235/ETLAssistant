@@ -15,6 +15,7 @@ enum HomeWidgetBridge {
 
     /// 앱 시작 때 한 번(`AppWiring.start`).
     static func start(app: AppState) {
+        guard !StudyDataProfile.isDemo else { return }
         AppGroup.logContainer("app")
         subscription = EtlEvents.subscribe { event in
             if case .dataChanged = event { Task { @MainActor in HomeWidgetBridge.publishSoon() } }
@@ -44,6 +45,7 @@ enum HomeWidgetBridge {
 
     /// 위젯 완료 기록을 반영하고, 위젯 사본을 쓰고, 바뀌었으면 위젯을 다시 그린다.
     static func publish(now: Date = Date(), force: Bool = false) {
+        guard !StudyDataProfile.isDemo else { return }
         applyCompletions(now: now)
         let snapshot = WidgetSnapshot.make(snapshot: SchedStores.snapshot.load(), mine: SchedStores.mine.load(),
                                            weekly: SchedStores.timetable.load(), changes: SchedStores.changes.load(),
@@ -65,6 +67,7 @@ enum HomeWidgetBridge {
     /// `youngmin://…`(위젯·공유 확장). 처리했으면 true.
     @discardableResult
     static func handle(_ url: URL, app: AppState) -> Bool {
+        guard !StudyDataProfile.isDemo else { return false }
         guard let target = WidgetLinks.parse(url) else { return false }
         DiagLog.logger.notice("widget: open \(url.host ?? "-", privacy: .public)")
         switch target {

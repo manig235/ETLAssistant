@@ -28,12 +28,13 @@ public final class CalendarSyncEventKit: CalendarSyncBackend, @unchecked Sendabl
 
     /// 전체 접근을 요청한다(iOS 17 `requestFullAccessToEvents`). 허용되면 true.
     public func requestAccess() async -> Bool {
+        guard !StudyDataProfile.isDemo else { return false }
         let granted = (try? await eventStore.requestFullAccessToEvents()) ?? false
         lock.withLock { storeValue = nil }
         return granted
     }
 
-    public var permitted: Bool { EKEventStore.authorizationStatus(for: .event) == .fullAccess }
+    public var permitted: Bool { !StudyDataProfile.isDemo && EKEventStore.authorizationStatus(for: .event) == .fullAccess }
 
     private func requirePermission() throws {
         if !permitted { throw CalendarPermissionError() }

@@ -5,7 +5,7 @@ final class YoungminUITests: XCTestCase {
     @MainActor
     func testNativeCodexStartup() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["--native-codex-smoke"]
+        app.launchArguments += ["--native-codex-smoke", "-studyData.mode", "real"]
         app.launch()
         let status = app.staticTexts["native-codex-status"]
         XCTAssertTrue(status.waitForExistence(timeout: 20))
@@ -23,7 +23,7 @@ final class YoungminUITests: XCTestCase {
     @MainActor
     func testSampleDataNavigation() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR"]
+        app.launchArguments += ["-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-studyData.mode", "real"]
         app.launch()
 
         XCTAssertTrue(app.buttons["시작하기"].waitForExistence(timeout: 20))
@@ -61,6 +61,26 @@ final class YoungminUITests: XCTestCase {
             app.buttons["뒤로"].tap()
         }
         XCTAssertTrue(app.buttons["대화 목록"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testFakeEtlWithoutSchoolCredentials() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-studyData.mode", "fake"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["fake-etl-banner"].waitForExistence(timeout: 20))
+        // No school-token onboarding or DEBUG sample-answer mode is used.
+        XCTAssertTrue(app.buttons["대화 목록"].waitForExistence(timeout: 20))
+        app.buttons["대화 목록"].tap()
+        app.buttons["내 일정"].tap()
+        XCTAssertTrue(app.staticTexts["RC 회로 과제"].firstMatch.waitForExistence(timeout: 20))
+        capture("fake-etl-schedule")
+        app.buttons["뒤로"].tap()
+        app.buttons["설정"].tap()
+        let profile = app.staticTexts["가상 eTL 테스트 중"]
+        for _ in 0..<5 { if profile.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(profile.exists)
+        capture("fake-etl-settings")
     }
 
     @MainActor
