@@ -21,6 +21,38 @@ cd ios && xcodebuild -project Youngmin.xcodeproj -scheme Youngmin -destination '
 - 로직 테스트는 macOS에서 돌린다: `cd ios/YoungminKit && swift test`(테스트 732개).
 - 요구 사항: Xcode 16 이상(Xcode 26.6에서 확인), iOS 17 이상.
 
+## 맥 없이 GitHub Actions에서 테스트
+
+저장소의 **Actions → iOS**에서 로직 테스트와 iPhone 시뮬레이터 UI 테스트 결과를 확인한다.
+macOS 실행 환경은 GitHub에서 제공하므로 개인 맥, Apple 계정, 서명 인증서, Apple Developer Program 가입은 필요 없다.
+
+- `ios/` 변경 PR과 `main`, `ios-port`, `codex/ios-*` 브랜치의 push에서 자동 실행한다.
+- 수동 실행은 **Actions → iOS → Run workflow**에서 브랜치를 선택한다. 버튼은 워크플로가 기본 브랜치(`main`)에도 있어야 나타난다. 머지 전에는 PR의 **Checks**에서 자동 실행 결과를 본다.
+- `logic-tests`: `YoungminKit`의 전체 Swift 테스트를 실행한다.
+- `simulator-tests`: 설치된 최신 iOS 런타임의 iPhone을 골라 앱·위젯·공유 확장을 빌드하고 앱의 UI 테스트를 실행한다.
+- UI 테스트는 새 시뮬레이터에서 환영 화면 → **샘플 데이터로 둘러보기** → 채팅 → 다크/라이트 전환 → 설정 → 내 일정 → 시간표 → 알림 기록을 확인한다. 실제 eTL/OpenAI 계정이나 네트워크 응답을 검증하는 테스트는 아니다.
+
+실행 페이지 아래 **Artifacts**에서 `ios-simulator-tests-…`를 내려받으면 다음 파일을 볼 수 있다. 결과물은 7일간 보관한다.
+
+- `attachments/`: UI 테스트의 단계별 화면 캡처와 진단 첨부파일. `01-welcome`~`07-notifications` 이름은 첨부파일 목록(`manifest.json`)에도 기록된다.
+- `xcodebuild.log`: 앱·확장·UI 테스트의 빌드 및 실행 로그.
+- `Youngmin.xcresult/`: 전체 Xcode 테스트 결과. macOS에서 Xcode로 열 수 있다.
+- `last-screen.png`: 테스트가 끝난 순간의 화면(수집 가능한 경우). 단계별 캡처는 `attachments/`를 본다.
+- `devices.json`, `destination.log`, `toolchain.log`: 선택된 기기와 Xcode 정보.
+
+직접 해야 하는 일:
+
+1. 이 설정이 들어간 브랜치를 GitHub에 올리거나 PR을 머지한다.
+2. Actions가 비활성화되어 있으면 저장소 **Settings → Actions → General**에서 활성화한다. `actions/checkout`, `actions/upload-artifact` 사용을 허용해야 한다.
+3. 외부 기여자의 PR 실행에 승인이 필요하다고 나오면 해당 실행에서 **Approve and run**을 누른다.
+4. 실패하면 실행 링크를 이 채팅에 전달한다. GitHub 접근이 연결된 상태에서 로그·캡처를 받아 수정하고 다시 실행할 수 있다.
+
+별도 Secrets 등록이나 클라우드 계정 생성은 필요 없다. 공개 저장소의 표준 GitHub macOS 실행 환경은 무료이고, 비공개 저장소는 계정에 포함된 실행 시간을 사용한다.
+이 워크플로는 화면을 실시간으로 직접 조작하는 원격 데스크톱이나 실제 아이폰 설치 파일을 제공하지 않는다.
+
+UI 시나리오를 늘리려면 `YoungminUITests/YoungminUITests.swift`에 테스트를 추가한다.
+macOS에서 CI와 같은 명령을 실행하려면 저장소 루트에서 `bash .github/scripts/ios-simulator.sh`를 사용한다(사용 가능한 새 시뮬레이터 권장).
+
 ## 구조
 
 - `YoungminKit/`는 플랫폼에 의존하지 않는 로직을 담은 Swift 패키지다. 각 모듈의 API 요약은 `YoungminKit/Docs/`에 있다.

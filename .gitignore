@@ -30,3 +30,4 @@ DerivedData/
 .build/
 .swiftpm/
 *.xcresult
+/ios-test-results/

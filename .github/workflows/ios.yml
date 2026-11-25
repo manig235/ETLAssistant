@@ -5,11 +5,13 @@ on:
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
+      - '.github/scripts/ios-simulator.sh'
   push:
-    branches: [main, codex/ios-pr-review-fixes]
+    branches: [main, ios-port, 'codex/ios-*']
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
+      - '.github/scripts/ios-simulator.sh'
   workflow_dispatch:
 
 permissions:
@@ -20,34 +22,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-build:
-    runs-on: macos-15
-    timeout-minutes: 25
+  logic-tests:
+    runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Toolchain
         run: |
           xcodebuild -version
           swift --version
       - name: Test YoungminKit
-        working-directory: ios/YoungminKit
-        run: swift test
-      - name: Build app, widgets, and share extension
-        working-directory: ios
-        run: >-
-          xcodebuild -project Youngmin.xcodeproj -scheme Youngmin
-          -configuration Debug -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build/CI CODE_SIGNING_ALLOWED=NO build
-      - name: Smoke test app launch
-        working-directory: ios
-        timeout-minutes: 5
         run: |
-          device_id=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for devices in data["devices"].values() for d in devices if d["name"].startswith("iPhone")))')
-          xcrun simctl boot "$device_id"
-          xcrun simctl bootstatus "$device_id" -b
-          xcrun simctl install "$device_id" build/CI/Build/Products/Debug-iphonesimulator/Youngmin.app
-          launch_output=$(xcrun simctl launch "$device_id" kr.snu.etlassistant.ios)
-          echo "$launch_output"
-          app_pid=${launch_output##*: }
-          sleep 5
-          kill -0 "$app_pid"
+          set -o pipefail
+          mkdir -p ios-test-results
+          swift test --package-path ios/YoungminKit 2>&1 | tee ios-test-results/swift-test.log
+      - name: Save logic test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-logic-tests-${{ github.run_attempt }}
+          path: ios-test-results/
+          retention-days: 7
+
+  simulator-tests:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run app UI tests on an iPhone simulator
+        run: bash .github/scripts/ios-simulator.sh
+      - name: Export UI screenshots and diagnostics
+        if: always()
+        run: |
+          if [ -d ios-test-results/Youngmin.xcresult ]; then
+            xcrun xcresulttool export attachments \
+              --path ios-test-results/Youngmin.xcresult \
+              --output-path ios-test-results/attachments
+          fi
+      - name: Save simulator test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-tests-${{ github.run_attempt }}
+          path: ios-test-results/
+          retention-days: 7
