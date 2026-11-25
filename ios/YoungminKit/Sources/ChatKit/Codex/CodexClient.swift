@@ -41,14 +41,19 @@ public actor CodexClient {
     }
 
     public func events() -> AsyncStream<ChatJSON> {
+        subscribe().1
+    }
+
+    public func subscribe() -> (UUID, AsyncStream<ChatJSON>) {
         let id = UUID()
         let (stream, continuation) = AsyncStream<ChatJSON>.makeStream()
         subscribers[id] = continuation
         continuation.onTermination = { [weak self] _ in Task { await self?.unsubscribe(id) } }
-        return stream
+        return (id, stream)
     }
 
     private func unsubscribe(_ id: UUID) { subscribers.removeValue(forKey: id) }
+    public func cancelEvents(_ id: UUID) { subscribers.removeValue(forKey: id)?.finish() }
 
     public func request(_ method: String, _ params: ChatJSON = [:], timeout: Double = 90) async throws -> ChatJSON {
         try Task.checkCancellation()

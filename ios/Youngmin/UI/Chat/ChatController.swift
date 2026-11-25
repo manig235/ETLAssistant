@@ -55,6 +55,7 @@ final class ChatController {
 
     @ObservationIgnored private var engine: ResponsesEngine?
     @ObservationIgnored private var engineMode: String?
+    @ObservationIgnored private var codexEngine: CodexEngine?
     @ObservationIgnored private var turnTask: Task<Void, Never>?
     @ObservationIgnored private var turnCancellation: TurnCancellation?
     @ObservationIgnored private var events: EtlEvents.Subscription?
@@ -245,13 +246,21 @@ final class ChatController {
         let config = TurnConfig(model: modelId, effort: sanitized.effort, instructions: instructions,
                                 tools: toolbox.toolDefinitions, toolPackaging: toolbox.toolPackaging)
         let toolbox = self.toolbox
-        let stream = await currentEngine().send(
-            history: history,
+        let execute: ToolExecutor = { call in await toolbox.run(name: call.name, arguments: call.arguments) }
+        let stream: AsyncStream<ResponsesEvent>
+        if auth.usesNativeCodex, let client = auth.codex {
+            if codexEngine == nil { codexEngine = CodexEngine(client: client) }
+            stream = await codexEngine!.send(history: history, input: [ResponsesInput.userMessage(prompt, images: images)],
+                                              config: config, cancellation: cancellation, tools: execute)
+        } else {
+        stream = await currentEngine().send(
+            history: history.filter { $0["type"]?.string != CodexEngine.threadMarker },
             input: [ResponsesInput.userMessage(prompt, images: images)],
             config: config,
             cancellation: cancellation,
-            tools: { call in await toolbox.run(name: call.name, arguments: call.arguments) }
+            tools: execute
         )
+        }
         for await event in stream {
             switch event {
             case .activity(let label):
@@ -302,11 +311,19 @@ final class ChatController {
         modelsLoading = true
         defer { modelsLoading = false }
         do {
-            models = try await ModelListClient.fetch(auth: auth.provider, transport: URLSessionTransport())
+            if auth.usesNativeCodex, let client = auth.codex {
+                models = ModelCatalog.parse(try await client.request("model/list"))
+                if models.isEmpty { throw CodexError("이 계정에서 사용할 수 있는 iOS 지원 모델을 찾지 못했어요") }
+            } else {
+                models = try await ModelListClient.fetch(auth: auth.provider, transport: URLSessionTransport())
+            }
             // 예전 판에서 고른 모델도 이름을 기억해 둔다(다음 실행 때 칩에 바로 보이게).
             if let id = choice.model, let m = models.first(where: { $0.model == id }) { settings.modelName = m.displayName }
             modelsFailed = models.isEmpty
             modelsError = nil
+        } catch let e as CodexError {
+            modelsFailed = true
+            modelsError = e.message
         } catch let e as ResponsesError {
             modelsFailed = true
             modelsError = e.userMessage

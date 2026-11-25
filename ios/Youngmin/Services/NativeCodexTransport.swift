@@ -1,5 +1,6 @@
 #if YOUNGMIN_NATIVE_CODEX
 import ChatKit
+import ETLKit
 import Foundation
 
 /// Only the application target links Rust. The pure Swift package stays portable.

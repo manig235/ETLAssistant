@@ -9,6 +9,9 @@ final class AssistantAuth {
     let settings: ChatSettings
     let chatGPT: ChatGPTAuthProvider
     let apiKey: APIKeyAuthProvider
+    @ObservationIgnored let codex: CodexClient?
+    @ObservationIgnored private var codexLoginID: String?
+    var usesNativeCodex: Bool { codex != nil && settings.authMode != ChatSettings.AUTH_API_KEY }
 
     /// 지금 계정(로그인 안 됐으면 `.none`).
     private(set) var account = AccountInfo(.none)
@@ -27,6 +30,11 @@ final class AssistantAuth {
     @ObservationIgnored var onLoginDone: ((Bool) -> Void)?
 
     init(secrets: ChatSecretStore = AppStores.keychain, store: ChatKeyValueStore = AppStores.appSettings) {
+        #if YOUNGMIN_NATIVE_CODEX
+        codex = CodexClient(transport: NativeCodexTransport())
+        #else
+        codex = nil
+        #endif
         settings = ChatSettings(store)
         chatGPT = ChatGPTAuthProvider(secrets: secrets, settings: store)
         apiKey = APIKeyAuthProvider(secrets: secrets)
@@ -53,6 +61,15 @@ final class AssistantAuth {
     func refreshAccount() async {
         if settings.authMode == ChatSettings.AUTH_API_KEY {
             account = apiKey.hasKey ? AccountInfo(.apiKey) : AccountInfo(.none)
+        } else if let codex {
+            do {
+                let result = try await codex.request("account/read")
+                if result["account"]?["type"]?.string == "chatgpt" {
+                    account = AccountInfo(.chatgpt, email: result["account"]?["email"]?.string, plan: result["account"]?["planType"]?.string)
+                } else { account = AccountInfo(.none) }
+            } catch {
+                if !account.loggedIn { loginMessage = Self.message(error) }
+            }
         } else {
             account = await chatGPT.accountInfo()
         }
@@ -66,9 +83,62 @@ final class AssistantAuth {
         loginMessage = nil
         loginInProgress = true
         loginTask = Task { [weak self] in
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
+            if let codex = self.codex { await self.runCodexLogin(codex); return }
             if switchAccount { await self.chatGPT.forgetRegistration() }
             await self.runLogin()
+        }
+    }
+
+    private func runCodexLogin(_ client: CodexClient) async {
+        let attempt = UUID()
+        currentAttempt = attempt
+        let (subscription, events) = await client.subscribe()
+        defer {
+            Task { await client.cancelEvents(subscription) }
+            if currentAttempt == attempt {
+                loginInProgress = false; codexLoginID = nil; presenter.finish()
+            }
+        }
+        do {
+            // Keep the response available after UI cancellation so we can cancel
+            // precisely the login attempt the engine actually created.
+            let starting = Task { try await client.request("account/login/start", ["type": "chatgpt"]) }
+            let result = try await starting.value
+            guard let id = result["loginId"]?.string else { throw CodexError("로그인 요청을 시작하지 못했어요") }
+            guard currentAttempt == attempt, !Task.isCancelled else {
+                _ = try? await Task { try await client.request("account/login/cancel", ["loginId": .string(id)]) }.value
+                return
+            }
+            guard let raw = result["authUrl"]?.string, let url = URL(string: raw), url.scheme == "https", url.host == "auth.openai.com" else {
+                _ = try? await client.request("account/login/cancel", ["loginId": .string(id)])
+                throw CodexError("로그인 주소를 확인하지 못했어요")
+            }
+            codexLoginID = id
+            presenter.start(url: url) { [weak self] in
+                guard let self, self.currentAttempt == attempt, self.loginInProgress else { return }
+                self.cancelLogin()
+            }
+            for await event in events {
+                try Task.checkCancellation()
+                if event["method"]?.string == "youngmin/fatal" { throw CodexError(event["params"]?["message"]?.string ?? "Codex 실행이 중단됐어요") }
+                guard event["method"]?.string == "account/login/completed",
+                      event["params"]?["loginId"]?.string == id else { continue }
+                guard currentAttempt == attempt else { return }
+                guard event["params"]?["success"]?.bool == true else {
+                    throw CodexError(event["params"]?["error"]?.string ?? "로그인하지 못했어요")
+                }
+                settings.authMode = ChatSettings.AUTH_CHATGPT
+                await refreshAccount()
+                guard account.loggedIn else { throw CodexError("로그인 정보를 확인하지 못했어요") }
+                loginMessage = nil
+                onLoginDone?(true)
+                return
+            }
+        } catch {
+            guard currentAttempt == attempt, !Task.isCancelled else { return }
+            loginMessage = Self.message(error)
+            onLoginDone?(false)
         }
     }
 
@@ -133,6 +203,11 @@ final class AssistantAuth {
 
     /// "취소".
     func cancelLogin(silently: Bool = false) {
+        currentAttempt = UUID()
+        if let id = codexLoginID, let codex {
+            Task { _ = try? await codex.request("account/login/cancel", ["loginId": .string(id)]) }
+        }
+        codexLoginID = nil
         loginTask?.cancel()
         loginTask = nil
         server?.stop()
@@ -182,6 +257,15 @@ final class AssistantAuth {
             await refreshAccount()
             return nil
         }
+        if let codex {
+            cancelLogin(silently: true)
+            do {
+                _ = try await codex.request("account/logout")
+                account = AccountInfo(.none)
+                loginMessage = nil
+            } catch { loginMessage = Self.message(error) }
+            return nil
+        }
         let r = await chatGPT.signOut()
         // 발급 client_id는 그 계정으로 등록한 것이라 다른 계정으로 다시 로그인하면 invalid_grant가 난다.
         // 로그아웃하면 등록도 잊어 다음 로그인을 새 등록으로 시작한다.
@@ -191,6 +275,7 @@ final class AssistantAuth {
     }
 
     static func message(_ error: Error) -> String {
+        if let e = error as? CodexError { return e.message }
         if let e = error as? SIWCError { return e.userMessage }
         if let e = error as? AuthError { return e.userMessage }
         if let e = error as? ResponsesError { return e.userMessage }

@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   logic-tests:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
