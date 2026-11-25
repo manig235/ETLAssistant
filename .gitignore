@@ -23,3 +23,10 @@ captures/
 *.jks
 *.keystore
 *release.properties
+
+# iOS(ios/): Xcode·SwiftPM 산출물과 개인 설정
+xcuserdata/
+DerivedData/
+.build/
+.swiftpm/
+*.xcresult

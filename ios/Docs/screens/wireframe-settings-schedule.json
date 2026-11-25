@@ -1,0 +1,1911 @@
+{
+ "screens": [
+  {
+   "id": "settings",
+   "title": "설정",
+   "kind": "screen",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsActivity.kt:46",
+   "wire": [
+    {
+     "type": "topbar",
+     "label": "← 설정"
+    },
+    {
+     "type": "section-header",
+     "label": "ChatGPT 계정"
+    },
+    {
+     "type": "banner",
+     "label": "로그인됨 · {email}"
+    },
+    {
+     "type": "button-row",
+     "label": "브라우저로 로그인 · 로그아웃"
+    },
+    {
+     "type": "section-header",
+     "label": "eTL 토큰"
+    },
+    {
+     "type": "banner",
+     "label": "저장됨 (Keystore로 암호화)"
+    },
+    {
+     "type": "button",
+     "label": "eTL 토큰 만들러 가기"
+    },
+    {
+     "type": "input",
+     "label": "토큰을 붙여넣어 주세요"
+    },
+    {
+     "type": "button-row",
+     "label": "저장 · eTL 연결 해제"
+    },
+    {
+     "type": "section-header",
+     "label": "알림"
+    },
+    {
+     "type": "toggle",
+     "label": "마감 임박 알림"
+    },
+    {
+     "type": "chips",
+     "label": "10분 전 ✕ · … · + 추가"
+    },
+    {
+     "type": "toggle",
+     "label": "새 공지 알림"
+    },
+    {
+     "type": "toggle",
+     "label": "새 과제·마감 변경·성적 알림"
+    },
+    {
+     "type": "toggle",
+     "label": "제출 직후 확인"
+    },
+    {
+     "type": "toggle",
+     "label": "정상 제출도 알리기"
+    },
+    {
+     "type": "toggle",
+     "label": "새 강의자료 알림"
+    },
+    {
+     "type": "toggle",
+     "label": "앱을 열 때 등록할 공지 보여 주기"
+    },
+    {
+     "type": "toggle",
+     "label": "시험 끝나면 수고했어요 알림"
+    },
+    {
+     "type": "toggle",
+     "label": "수업 알림"
+    },
+    {
+     "type": "chips",
+     "label": "5분 전 10분 전 15분 전 30분 전"
+    },
+    {
+     "type": "list-item",
+     "label": "과목별 알림 >"
+    },
+    {
+     "type": "toggle",
+     "label": "정기 브리핑"
+    },
+    {
+     "type": "button",
+     "label": "오전 8:00 ✎ · + 시각 추가"
+    },
+    {
+     "type": "toggle",
+     "label": "방해 금지"
+    },
+    {
+     "type": "button-row",
+     "label": "시작 오후 11:00 · 종료 7:00"
+    },
+    {
+     "type": "toggle",
+     "label": "잠금화면에서 알림 내용 숨기기"
+    },
+    {
+     "type": "banner",
+     "label": "알림 권한: 허용됨"
+    },
+    {
+     "type": "banner",
+     "label": "정확한 알림: 허용됨"
+    },
+    {
+     "type": "banner",
+     "label": "배터리: 제한 없음"
+    },
+    {
+     "type": "text",
+     "label": "마지막 확인: …"
+    },
+    {
+     "type": "button-row",
+     "label": "지금 확인 · 브리핑 미리 보내기"
+    },
+    {
+     "type": "section-header",
+     "label": "캘린더"
+    },
+    {
+     "type": "list-item",
+     "label": "캘린더 연동 >"
+    },
+    {
+     "type": "section-header",
+     "label": "받은 파일"
+    },
+    {
+     "type": "chips",
+     "label": "2일 7일 30일 정리 안 함"
+    },
+    {
+     "type": "section-header",
+     "label": "대화"
+    },
+    {
+     "type": "toggle",
+     "label": "반말로 대화"
+    },
+    {
+     "type": "section-header",
+     "label": "AI 모델"
+    },
+    {
+     "type": "list-item",
+     "label": "자동 (권장)"
+    },
+    {
+     "type": "section-header",
+     "label": "OpenAI API 키 (고급)"
+    },
+    {
+     "type": "input",
+     "label": "sk-…"
+    },
+    {
+     "type": "button-row",
+     "label": "저장 · 삭제"
+    },
+    {
+     "type": "toggle",
+     "label": "API 키로 사용"
+    },
+    {
+     "type": "section-header",
+     "label": "기타"
+    },
+    {
+     "type": "chips",
+     "label": "시스템 설정 라이트 다크"
+    },
+    {
+     "type": "toggle",
+     "label": "업데이트 알림"
+    },
+    {
+     "type": "list-item",
+     "label": "알림 기록 >"
+    },
+    {
+     "type": "list-item",
+     "label": "시간표 · 보강/휴강 >"
+    },
+    {
+     "type": "list-item",
+     "label": "내 일정 >"
+    },
+    {
+     "type": "list-item",
+     "label": "홈 화면에 위젯 추가하기 >"
+    },
+    {
+     "type": "list-item",
+     "label": "처음 안내 다시 보기 >"
+    },
+    {
+     "type": "section-header",
+     "label": "앱 정보"
+    },
+    {
+     "type": "text",
+     "label": "영민이 · 버전 {v}"
+    },
+    {
+     "type": "list-item",
+     "label": "개인정보 처리방침 >"
+    },
+    {
+     "type": "button",
+     "label": "건의사항 · 오류 제보"
+    },
+    {
+     "type": "button",
+     "label": "업데이트 확인"
+    }
+   ]
+  },
+  {
+   "id": "settings-window-add-dialog",
+   "title": "알림 시점 추가",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsScreen.kt:401",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "알림 시점 추가"
+    },
+    {
+     "type": "text",
+     "label": "자주 쓰는 시점"
+    },
+    {
+     "type": "chips",
+     "label": "10분 전 30분 전 1시간 전 …"
+    },
+    {
+     "type": "text",
+     "label": "직접 입력"
+    },
+    {
+     "type": "input",
+     "label": "예: 30"
+    },
+    {
+     "type": "chips",
+     "label": "분 전 시간 전 일 전"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 추가"
+    }
+   ]
+  },
+  {
+   "id": "settings-etl-disconnect-dialog",
+   "title": "eTL 연결 해제 확인",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsScreen.kt:599",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "eTL 연결을 해제할까요?"
+    },
+    {
+     "type": "text",
+     "label": "저장한 eTL 토큰과 … 지워요"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 해제"
+    }
+   ]
+  },
+  {
+   "id": "settings-time-picker",
+   "title": "시각 고르기",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsActivity.kt:378",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "TimePickerDialog"
+    },
+    {
+     "type": "grid",
+     "label": "시·분 다이얼"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 확인"
+    }
+   ]
+  },
+  {
+   "id": "settings-notify-permission",
+   "title": "알림 권한 요청",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsActivity.kt:58",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "알림을 보내도록 허용할까요?"
+    },
+    {
+     "type": "button-row",
+     "label": "허용 · 허용 안함"
+    }
+   ]
+  },
+  {
+   "id": "settings-widget-picker-dialog",
+   "title": "홈 화면에 위젯 추가하기",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsScreen.kt:893",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "홈 화면에 위젯 추가하기"
+    },
+    {
+     "type": "list-item",
+     "label": "일정 · 2×2 >"
+    },
+    {
+     "type": "list-item",
+     "label": "일정 · 2×1 >"
+    },
+    {
+     "type": "list-item",
+     "label": "시간표 · 4×4 >"
+    },
+    {
+     "type": "list-item",
+     "label": "시간표 · 4×6 >"
+    },
+    {
+     "type": "list-item",
+     "label": "다음 수업 · 2×1 >"
+    },
+    {
+     "type": "button",
+     "label": "닫기"
+    }
+   ]
+  },
+  {
+   "id": "settings-feedback-dialog",
+   "title": "건의사항 · 오류 제보",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SettingsScreen.kt:956",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "건의사항 · 오류 제보"
+    },
+    {
+     "type": "text",
+     "label": "앱에 오류가 있나요? …"
+    },
+    {
+     "type": "button-row",
+     "label": "닫기 · 오픈채팅 열기"
+    }
+   ]
+  },
+  {
+   "id": "course-alerts",
+   "title": "과목별 알림",
+   "kind": "screen",
+   "group": "settings-schedule",
+   "androidEntry": "chat/CourseAlertsActivity.kt:71",
+   "wire": [
+    {
+     "type": "topbar",
+     "label": "← 과목별 알림 ↻"
+    },
+    {
+     "type": "text",
+     "label": "알림 끄기: … 숨기기: …"
+    },
+    {
+     "type": "card",
+     "label": "{과목}"
+    },
+    {
+     "type": "chips",
+     "label": "알림 받기 알림 끄기 숨기기"
+    },
+    {
+     "type": "toggle",
+     "label": "시간표·오늘 수업에서도 숨기기"
+    },
+    {
+     "type": "text",
+     "label": "과목을 찾지 못했어요"
+    }
+   ]
+  },
+  {
+   "id": "notify-history",
+   "title": "알림 기록",
+   "kind": "screen",
+   "group": "settings-schedule",
+   "androidEntry": "chat/NotifyHistoryActivity.kt:50",
+   "wire": [
+    {
+     "type": "topbar",
+     "label": "← 알림 기록 🗑"
+    },
+    {
+     "type": "text",
+     "label": "최근 90일 동안 띄운 알림이에요."
+    },
+    {
+     "type": "card",
+     "label": "11/23(월) 15:00 · 공지"
+    },
+    {
+     "type": "text",
+     "label": "{제목} / {본문}"
+    },
+    {
+     "type": "button-row",
+     "label": "내 일정에 등록 · eTL에서 열기"
+    },
+    {
+     "type": "text",
+     "label": "아직 알림 기록이 없어요"
+    }
+   ]
+  },
+  {
+   "id": "notify-history-clear-dialog",
+   "title": "알림 기록 지우기",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/NotifyHistoryActivity.kt:151",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "알림 기록을 지울까요?"
+    },
+    {
+     "type": "text",
+     "label": "지운 기록은 되돌릴 수 없어요."
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 지우기"
+    }
+   ]
+  },
+  {
+   "id": "my-schedule",
+   "title": "내 일정",
+   "kind": "screen",
+   "group": "settings-schedule",
+   "androidEntry": "chat/MyDeadlinesActivity.kt:114",
+   "wire": [
+    {
+     "type": "topbar",
+     "label": "← 내 일정 ▦ ↻ +"
+    },
+    {
+     "type": "text",
+     "label": "eTL 과제 마지막 확인 …"
+    },
+    {
+     "type": "chips",
+     "label": "전체 과제 내 마감 시험 캘린더"
+    },
+    {
+     "type": "chips",
+     "label": "제출·완료 숨김 · 숨긴 과목"
+    },
+    {
+     "type": "card",
+     "label": "임박한 마감 요약"
+    },
+    {
+     "type": "text",
+     "label": "24시간 내 미완료 마감 N개"
+    },
+    {
+     "type": "button",
+     "label": "마감 지남 N개 · 펼치기"
+    },
+    {
+     "type": "section-header",
+     "label": "앞으로 7일 · N개"
+    },
+    {
+     "type": "text",
+     "label": "오늘 · 11/25(수)"
+    },
+    {
+     "type": "list-item",
+     "label": "○ {제목} · 남음 ✓📅🗑"
+    },
+    {
+     "type": "section-header",
+     "label": "그 이후 마감 · N개"
+    },
+    {
+     "type": "text",
+     "label": "그 이후에 남은 일정이 없어요"
+    }
+   ]
+  },
+  {
+   "id": "my-schedule-edit",
+   "title": "내 마감·시험 추가/고치기",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/MyDeadlinesActivity.kt:679",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "내 마감 추가"
+    },
+    {
+     "type": "chips",
+     "label": "마감 시험"
+    },
+    {
+     "type": "input",
+     "label": "예: 장학금 서류 제출"
+    },
+    {
+     "type": "text",
+     "label": "반복"
+    },
+    {
+     "type": "chips",
+     "label": "없음 매일 매주 격주 매월"
+    },
+    {
+     "type": "button-row",
+     "label": "2026/11/26(목) · 23:59"
+    },
+    {
+     "type": "chips",
+     "label": "끝 없음 날짜까지 횟수"
+    },
+    {
+     "type": "text",
+     "label": "알림 (선택)"
+    },
+    {
+     "type": "chips",
+     "label": "+10분 전 +1시간 전 +하루 전"
+    },
+    {
+     "type": "input",
+     "label": "메모 (선택)"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 저장"
+    }
+   ]
+  },
+  {
+   "id": "my-schedule-edit-date-picker",
+   "title": "날짜 고르기",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "chat/MyDeadlinesActivity.kt:321",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "DatePickerDialog"
+    },
+    {
+     "type": "grid",
+     "label": "달력"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 확인"
+    }
+   ]
+  },
+  {
+   "id": "my-schedule-edit-time-picker",
+   "title": "시각 고르기",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "chat/MyDeadlinesActivity.kt:325",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "TimePickerDialog"
+    },
+    {
+     "type": "grid",
+     "label": "시·분 다이얼"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 확인"
+    }
+   ]
+  },
+  {
+   "id": "my-schedule-delete-dialog",
+   "title": "지우기 확인",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/MyDeadlinesActivity.kt:507",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "이 마감을 지울까요?"
+    },
+    {
+     "type": "text",
+     "label": "\"{제목}\"이(가) … 사라져요."
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 삭제"
+    },
+    {
+     "type": "button",
+     "label": "이번 회차만 지우기"
+    },
+    {
+     "type": "button",
+     "label": "반복 전체 지우기"
+    }
+   ]
+  },
+  {
+   "id": "my-schedule-submission-check",
+   "title": "제출 확인",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/SubmissionCheckDialog.kt:33",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "제출에 문제 없어요"
+    },
+    {
+     "type": "text",
+     "label": "{과제명}"
+    },
+    {
+     "type": "text",
+     "label": "제출 … · 마감 …"
+    },
+    {
+     "type": "text",
+     "label": "• {문제}"
+    },
+    {
+     "type": "text",
+     "label": "eTL 제출 기록만 봤어요"
+    },
+    {
+     "type": "button-row",
+     "label": "eTL에서 열기 · 닫기"
+    }
+   ]
+  },
+  {
+   "id": "schedule-draft",
+   "title": "공지 초안 등록",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/MyDeadlinesActivity.kt:762",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "시험 추가"
+    },
+    {
+     "type": "text",
+     "label": "공지에서 찾은 날짜예요."
+    },
+    {
+     "type": "button",
+     "label": "✨ 비서가 공지 읽고 채우기"
+    },
+    {
+     "type": "chips",
+     "label": "마감 시험"
+    },
+    {
+     "type": "input",
+     "label": "{공지 제목}"
+    },
+    {
+     "type": "button-row",
+     "label": "날짜 · 10:00 시작 · 끝"
+    },
+    {
+     "type": "input",
+     "label": "장소 (선택)"
+    },
+    {
+     "type": "input",
+     "label": "과목 (선택)"
+    },
+    {
+     "type": "input",
+     "label": "준비물 (선택)"
+    },
+    {
+     "type": "toggle",
+     "label": "그날 대면 수업은 휴강으로"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 저장"
+    }
+   ]
+  },
+  {
+   "id": "timetable",
+   "title": "시간표",
+   "kind": "screen",
+   "group": "settings-schedule",
+   "androidEntry": "chat/TimetableActivity.kt:75",
+   "wire": [
+    {
+     "type": "topbar",
+     "label": "← 시간표 +"
+    },
+    {
+     "type": "chips",
+     "label": "숨긴 과목 N개"
+    },
+    {
+     "type": "timetable-grid",
+     "label": "월 화 수 목 금"
+    },
+    {
+     "type": "text",
+     "label": "수업 블록을 누르면 … 볼 수 있어요"
+    },
+    {
+     "type": "section-header",
+     "label": "보강 · 휴강 +"
+    },
+    {
+     "type": "list-item",
+     "label": "11/27(목) 휴강 · {과목} 🗑"
+    },
+    {
+     "type": "text",
+     "label": "예정된 보강·휴강이 없어요"
+    }
+   ]
+  },
+  {
+   "id": "timetable-course-sheet",
+   "title": "수업 정보",
+   "kind": "sheet",
+   "group": "settings-schedule",
+   "androidEntry": "chat/WeeklyTimetable.kt:159",
+   "wire": [
+    {
+     "type": "text",
+     "label": "● 수업 정보"
+    },
+    {
+     "type": "heading",
+     "label": "{과목명}"
+    },
+    {
+     "type": "icon-row",
+     "label": "교수님 {이름}"
+    },
+    {
+     "type": "icon-row",
+     "label": "강의실 301동 118호"
+    },
+    {
+     "type": "icon-row",
+     "label": "수업 시간 월요일 09:00–"
+    },
+    {
+     "type": "button",
+     "label": "수정 · 삭제"
+    },
+    {
+     "type": "button",
+     "label": "확인"
+    }
+   ]
+  },
+  {
+   "id": "timetable-custom-course",
+   "title": "수업 직접 추가",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/CustomCourseDialog.kt:34",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "수업 직접 추가"
+    },
+    {
+     "type": "text",
+     "label": "매주 반복되는 수업이나 일정을 추가해요."
+    },
+    {
+     "type": "input",
+     "label": "과목명 또는 일정 이름"
+    },
+    {
+     "type": "chips",
+     "label": "월 화 수 목 금 토 일"
+    },
+    {
+     "type": "button-row",
+     "label": "시작 09:00 · 종료 10:15"
+    },
+    {
+     "type": "input",
+     "label": "강의실 (선택)"
+    },
+    {
+     "type": "input",
+     "label": "교수님 (선택)"
+    },
+    {
+     "type": "button",
+     "label": "이 수업 삭제"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 저장"
+    }
+   ]
+  },
+  {
+   "id": "timetable-custom-course-delete-dialog",
+   "title": "수업 삭제 확인",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/CustomCourseDialog.kt:94",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "수업을 삭제할까요?"
+    },
+    {
+     "type": "text",
+     "label": "{과목명}"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 삭제"
+    }
+   ]
+  },
+  {
+   "id": "timetable-change-edit",
+   "title": "보강·휴강 추가",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "chat/TimetableActivity.kt:286",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "보강·휴강 추가"
+    },
+    {
+     "type": "button",
+     "label": "✨ 비서가 공지 읽고 채우기"
+    },
+    {
+     "type": "chips",
+     "label": "휴강 보강"
+    },
+    {
+     "type": "text",
+     "label": "과목"
+    },
+    {
+     "type": "chips",
+     "label": "{과목 칩들}"
+    },
+    {
+     "type": "input",
+     "label": "목록에 없으면 직접 입력"
+    },
+    {
+     "type": "button-row",
+     "label": "11/27(목) · 시작 ~ 끝"
+    },
+    {
+     "type": "input",
+     "label": "강의실 (선택)"
+    },
+    {
+     "type": "input",
+     "label": "메모 (선택)"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 저장"
+    }
+   ]
+  },
+  {
+   "id": "timetable-date-picker",
+   "title": "날짜 고르기",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "chat/TimetableActivity.kt:117",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "DatePickerDialog"
+    },
+    {
+     "type": "grid",
+     "label": "달력"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 확인"
+    }
+   ]
+  },
+  {
+   "id": "timetable-time-picker",
+   "title": "시각 고르기",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "chat/TimetableActivity.kt:120",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "TimePickerDialog"
+    },
+    {
+     "type": "grid",
+     "label": "시·분 다이얼"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 확인"
+    }
+   ]
+  },
+  {
+   "id": "calendar-settings",
+   "title": "캘린더 연동",
+   "kind": "screen",
+   "group": "settings-schedule",
+   "androidEntry": "calendar/CalendarExportActivity.kt:80",
+   "wire": [
+    {
+     "type": "topbar",
+     "label": "← 캘린더 연동"
+    },
+    {
+     "type": "section-header",
+     "label": "영민이 → 캘린더"
+    },
+    {
+     "type": "toggle",
+     "label": "일정을 캘린더에 자동으로 넣기"
+    },
+    {
+     "type": "chips",
+     "label": "이 폰에만 · 구글 계정 캘린더"
+    },
+    {
+     "type": "button",
+     "label": "캘린더 고르기"
+    },
+    {
+     "type": "text",
+     "label": "넣을 일정"
+    },
+    {
+     "type": "toggle",
+     "label": "eTL 과제 마감"
+    },
+    {
+     "type": "toggle",
+     "label": "내 마감·시험"
+    },
+    {
+     "type": "toggle",
+     "label": "제출·완료한 항목도 넣기"
+    },
+    {
+     "type": "toggle",
+     "label": "캘린더에서 고친 것 가져오기"
+    },
+    {
+     "type": "button",
+     "label": "지금 맞추기"
+    },
+    {
+     "type": "section-header",
+     "label": "캘린더 → 영민이"
+    },
+    {
+     "type": "toggle",
+     "label": "내 캘린더 일정 보기"
+    },
+    {
+     "type": "toggle",
+     "label": "비서가 캘린더 보고 등록하기"
+    },
+    {
+     "type": "button",
+     "label": "볼 캘린더 고르기"
+    },
+    {
+     "type": "chips",
+     "label": "{쓸 캘린더}"
+    },
+    {
+     "type": "card",
+     "label": "비서가 바꾼 일정 · 되돌리기"
+    },
+    {
+     "type": "section-header",
+     "label": "고급 ⌄"
+    },
+    {
+     "type": "button-row",
+     "label": "공유하기 · 파일로 저장"
+    },
+    {
+     "type": "text",
+     "label": "자세한 동작"
+    }
+   ]
+  },
+  {
+   "id": "calendar-settings-google-picker",
+   "title": "구글 캘린더 고르기",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "calendar/CalendarExportActivity.kt:583",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "구글 캘린더 고르기"
+    },
+    {
+     "type": "list-item",
+     "label": "{캘린더} / {계정}"
+    },
+    {
+     "type": "text",
+     "label": "쓸 수 있는 캘린더가 없어요."
+    },
+    {
+     "type": "button-row",
+     "label": "계정 설정 열기 · 다시 확인"
+    },
+    {
+     "type": "button",
+     "label": "닫기"
+    }
+   ]
+  },
+  {
+   "id": "calendar-settings-read-picker",
+   "title": "볼 캘린더 고르기",
+   "kind": "dialog",
+   "group": "settings-schedule",
+   "androidEntry": "calendar/CalendarExportActivity.kt:338",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "볼 캘린더 고르기"
+    },
+    {
+     "type": "text",
+     "label": "\"영민이\" 캘린더는 목록에 없어요"
+    },
+    {
+     "type": "list-item",
+     "label": "● {캘린더} / {계정} ☐"
+    },
+    {
+     "type": "button-row",
+     "label": "취소 · 저장"
+    }
+   ]
+  },
+  {
+   "id": "calendar-settings-permission",
+   "title": "캘린더 권한 요청",
+   "kind": "system",
+   "group": "settings-schedule",
+   "androidEntry": "calendar/CalendarExportActivity.kt:99",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "캘린더 액세스 허용?"
+    },
+    {
+     "type": "button-row",
+     "label": "허용 · 허용 안함"
+    }
+   ]
+  },
+  {
+   "id": "notification",
+   "title": "시스템 알림",
+   "kind": "notification",
+   "group": "settings-schedule",
+   "androidEntry": "notify/NotificationPoster.kt:107",
+   "wire": [
+    {
+     "type": "icon-row",
+     "label": "영민이 · 마감 임박 · {과목}"
+    },
+    {
+     "type": "text",
+     "label": "{과제} · 11/25(수) 23:59"
+    },
+    {
+     "type": "button-row",
+     "label": "내 일정에 등록 · eTL에서 열기"
+    },
+    {
+     "type": "button",
+     "label": "자료 받아줘"
+    },
+    {
+     "type": "text",
+     "label": "잠금화면: 영민이 알림"
+    }
+   ]
+  },
+  {
+   "id": "widget-deadlines",
+   "title": "일정 위젯 2×2",
+   "kind": "widget",
+   "group": "settings-schedule",
+   "androidEntry": "widget/HomeWidgets.kt:256",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "일정"
+    },
+    {
+     "type": "list-item",
+     "label": "{제목} ○"
+    },
+    {
+     "type": "text",
+     "label": "오늘 23:59"
+    },
+    {
+     "type": "text",
+     "label": "3시간 12분 남음"
+    },
+    {
+     "type": "divider",
+     "label": ""
+    },
+    {
+     "type": "text",
+     "label": "남은 마감이 없어요"
+    }
+   ]
+  },
+  {
+   "id": "widget-deadlines-compact",
+   "title": "일정 위젯 2×1",
+   "kind": "widget",
+   "group": "settings-schedule",
+   "androidEntry": "widget/HomeWidgets.kt:274",
+   "wire": [
+    {
+     "type": "list-item",
+     "label": "{제목} ○"
+    },
+    {
+     "type": "text",
+     "label": "오늘 23:59 · 3시간 남음"
+    }
+   ]
+  },
+  {
+   "id": "widget-timetable",
+   "title": "시간표 위젯 4×4",
+   "kind": "widget",
+   "group": "settings-schedule",
+   "androidEntry": "widget/HomeWidgets.kt:275",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "시간표"
+    },
+    {
+     "type": "timetable-grid",
+     "label": "이번 주 격자"
+    },
+    {
+     "type": "text",
+     "label": "등록된 수업이 없어요"
+    }
+   ]
+  },
+  {
+   "id": "widget-timetable-tall",
+   "title": "시간표 위젯 4×6",
+   "kind": "widget",
+   "group": "settings-schedule",
+   "androidEntry": "widget/HomeWidgets.kt:276",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "시간표"
+    },
+    {
+     "type": "timetable-grid",
+     "label": "이번 주 격자(세로로 김)"
+    }
+   ]
+  },
+  {
+   "id": "widget-next-class",
+   "title": "다음 수업 위젯 2×1",
+   "kind": "widget",
+   "group": "settings-schedule",
+   "androidEntry": "widget/HomeWidgets.kt:277",
+   "wire": [
+    {
+     "type": "heading",
+     "label": "{과목}"
+    },
+    {
+     "type": "text",
+     "label": "오늘 09:00 · 301-118"
+    }
+   ]
+  }
+ ],
+ "edges": [
+  {
+   "from": "settings",
+   "to": "chat",
+   "trigger": "← 뒤로"
+  },
+  {
+   "from": "settings",
+   "to": "ext-browser",
+   "trigger": "브라우저로 로그인"
+  },
+  {
+   "from": "settings",
+   "to": "ext-browser",
+   "trigger": "브라우저 다시 열기"
+  },
+  {
+   "from": "settings",
+   "to": "settings",
+   "trigger": "코드로 로그인"
+  },
+  {
+   "from": "settings",
+   "to": "ext-browser",
+   "trigger": "eTL 토큰 만들러 가기"
+  },
+  {
+   "from": "settings",
+   "to": "settings-etl-disconnect-dialog",
+   "trigger": "eTL 연결 해제"
+  },
+  {
+   "from": "settings",
+   "to": "settings-window-add-dialog",
+   "trigger": "+ 추가"
+  },
+  {
+   "from": "settings",
+   "to": "settings-time-picker",
+   "trigger": "브리핑·방해 금지 시각"
+  },
+  {
+   "from": "settings",
+   "to": "course-alerts",
+   "trigger": "과목별 알림"
+  },
+  {
+   "from": "settings",
+   "to": "settings-notify-permission",
+   "trigger": "권한 요청"
+  },
+  {
+   "from": "settings",
+   "to": "ext-system-settings",
+   "trigger": "정확한 알림 허용"
+  },
+  {
+   "from": "settings",
+   "to": "ext-system-settings",
+   "trigger": "배터리 제한 풀기"
+  },
+  {
+   "from": "settings",
+   "to": "notification",
+   "trigger": "지금 확인·브리핑 미리 보내기"
+  },
+  {
+   "from": "settings",
+   "to": "calendar-settings",
+   "trigger": "캘린더 연동"
+  },
+  {
+   "from": "settings",
+   "to": "notify-history",
+   "trigger": "알림 기록"
+  },
+  {
+   "from": "settings",
+   "to": "timetable",
+   "trigger": "시간표 · 보강/휴강"
+  },
+  {
+   "from": "settings",
+   "to": "my-schedule",
+   "trigger": "내 일정"
+  },
+  {
+   "from": "settings",
+   "to": "settings-widget-picker-dialog",
+   "trigger": "홈 화면에 위젯 추가하기"
+  },
+  {
+   "from": "settings",
+   "to": "onboarding-welcome",
+   "trigger": "처음 안내 다시 보기"
+  },
+  {
+   "from": "settings",
+   "to": "privacy-policy",
+   "trigger": "개인정보 처리방침"
+  },
+  {
+   "from": "settings",
+   "to": "settings-feedback-dialog",
+   "trigger": "건의사항 · 오류 제보"
+  },
+  {
+   "from": "settings",
+   "to": "ext-browser",
+   "trigger": "새 버전 받기"
+  },
+  {
+   "from": "settings-window-add-dialog",
+   "to": "settings",
+   "trigger": "추가 / 프리셋 칩"
+  },
+  {
+   "from": "settings-window-add-dialog",
+   "to": "settings",
+   "trigger": "취소"
+  },
+  {
+   "from": "settings-etl-disconnect-dialog",
+   "to": "settings",
+   "trigger": "해제"
+  },
+  {
+   "from": "settings-etl-disconnect-dialog",
+   "to": "settings",
+   "trigger": "취소"
+  },
+  {
+   "from": "settings-time-picker",
+   "to": "settings",
+   "trigger": "확인 / 취소"
+  },
+  {
+   "from": "settings-notify-permission",
+   "to": "settings",
+   "trigger": "허용 / 거부"
+  },
+  {
+   "from": "settings-notify-permission",
+   "to": "ext-system-settings",
+   "trigger": "다시 묻지 않음 상태"
+  },
+  {
+   "from": "settings-widget-picker-dialog",
+   "to": "ext-widget-picker",
+   "trigger": "위젯 행"
+  },
+  {
+   "from": "settings-widget-picker-dialog",
+   "to": "settings",
+   "trigger": "닫기"
+  },
+  {
+   "from": "settings-feedback-dialog",
+   "to": "ext-browser",
+   "trigger": "오픈채팅 열기"
+  },
+  {
+   "from": "settings-feedback-dialog",
+   "to": "settings",
+   "trigger": "닫기"
+  },
+  {
+   "from": "course-alerts",
+   "to": "settings",
+   "trigger": "← 뒤로"
+  },
+  {
+   "from": "course-alerts",
+   "to": "course-alerts",
+   "trigger": "모드 칩 / 스위치 / ↻"
+  },
+  {
+   "from": "notify-history",
+   "to": "settings",
+   "trigger": "← 뒤로"
+  },
+  {
+   "from": "notify-history",
+   "to": "notify-history-clear-dialog",
+   "trigger": "기록 지우기"
+  },
+  {
+   "from": "notify-history",
+   "to": "schedule-draft",
+   "trigger": "내 일정에 등록"
+  },
+  {
+   "from": "notify-history",
+   "to": "timetable-change-edit",
+   "trigger": "시간표에 반영"
+  },
+  {
+   "from": "notify-history",
+   "to": "my-schedule-edit",
+   "trigger": "등록됨 · 열기"
+  },
+  {
+   "from": "notify-history",
+   "to": "timetable",
+   "trigger": "반영됨 · 열기"
+  },
+  {
+   "from": "notify-history",
+   "to": "ext-etl",
+   "trigger": "eTL에서 열기"
+  },
+  {
+   "from": "notify-history-clear-dialog",
+   "to": "notify-history",
+   "trigger": "지우기 / 취소"
+  },
+  {
+   "from": "my-schedule",
+   "to": "settings",
+   "trigger": "← 뒤로"
+  },
+  {
+   "from": "my-schedule",
+   "to": "timetable",
+   "trigger": "수업 시간표 아이콘"
+  },
+  {
+   "from": "my-schedule",
+   "to": "my-schedule-edit",
+   "trigger": "+ / 내 마감·시험 행"
+  },
+  {
+   "from": "my-schedule",
+   "to": "ext-etl",
+   "trigger": "eTL 과제 행"
+  },
+  {
+   "from": "my-schedule",
+   "to": "ext-calendar-app",
+   "trigger": "캘린더 일정 행"
+  },
+  {
+   "from": "my-schedule",
+   "to": "ext-calendar-app",
+   "trigger": "캘린더에 추가 아이콘"
+  },
+  {
+   "from": "my-schedule",
+   "to": "my-schedule-submission-check",
+   "trigger": "제출 확인 아이콘"
+  },
+  {
+   "from": "my-schedule",
+   "to": "my-schedule-delete-dialog",
+   "trigger": "지우기 아이콘"
+  },
+  {
+   "from": "my-schedule",
+   "to": "course-alerts",
+   "trigger": "숨긴 과목 N개"
+  },
+  {
+   "from": "my-schedule",
+   "to": "my-schedule",
+   "trigger": "완료 체크 / 필터 칩 / ↻"
+  },
+  {
+   "from": "my-schedule-edit",
+   "to": "my-schedule",
+   "trigger": "저장"
+  },
+  {
+   "from": "my-schedule-edit",
+   "to": "my-schedule",
+   "trigger": "취소"
+  },
+  {
+   "from": "my-schedule-edit",
+   "to": "my-schedule-edit-date-picker",
+   "trigger": "날짜 버튼"
+  },
+  {
+   "from": "my-schedule-edit",
+   "to": "my-schedule-edit-time-picker",
+   "trigger": "시각 버튼 / +시각 고르기"
+  },
+  {
+   "from": "my-schedule-edit-date-picker",
+   "to": "my-schedule-edit",
+   "trigger": "확인 / 취소"
+  },
+  {
+   "from": "my-schedule-edit-time-picker",
+   "to": "my-schedule-edit",
+   "trigger": "확인 / 취소"
+  },
+  {
+   "from": "my-schedule-delete-dialog",
+   "to": "my-schedule",
+   "trigger": "삭제 / 이번 회차만 / 반복 전체"
+  },
+  {
+   "from": "my-schedule-delete-dialog",
+   "to": "my-schedule",
+   "trigger": "취소"
+  },
+  {
+   "from": "my-schedule-submission-check",
+   "to": "ext-etl",
+   "trigger": "eTL에서 열기"
+  },
+  {
+   "from": "my-schedule-submission-check",
+   "to": "my-schedule",
+   "trigger": "닫기"
+  },
+  {
+   "from": "schedule-draft",
+   "to": "my-schedule",
+   "trigger": "저장 / 취소"
+  },
+  {
+   "from": "schedule-draft",
+   "to": "chat",
+   "trigger": "✨ 비서가 공지 읽고 채우기"
+  },
+  {
+   "from": "schedule-draft",
+   "to": "my-schedule-edit-date-picker",
+   "trigger": "날짜 버튼"
+  },
+  {
+   "from": "schedule-draft",
+   "to": "my-schedule-edit-time-picker",
+   "trigger": "시각 버튼"
+  },
+  {
+   "from": "timetable",
+   "to": "settings",
+   "trigger": "← 뒤로"
+  },
+  {
+   "from": "timetable",
+   "to": "timetable-custom-course",
+   "trigger": "상단 + (수업 직접 추가)"
+  },
+  {
+   "from": "timetable",
+   "to": "timetable-course-sheet",
+   "trigger": "수업 블록"
+  },
+  {
+   "from": "timetable",
+   "to": "course-alerts",
+   "trigger": "숨긴 과목 N개"
+  },
+  {
+   "from": "timetable",
+   "to": "timetable-change-edit",
+   "trigger": "보강·휴강 +"
+  },
+  {
+   "from": "timetable",
+   "to": "timetable",
+   "trigger": "보강·휴강 휴지통"
+  },
+  {
+   "from": "timetable-course-sheet",
+   "to": "timetable-custom-course",
+   "trigger": "수정 · 삭제"
+  },
+  {
+   "from": "timetable-course-sheet",
+   "to": "timetable",
+   "trigger": "확인"
+  },
+  {
+   "from": "timetable-custom-course",
+   "to": "timetable",
+   "trigger": "저장 / 취소"
+  },
+  {
+   "from": "timetable-custom-course",
+   "to": "timetable-custom-course-delete-dialog",
+   "trigger": "이 수업 삭제"
+  },
+  {
+   "from": "timetable-custom-course",
+   "to": "timetable-time-picker",
+   "trigger": "시작 / 종료"
+  },
+  {
+   "from": "timetable-custom-course-delete-dialog",
+   "to": "timetable",
+   "trigger": "삭제"
+  },
+  {
+   "from": "timetable-custom-course-delete-dialog",
+   "to": "timetable-custom-course",
+   "trigger": "취소"
+  },
+  {
+   "from": "timetable-change-edit",
+   "to": "timetable",
+   "trigger": "저장 / 취소"
+  },
+  {
+   "from": "timetable-change-edit",
+   "to": "chat",
+   "trigger": "✨ 비서가 공지 읽고 채우기"
+  },
+  {
+   "from": "timetable-change-edit",
+   "to": "timetable-date-picker",
+   "trigger": "날짜 버튼"
+  },
+  {
+   "from": "timetable-change-edit",
+   "to": "timetable-time-picker",
+   "trigger": "시작 / 끝"
+  },
+  {
+   "from": "timetable-date-picker",
+   "to": "timetable-change-edit",
+   "trigger": "확인 / 취소"
+  },
+  {
+   "from": "timetable-time-picker",
+   "to": "timetable-change-edit",
+   "trigger": "확인 / 취소 (보강)"
+  },
+  {
+   "from": "timetable-time-picker",
+   "to": "timetable-custom-course",
+   "trigger": "확인 / 취소 (직접 추가)"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "settings",
+   "trigger": "← 뒤로"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "calendar-settings-permission",
+   "trigger": "스위치 켜기(권한 없음)"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "calendar-settings-google-picker",
+   "trigger": "캘린더 고르기 / 구글 계정 캘린더"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "calendar-settings-read-picker",
+   "trigger": "볼 캘린더 고르기"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "ext-share-sheet",
+   "trigger": "공유하기"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "ext-document-picker",
+   "trigger": "파일로 저장"
+  },
+  {
+   "from": "calendar-settings",
+   "to": "calendar-settings",
+   "trigger": "지금 맞추기 / 되돌리기"
+  },
+  {
+   "from": "calendar-settings-google-picker",
+   "to": "calendar-settings",
+   "trigger": "캘린더 행 / 닫기"
+  },
+  {
+   "from": "calendar-settings-google-picker",
+   "to": "ext-system-settings",
+   "trigger": "계정 설정 열기"
+  },
+  {
+   "from": "calendar-settings-read-picker",
+   "to": "calendar-settings",
+   "trigger": "저장 / 취소"
+  },
+  {
+   "from": "calendar-settings-read-picker",
+   "to": "ext-system-settings",
+   "trigger": "계정 설정 열기"
+  },
+  {
+   "from": "calendar-settings-permission",
+   "to": "calendar-settings",
+   "trigger": "허용 / 거부"
+  },
+  {
+   "from": "calendar-settings-permission",
+   "to": "ext-system-settings",
+   "trigger": "다시 묻지 않음 상태"
+  },
+  {
+   "from": "ext-calendar-app",
+   "to": "my-schedule",
+   "trigger": "앱에서 열기"
+  },
+  {
+   "from": "ext-calendar-app",
+   "to": "my-schedule-edit",
+   "trigger": "앱에서 열기(내 마감)"
+  },
+  {
+   "from": "notification",
+   "to": "chat",
+   "trigger": "본문(브리핑·채팅 채우기)"
+  },
+  {
+   "from": "notification",
+   "to": "ext-etl",
+   "trigger": "본문(eTL 주소)"
+  },
+  {
+   "from": "notification",
+   "to": "my-schedule",
+   "trigger": "본문(내 마감 묶음)"
+  },
+  {
+   "from": "notification",
+   "to": "my-schedule-edit",
+   "trigger": "본문(내 마감·시험)"
+  },
+  {
+   "from": "notification",
+   "to": "schedule-draft",
+   "trigger": "내 일정에 등록"
+  },
+  {
+   "from": "notification",
+   "to": "timetable-change-edit",
+   "trigger": "시간표에 반영"
+  },
+  {
+   "from": "notification",
+   "to": "chat",
+   "trigger": "자료 받아줘"
+  },
+  {
+   "from": "notification",
+   "to": "ext-etl",
+   "trigger": "eTL에서 열기"
+  },
+  {
+   "from": "notification",
+   "to": "ext-browser",
+   "trigger": "업데이트 알림(Android)"
+  },
+  {
+   "from": "widget-deadlines",
+   "to": "my-schedule",
+   "trigger": "머리 / 빈 곳"
+  },
+  {
+   "from": "widget-deadlines",
+   "to": "my-schedule-edit",
+   "trigger": "내 마감·시험 행"
+  },
+  {
+   "from": "widget-deadlines",
+   "to": "ext-etl",
+   "trigger": "eTL 과제 행"
+  },
+  {
+   "from": "widget-deadlines",
+   "to": "widget-deadlines",
+   "trigger": "○ 완료"
+  },
+  {
+   "from": "widget-deadlines-compact",
+   "to": "my-schedule",
+   "trigger": "머리 / 빈 곳"
+  },
+  {
+   "from": "widget-deadlines-compact",
+   "to": "my-schedule-edit",
+   "trigger": "내 마감·시험 행"
+  },
+  {
+   "from": "widget-deadlines-compact",
+   "to": "ext-etl",
+   "trigger": "eTL 과제 행"
+  },
+  {
+   "from": "widget-deadlines-compact",
+   "to": "widget-deadlines-compact",
+   "trigger": "○ 완료"
+  },
+  {
+   "from": "widget-timetable",
+   "to": "timetable",
+   "trigger": "위젯 누름"
+  },
+  {
+   "from": "widget-timetable-tall",
+   "to": "timetable",
+   "trigger": "위젯 누름"
+  },
+  {
+   "from": "widget-next-class",
+   "to": "timetable",
+   "trigger": "위젯 누름"
+  },
+  {
+   "from": "ext-widget-picker",
+   "to": "widget-deadlines",
+   "trigger": "위젯 추가"
+  },
+  {
+   "from": "ext-widget-picker",
+   "to": "widget-deadlines-compact",
+   "trigger": "위젯 추가"
+  },
+  {
+   "from": "ext-widget-picker",
+   "to": "widget-timetable",
+   "trigger": "위젯 추가"
+  },
+  {
+   "from": "ext-widget-picker",
+   "to": "widget-timetable-tall",
+   "trigger": "위젯 추가"
+  },
+  {
+   "from": "ext-widget-picker",
+   "to": "widget-next-class",
+   "trigger": "위젯 추가"
+  }
+ ]
+}
