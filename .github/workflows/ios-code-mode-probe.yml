@@ -20,6 +20,12 @@ jobs:
           mkdir -p ios-javascript-probe
           swiftc -swift-version 5 ios/NativeCodex/JavaScriptCoreProbe.swift -o ios-javascript-probe/macos-probe
           ios-javascript-probe/macos-probe | tee ios-javascript-probe/macos.log
+      - name: Install the Rust test toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --target x86_64-apple-ios
+      - name: Test JavaScript execution and cancellation on macOS
+        run: |
+          set -o pipefail
+          cargo +1.95.0 test --locked --manifest-path ios/NativeCodex/javascript/Cargo.toml -- --test-threads=1 2>&1 | tee ios-javascript-probe/rust-macos.log
       - name: Check the same callbacks inside iOS Simulator
         run: |
           set -o pipefail
@@ -29,6 +35,20 @@ jobs:
           xcrun simctl boot "$simulator"
           xcrun simctl bootstatus "$simulator" -b
           xcrun simctl spawn "$simulator" "$PWD/ios-javascript-probe/ios-probe" | tee ios-javascript-probe/ios.log
+          printf '%s\n' "$simulator" > ios-javascript-probe/simulator-id
+      - name: Test JavaScript execution and cancellation inside iOS Simulator
+        run: |
+          set -o pipefail
+          cat > ios-javascript-probe/runner.sh <<'SH'
+          #!/bin/bash
+          exec xcrun simctl spawn "$JSC_PROBE_SIMULATOR" "$@"
+          SH
+          chmod +x ios-javascript-probe/runner.sh
+          export JSC_PROBE_SIMULATOR="$(cat ios-javascript-probe/simulator-id)"
+          export CARGO_TARGET_X86_64_APPLE_IOS_RUNNER="$PWD/ios-javascript-probe/runner.sh"
+          export SDKROOT="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          export IPHONEOS_DEPLOYMENT_TARGET=17.0
+          cargo +1.95.0 test --locked --manifest-path ios/NativeCodex/javascript/Cargo.toml --target x86_64-apple-ios -- --test-threads=1 2>&1 | tee ios-javascript-probe/rust-ios.log
       - name: Upload probe logs
         if: always()
         uses: actions/upload-artifact@v7
