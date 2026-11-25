@@ -68,6 +68,7 @@ final class CalendarIdMap: @unchecked Sendable {
 
 /// EventKit 구현(iOS 17 / macOS 14 `requestFullAccessToEvents`). 일반 앱으로 쓰므로 iCloud·구글 등은 그 계정의 동기화가 서버로 올린다.
 /// 앱이 직접 보내는 네트워크는 없다. 종일 일정의 날짜는 기기 달력(현재 시간대) 기준으로 읽고 쓴다(EventKit 종일 일정은 시간대가 없다).
+/// 종일 일정 변환(끝 날짜 포함 ↔ EventKit 끝)은 [CalendarAllDay]의 순수 함수로 한다.
 public final class CalendarEventKitStore: CalendarStore, @unchecked Sendable {
     private let lock = NSRecursiveLock()
     private var storeValue: EKEventStore?
@@ -89,11 +90,8 @@ public final class CalendarEventKitStore: CalendarStore, @unchecked Sendable {
         }
     }
 
-    private var localCalendar: Calendar {
-        var c = Calendar(identifier: .gregorian)
-        c.timeZone = .current
-        return c
-    }
+    /// 종일 일정(떠 있는 날짜)을 읽고 쓰는 기기 달력. 읽기·쓰기에 같은 것을 써야 왕복해도 날짜가 바뀌지 않는다.
+    private var localCalendar: Calendar { CalendarAllDay.calendar(.current) }
 
     public var access: CalendarAccess {
         switch EKEventStore.authorizationStatus(for: .event) {
@@ -128,25 +126,10 @@ public final class CalendarEventKitStore: CalendarStore, @unchecked Sendable {
                      account: c.source?.title ?? "", color: colorInt(c.cgColor), writable: c.allowsContentModifications, visible: true)
     }
 
-    private func day(_ d: Date) -> DayDate {
-        let p = localCalendar.dateComponents([.year, .month, .day], from: d)
-        return DayDate(year: p.year ?? 1970, month: p.month ?? 1, day: p.day ?? 1) ?? DayDate.of(1970, 1, 1)
-    }
-
-    private func localMidnight(_ d: DayDate) -> Date {
-        localCalendar.date(from: DateComponents(year: d.year, month: d.month, day: d.day)) ?? d.startOfDay
-    }
-
-    /// EKEvent의 시각을 millis로(종일은 UTC 자정, 끝은 다음 날 0시).
+    /// EKEvent의 시각을 millis로(종일은 UTC 자정, 끝은 마지막 날의 다음 날 0시). 변환 규칙은 [CalendarAllDay].
     private func times(_ e: EKEvent) -> (Int64, Int64) {
         guard let start = e.startDate else { return (0, 0) }
-        let end = e.endDate ?? start
-        if e.isAllDay {
-            let sd = day(start)
-            let last = end > start ? day(end.addingTimeInterval(-1)) : sd
-            return (CalendarLogic.utcMidnight(sd), CalendarLogic.utcMidnight(max(last, sd).plusDays(1)))
-        }
-        return (start.epochMilli, max(end, start).epochMilli)
+        return CalendarAllDay.backupTimes(start: start, end: e.endDate, isAllDay: e.isAllDay, localCalendar)
     }
 
     private func backup(_ e: EKEvent, _ id: Int64) -> CalendarToolLogic.Backup {
@@ -161,19 +144,12 @@ public final class CalendarEventKitStore: CalendarStore, @unchecked Sendable {
         e.title = b.title
         e.location = b.location.isEmpty ? nil : b.location
         e.notes = b.description.isEmpty ? nil : b.description
-        if b.allDay {
-            let sd = CalendarLogic.utcDate(b.dtStart)
-            let last = max(CalendarLogic.utcDate(b.dtEnd).minusDays(1), sd)
-            e.isAllDay = true
-            e.timeZone = nil
-            e.startDate = localMidnight(sd)
-            e.endDate = localMidnight(last)
-        } else {
-            e.isAllDay = false
-            e.timeZone = TimeZone(identifier: b.timezone) ?? EtlLogic.kst
-            e.startDate = Date(epochMilli: b.dtStart)
-            e.endDate = Date(epochMilli: b.dtEnd)
-        }
+        // 종일 끝은 마지막 날 23:59:59로 쓴다(마지막 날 0시로 쓰면 읽을 때 다음 날 0시 배타 표현과 겹쳐 하루가 줄었다).
+        let t = CalendarAllDay.eventKitTimes(b, localCalendar)
+        e.isAllDay = t.isAllDay
+        e.timeZone = t.timeZone
+        e.startDate = t.start
+        e.endDate = t.end
     }
 
     private func ekEvent(_ eventId: Int64) -> EKEvent? {
