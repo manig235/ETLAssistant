@@ -16,11 +16,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-cache:
+    runs-on: macos-26-intel
+    timeout-minutes: 5
+    outputs:
+      compiled: ${{ steps.lookup.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check whether this exact engine was already tested and built
+        id: lookup
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          lookup-only: true
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+
   javascript-runtime-tests:
+    needs: native-cache
+    if: ${{ needs.native-cache.outputs.compiled != 'true' }}
     uses: ./.github/workflows/ios-code-mode-probe.yml
 
   build-native-app:
-    needs: javascript-runtime-tests
+    needs: [native-cache, javascript-runtime-tests]
+    if: ${{ always() && !cancelled() && needs.native-cache.result == 'success' && (needs.javascript-runtime-tests.result == 'success' || needs.javascript-runtime-tests.result == 'skipped') }}
     runs-on: macos-26-intel
     timeout-minutes: 90
     steps:
