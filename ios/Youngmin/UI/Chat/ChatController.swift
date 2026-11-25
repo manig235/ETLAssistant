@@ -56,6 +56,7 @@ final class ChatController {
     @ObservationIgnored private var engine: ResponsesEngine?
     @ObservationIgnored private var engineMode: String?
     @ObservationIgnored private var turnTask: Task<Void, Never>?
+    @ObservationIgnored private var turnCancellation: TurnCancellation?
     @ObservationIgnored private var events: EtlEvents.Subscription?
     @ObservationIgnored private var approvalHost: String?
     @ObservationIgnored private var modelsError: String?
@@ -169,8 +170,10 @@ final class ChatController {
         activity = ActivityTracker.THINKING
         let forChat = chatId
         let imageFiles = images.compactMap { a in a.path.map { ($0, a.mime) } }
+        let cancellation = TurnCancellation()
+        turnCancellation = cancellation
         turnTask = Task { [weak self] in
-            await self?.runTurn(forChat: forChat, prompt: prompt, imageFiles: imageFiles, hadHistory: hadHistory)
+            await self?.runTurn(forChat: forChat, prompt: prompt, imageFiles: imageFiles, hadHistory: hadHistory, cancellation: cancellation)
         }
     }
 
@@ -185,8 +188,7 @@ final class ChatController {
     func stop() {
         approvals.cancelAll()
         if demoMode { turnTask?.cancel(); return }
-        let engine = engine
-        Task { await engine?.interrupt() }
+        turnCancellation?.cancel()
     }
 
     private func currentEngine() -> ResponsesEngine {
@@ -198,10 +200,12 @@ final class ChatController {
         return e
     }
 
-    private func runTurn(forChat: String, prompt: String, imageFiles: [(String, String)], hadHistory: Bool) async {
+    private func runTurn(forChat: String, prompt: String, imageFiles: [(String, String)], hadHistory: Bool,
+                         cancellation: TurnCancellation) async {
         defer {
             busy = false
             activity = nil
+            turnCancellation = nil
             sync()
         }
         if demoMode {
@@ -209,6 +213,11 @@ final class ChatController {
             return
         }
         if models.isEmpty { await loadModels() }
+        guard !cancellation.isCancelled else {
+            model.addNotice("답변을 멈췄어요")
+            model.closeStreaming()
+            return
+        }
         guard let modelId = ModelCatalog.resolveModel(choice, models) else {
             model.addNotice("보내지 못했어요: \(modelsError ?? "모델 목록을 불러오지 못했어요")")
             model.closeStreaming()
@@ -240,6 +249,7 @@ final class ChatController {
             history: history,
             input: [ResponsesInput.userMessage(prompt, images: images)],
             config: config,
+            cancellation: cancellation,
             tools: { call in await toolbox.run(name: call.name, arguments: call.arguments) }
         )
         for await event in stream {

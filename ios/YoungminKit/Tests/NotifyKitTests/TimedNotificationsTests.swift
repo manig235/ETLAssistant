@@ -181,4 +181,41 @@ private final class Box: @unchecked Sendable {
         #expect(f.map(\.at) == [now, now.secs(1800), now.secs(3600), now.secs(3600), now.secs(6600)])
         #expect(f.map(\.notice.tag) == ["deadline:1:2", "mine-remind:5", "deadline:-1:5", "mine-remind:5", "deadline:-1:5"])
     }
+
+    @Test func scheduledForecastKeepsEveryReminderAndDeadlineWindow() throws {
+        let mine = [MyDeadline(5, "서류", now.secs(7200), reminders: [now.secs(1800), now.secs(3600)])]
+        let inputs = TimedNotifications.Inputs(cached: nil, mine: mine, days: [], settings: settings,
+                                               courses: CourseFilter(), zone: seoul, casual: false)
+        let forecast = TimedNotifications.forecast(inputs, NotifyState(), from: now, until: now.secs(7200))
+        let entries = forecast.filter { $0.at > now }.map { ScheduledNotices.timedEntry($0.notice, at: $0.at) }
+        // iOS는 같은 식별자를 교체한다. 서로 다른 시각의 같은 tag도 모두 살아 있어야 한다.
+        let pending = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        #expect(entries.count == 4)
+        #expect(pending.count == 4)
+        let first = try #require(entries.first)
+        let remaining = Set(entries.dropFirst().map(\.id))
+        let resolved = ScheduledNotices.resolve(entries, pendingIds: remaining, nowMs: first.at)
+        #expect(resolved.fired == [first])
+        #expect(resolved.keep.count == 3)
+    }
+
+    @Test func forecastIncludesClassesBeyondTomorrowAndAppliesChanges() {
+        let stores = NotifyStores.inMemory()
+        stores.settings.save(NotifySettings(deadlineAlerts: false, classAlerts: true))
+        stores.timetable.save(TimetableLogic.Weekly("test", now.epochMilli, [
+            TimetableLogic.CourseMeetings(1, "수업", [
+                TimetableLogic.Meeting("월", "09:00", "10:00", nil),
+                TimetableLogic.Meeting("목", "09:00", "10:00", nil),
+            ]),
+        ], []))
+        stores.timetableChanges.add(TimetableLogic.Change(1, d("2026-11-23"), "휴강", "수업", courseId: 1))
+        stores.timetableChanges.add(TimetableLogic.Change(2, d("2026-11-24"), "보강", "수업", courseId: 1,
+                                                         start: "09:00", end: "10:00"))
+        let until = now.secs(7 * 86_400)
+        let inputs = TimedNotifications.Inputs.read(stores, now, zone: seoul, through: until)
+        #expect(inputs.days.count == 8)
+        let forecast = TimedNotifications.forecast(inputs, NotifyState(), from: now, until: until)
+        let classDates = forecast.filter { $0.notice.channel == .CLASS }.map { DayDate($0.at) }
+        #expect(classDates == [d("2026-11-24"), d("2026-11-26")])
+    }
 }

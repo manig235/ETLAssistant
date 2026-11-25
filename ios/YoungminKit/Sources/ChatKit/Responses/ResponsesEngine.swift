@@ -32,7 +32,8 @@ public actor ResponsesEngine {
 
     /// 한 턴을 시작한다. `history`는 지난 턴의 `TurnResult.history`(없으면 빈 배열), `input`은 이번 입력 항목
     /// (보통 `ResponsesInput.userMessage(…)` 하나). 이벤트 스트림은 `.turnEnded` 뒤에 끝난다.
-    public func send(history: [ChatJSON], input: [ChatJSON], config: TurnConfig, tools: @escaping ToolExecutor) -> AsyncStream<ResponsesEvent> {
+    public func send(history: [ChatJSON], input: [ChatJSON], config: TurnConfig, cancellation: TurnCancellation? = nil,
+                     tools: @escaping ToolExecutor) -> AsyncStream<ResponsesEvent> {
         let (stream, cont) = AsyncStream<ResponsesEvent>.makeStream()
         if current != nil {
             let err = ResponsesError(.invalidResponse, message: "이전 답변이 끝날 때까지 기다려 주세요")
@@ -48,6 +49,7 @@ public actor ResponsesEngine {
             await self.clear(serial)
         }
         current = task
+        cancellation?.onCancel { task.cancel() }
         cont.onTermination = { reason in
             if case .cancelled = reason { task.cancel() }
         }
@@ -225,6 +227,7 @@ public actor ResponsesEngine {
             do { token = try await auth.bearerToken(forceRefresh: refreshed) } catch let e as AuthError {
                 throw ResponsesError(.auth, message: e.userMessage)
             }
+            try Task.checkCancellation()
             let request = ResponsesRequest.urlRequest(body: body, token: token, endpoint: endpoint)
             let response: HTTPLineResponse
             do {

@@ -324,18 +324,36 @@ import Testing
         #expect(r.history.last?["content"]?[0]?["text"] == "반쯤") // 받은 만큼은 남긴다
     }
 
-    @Test func interruptStopsTheTurnAndKeepsPartialText() async throws {
+    @Test func cancellationBeforeEngineStartsDoesNotSendRequest() async throws {
+        let t = StubTransport(streams: [.init(body: Fixtures.textStream())])
+        let engine = ResponsesEngine(auth: StubAuth(), transport: t, retryDelays: [])
+        let cancellation = TurnCancellation()
+        cancellation.cancel() // 모델 목록 조회 중 사용자가 중단한 경우.
+        let input = [ResponsesInput.userMessage("보내지 말아 줘")]
+        let stream = await engine.send(history: [], input: input, config: TurnConfig(model: "m"), cancellation: cancellation) { _ in
+            Issue.record("cancelled turn must not execute tools")
+            return ToolOutput(text: "")
+        }
+        let result = try #require(turnResult(await collect(stream)))
+        #expect(result.status == .interrupted)
+        #expect(result.history == input)
+        #expect(t.streamRequests.isEmpty)
+    }
+
+    @Test func cancellationStopsTheTurnAndKeepsPartialText() async throws {
         let body = sse([
             ("response.created", #"{"type":"response.created","response":{"id":"resp_i","status":"in_progress","output":[]}}"#),
             ("response.output_text.delta", #"{"type":"response.output_text.delta","item_id":"m1","delta":"생각해 보면"}"#),
         ])
         let t = StubTransport(streams: [.init(body: body, hang: true)])
         let engine = ResponsesEngine(auth: StubAuth(), transport: t, retryDelays: [])
-        let stream = await engine.send(history: [], input: [ResponsesInput.userMessage("q")], config: TurnConfig(model: "m")) { _ in ToolOutput(text: "") }
+        let cancellation = TurnCancellation()
+        let stream = await engine.send(history: [], input: [ResponsesInput.userMessage("q")], config: TurnConfig(model: "m"),
+                                       cancellation: cancellation) { _ in ToolOutput(text: "") }
         var events: [ResponsesEvent] = []
         for await e in stream {
             events.append(e)
-            if case .textDelta = e { await engine.interrupt() }
+            if case .textDelta = e { cancellation.cancel() }
         }
         let r = try #require(turnResult(events))
         #expect(r.status == .interrupted)

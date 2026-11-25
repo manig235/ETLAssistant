@@ -1,0 +1,40 @@
+name: iOS
+
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  push:
+    branches: [main, codex/ios-pr-review-fixes]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Test YoungminKit
+        working-directory: ios/YoungminKit
+        run: swift test
+      - name: Build app, widgets, and share extension
+        working-directory: ios
+        run: >-
+          xcodebuild -project Youngmin.xcodeproj -scheme Youngmin
+          -configuration Debug -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build/CI CODE_SIGNING_ALLOWED=NO build

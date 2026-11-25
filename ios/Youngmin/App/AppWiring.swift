@@ -55,6 +55,8 @@ enum AppWiring {
     /// 앱 시작 때 한 번: 알림 예약 갱신 고리, 백그라운드 확인, 알림 탭 처리.
     @MainActor
     static func start(app: AppState) {
+        guard !started else { return }
+        started = true
         SchedStores.mine.onChanged = { Task { await NotificationSync.replan() } }
         SchedStores.courses.onChanged = { Task { await NotificationSync.replan() } }
         SettingsHooks.notifySettingsChanged = { Task { await NotificationSync.replan() } }
@@ -68,7 +70,6 @@ enum AppWiring {
         dataChangedSubscription = EtlEvents.subscribe { event in
             if case .dataChanged = event { Task { await NotificationSync.replan() } }
         }
-        BackgroundRefresh.register { await NotificationSync.check() }
         BackgroundRefresh.nextBriefAt = { NotificationSync.nextBriefSlot() }
         LocalNotifications.shared.onOpen = { info, action in NotificationSync.open(info, action: action, app: app) }
         // 앱이 앞에 있을 때 뜬 예약 알림도 알림 기록에 남긴다.
@@ -90,6 +91,7 @@ enum AppWiring {
     }
 
     private static var dataChangedSubscription: EtlEvents.Subscription?
+    @MainActor private static var started = false
 }
 
 
@@ -153,8 +155,9 @@ enum NotificationSync {
         var due: [Notice] = []
         _ = TimedNotifications.deliver(stores, now, casual: casual) { notice in due.append(notice); return true }
         for n in due { await post(n, at: nil) }
-        let inputs = TimedNotifications.Inputs.read(stores, now, casual: casual)
-        let upcoming = TimedNotifications.forecast(inputs, stores.state.load(), from: now, until: now.addingTimeInterval(7 * 86_400))
+        let until = now.addingTimeInterval(7 * 86_400)
+        let inputs = TimedNotifications.Inputs.read(stores, now, casual: casual, through: until)
+        let upcoming = TimedNotifications.forecast(inputs, stores.state.load(), from: now, until: until)
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
         let ours = pending.map(\.identifier).filter { $0.hasPrefix(timedPrefix) || $0.hasPrefix(briefPrefix) }
@@ -169,8 +172,8 @@ enum NotificationSync {
         room = max(0, room - ledger.count)
         let scheduled = Array(upcoming.sorted(by: { $0.at < $1.at }).prefix(room))
         for item in scheduled {
-            let id = timedPrefix + item.notice.tag
-            if await post(item.notice, at: item.at, id: id) { ledger.append(.init(id, item.at.epochMilli, item.notice)) }
+            let entry = ScheduledNotices.timedEntry(item.notice, at: item.at)
+            if await post(entry.notice, at: item.at, id: entry.id) { ledger.append(entry) }
         }
         prefs.set(ScheduledNotices.toJson(ledger), for: "ledger")
         let f = DateFormatter(); f.dateFormat = "MM-dd HH:mm:ss"

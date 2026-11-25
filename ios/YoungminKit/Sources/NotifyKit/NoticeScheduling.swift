@@ -83,6 +83,11 @@ public enum NoticeOpen: Hashable, Sendable {
 /// 예약해 둔 로컬 알림 장부. iOS는 예약 알림이 뜰 때 앱을 깨우지 않으므로, 다음에 앱이 돌 때 "시각이 지났고 대기 목록에 없는" 항목을
 /// 뜬 것으로 보고 중복 방지 키·알림 기록·마지막 브리핑 시각을 남긴다(같은 알림을 바로 다시 보내지 않게).
 public enum ScheduledNotices {
+    /// 같은 항목의 여러 알림·반복 회차가 서로의 예약을 덮어쓰지 않게 시각을 포함한다.
+    public static func timedEntry(_ notice: Notice, at: Date) -> Entry {
+        Entry("timed:\(notice.tag):\(at.epochMilli)", at.epochMilli, notice)
+    }
+
     public struct Entry: Hashable, Sendable {
         /// 알림 요청 식별자.
         public var id: String

@@ -96,14 +96,20 @@ public enum TimedNotifications {
             TimedNotifications.plan(cached, mine, days, state, now, settings, courses: courses, zone: zone, casual: casual)
         }
 
-        /// 저장소에서 읽는다. 수업 알림이 켜져 있으면 오늘·내일 시간표(보강·휴강 반영)를 넣는다.
-        public static func read(_ stores: NotifyStores, _ now: Date, zone: TimeZone = .current, casual: Bool = false) -> Inputs {
+        /// 저장소에서 읽는다. 기본은 오늘·내일, 미리 예약할 때는 through까지의 시간표(보강·휴강 반영)를 넣는다.
+        public static func read(_ stores: NotifyStores, _ now: Date, zone: TimeZone = .current, casual: Bool = false,
+                                through: Date? = nil) -> Inputs {
             let settings = stores.settings.load()
             let today = ZoneClock.localDate(now, zone)
             var days: [TimetableLogic.Day] = []
             if settings.classAlerts, let weekly = stores.timetable.load() {
                 let changes = stores.timetableChanges.load()
-                days = [TimetableLogic.day(weekly, today, changes), TimetableLogic.day(weekly, today.plusDays(1), changes)]
+                let last = through.map { max(today, ZoneClock.localDate($0, zone)) } ?? today.plusDays(1)
+                var day = today
+                while day <= last {
+                    days.append(TimetableLogic.day(weekly, day, changes))
+                    day = day.plusDays(1)
+                }
             }
             return Inputs(cached: stores.snapshot.load(), mine: stores.mine.load(), days: days, settings: settings,
                           courses: stores.courses.load(), zone: zone, casual: casual)
