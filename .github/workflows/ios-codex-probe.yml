@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-codex-probe-${{ github.ref }}
+  group: ios-codex-probe-${{ inputs.component }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
