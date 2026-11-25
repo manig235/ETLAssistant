@@ -36,7 +36,7 @@ struct ChatModelPicker: View {
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
         .task {
-            if controller.models.isEmpty && !controller.modelsLoading { await controller.loadModels() }
+            if controller.models.isEmpty { await controller.loadModels() }
         }
     }
 
@@ -61,12 +61,17 @@ struct ChatModelPicker: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
             } else {
-                Text("아직 모델 목록을 불러오지 못했어요. 비서가 준비되고 로그인되면 보여요.")
-                    .font(YMFont.body2Regular)
-                    .foregroundStyle(YMColor.labelSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(RoundedRectangle(cornerRadius: 16).fill(YMColor.surfaceSecondary))
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(controller.modelsError ?? "아직 모델 목록을 불러오지 못했어요. 비서가 준비되고 로그인되면 보여요.")
+                        .font(YMFont.body2Regular)
+                        .foregroundStyle(YMColor.labelSecondary)
+                        .accessibilityIdentifier("model-load-error")
+                    YMTextButton("다시 불러오기") { Task { await controller.loadModels() } }
+                        .accessibilityIdentifier("retry-models")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 16).fill(YMColor.surfaceSecondary))
             }
         }
         ForEach(models, id: \.id) { m in

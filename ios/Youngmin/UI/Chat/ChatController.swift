@@ -40,6 +40,7 @@ final class ChatController {
     private(set) var models: [ModelInfo] = []
     private(set) var modelsLoading = false
     private(set) var modelsFailed = false
+    private(set) var modelsError: String?
     private(set) var choice: ModelChoice
     /// 지금 띄울 쓰기 승인 요청.
     private(set) var approval: WriteApprovalRequest?
@@ -60,7 +61,8 @@ final class ChatController {
     @ObservationIgnored private var turnCancellation: TurnCancellation?
     @ObservationIgnored private var events: EtlEvents.Subscription?
     @ObservationIgnored private var approvalHost: String?
-    @ObservationIgnored private var modelsError: String?
+    @ObservationIgnored private var modelsTask: Task<Void, Never>?
+    @ObservationIgnored private var modelsRequestID = UUID()
 
     init(auth: AssistantAuth, toolbox: AssistantToolbox, approvals: WriteApprovalSource) {
         self.auth = auth
@@ -89,6 +91,9 @@ final class ChatController {
         auth.onLoginDone = { [weak self] ok in
             if ok {
                 ToastCenter.shared.show("로그인했어요")
+                self?.modelsTask?.cancel()
+                self?.modelsTask = nil
+                self?.modelsRequestID = UUID()
                 self?.models = []
                 Task { await self?.loadModels() }
             }
@@ -214,7 +219,11 @@ final class ChatController {
             await DemoSeed.runDemoTurn(self, prompt: prompt)
             return
         }
-        if models.isEmpty { await loadModels() }
+        if models.isEmpty {
+            activity = "모델 목록을 불러오는 중이에요"
+            await loadModels()
+            activity = ActivityTracker.THINKING
+        }
         guard !cancellation.isCancelled else {
             model.addNotice("답변을 멈췄어요")
             model.closeStreaming()
@@ -315,16 +324,40 @@ final class ChatController {
 
     func loadModels() async {
         if demoMode { models = DemoSeed.models; return }
-        guard auth.isSignedIn, !modelsLoading else { return }
+        // Login, the picker and sending can all arrive while the same RPC is
+        // pending. Every caller must await it before deciding the list is empty.
+        if let modelsTask { await modelsTask.value; return }
+        guard auth.isSignedIn else {
+            modelsError = "비서 계정에 로그인한 뒤 다시 시도해 주세요"
+            return
+        }
         modelsLoading = true
-        defer { modelsLoading = false }
+        modelsFailed = false
+        modelsError = nil
+        let requestID = UUID()
+        modelsRequestID = requestID
+        // A sheet disappearing must not cancel the request shared with chat.
+        let task = Task<Void, Never> { [weak self] in await self?.fetchModels() }
+        modelsTask = task
+        await task.value
+        guard modelsRequestID == requestID else { return }
+        modelsTask = nil
+        modelsLoading = false
+    }
+
+    private func fetchModels() async {
         do {
+            let loaded: [ModelInfo]
             if auth.usesNativeCodex, let client = auth.codex {
-                models = ModelCatalog.parse(try await client.request("model/list"))
-                if models.isEmpty { throw CodexError("이 계정에서 사용할 수 있는 iOS 지원 모델을 찾지 못했어요") }
+                loaded = ModelCatalog.parse(try await client.request("model/list"))
+                if loaded.isEmpty { throw CodexError("이 계정에서 사용할 수 있는 iOS 지원 모델을 찾지 못했어요") }
             } else {
-                models = try await ModelListClient.fetch(auth: auth.provider, transport: URLSessionTransport())
+                loaded = try await ModelListClient.fetch(auth: auth.provider, transport: URLSessionTransport())
             }
+            try Task.checkCancellation()
+            guard auth.isSignedIn else { return }
+            guard !loaded.isEmpty else { throw CodexError("이 계정에서 사용할 수 있는 모델을 찾지 못했어요") }
+            models = loaded
             if !models.isEmpty {
                 let availableChoice = ModelCatalog.sanitize(choice, models)
                 if availableChoice != choice { setChoice(availableChoice) }
@@ -333,18 +366,13 @@ final class ChatController {
             if let id = choice.model, let m = models.first(where: { $0.model == id }) { settings.modelName = m.displayName }
             modelsFailed = models.isEmpty
             modelsError = nil
-        } catch let e as CodexError {
-            modelsFailed = true
-            modelsError = e.message
-        } catch let e as ResponsesError {
-            modelsFailed = true
-            modelsError = e.userMessage
-        } catch let e as AuthError {
-            modelsFailed = true
-            modelsError = e.userMessage
         } catch {
+            guard !Task.isCancelled else { return }
             modelsFailed = true
-            modelsError = "모델 목록을 불러오지 못했어요"
+            if let e = error as? CodexError { modelsError = e.message }
+            else if let e = error as? ResponsesError { modelsError = e.userMessage }
+            else if let e = error as? AuthError { modelsError = e.userMessage }
+            else { modelsError = "모델 목록 요청에 실패했어요: \(error.localizedDescription.prefix(240))" }
         }
     }
 
