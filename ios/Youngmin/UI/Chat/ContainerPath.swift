@@ -13,7 +13,7 @@ enum ContainerPath {
         let home = NSHomeDirectory()
         for m in markers {
             guard let r = path.range(of: m) else { continue }
-            let rebased = home + m + path[r.upperBound...]
+            let rebased = home + m + String(path[r.upperBound...])
             if fm.fileExists(atPath: rebased) { return rebased }
         }
         return nil
