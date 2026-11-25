@@ -61,3 +61,21 @@ import Testing
         #expect(weekly.courses.allSatisfy { !$0.meetings.isEmpty && $0.professor == "테스트교수" })
     }
 }
+
+@Suite struct DemoResetThreadTests {
+    @Test func collectsOnlyValidNativeReferencesAndDoesNotFollowSymlinks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let demo = root.appendingPathComponent("demo")
+        try FileManager.default.createDirectory(at: demo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID().uuidString.lowercased()
+        let outside = UUID().uuidString.lowercased()
+        let own = #"[{"type":"youngmin_codex_thread","thread_id":"\#(id)"},{"type":"youngmin_codex_thread","thread_id":"../../real"},{"type":"message","thread_id":"\#(outside)"}]"#
+        try own.write(to: demo.appendingPathComponent("own.json"), atomically: true, encoding: .utf8)
+        let real = root.appendingPathComponent("real.json")
+        try #"[{"type":"youngmin_codex_thread","thread_id":"\#(outside)"}]"#.write(to: real, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: demo.appendingPathComponent("link.json"), withDestinationURL: real)
+        #expect(StudyDataProfile.nativeThreadIDs(in: demo) == [id])
+        #expect(FileManager.default.fileExists(atPath: real.path))
+    }
+}

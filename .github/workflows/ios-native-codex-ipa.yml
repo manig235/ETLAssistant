@@ -27,6 +27,7 @@ jobs:
     outputs:
       compiled: ${{ steps.lookup.outputs.cache-hit }}
       runtime-verified: ${{ steps.proof.outputs.verified }}
+      runtime-pending: ${{ steps.proof.outputs.pending }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,11 +48,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PROOF_RUN_ID: ${{ inputs.runtime_proof_run }}
+          PROOF_ALLOW_PENDING: '1'
         run: python3 .github/scripts/ios-runtime-proof.py
 
   javascript-runtime-tests:
     needs: native-cache
-    if: ${{ needs.native-cache.outputs.compiled != 'true' && needs.native-cache.outputs.runtime-verified != 'true' }}
+    if: ${{ needs.native-cache.outputs.compiled != 'true' && needs.native-cache.outputs.runtime-verified != 'true' && needs.native-cache.outputs.runtime-pending != 'true' }}
     uses: ./.github/workflows/ios-code-mode-probe.yml
 
   build-native-app:
@@ -92,6 +94,14 @@ jobs:
         run: bash .github/scripts/ios-device-ipa.sh
       - name: Prepare one iPad installation file
         run: cp ios-device-output/Youngmin-unsigned.ipa ios-device-output/Youngmin-iPad-test.ipa
+      - name: Require successful execution proof before publishing the IPA
+        id: runtime-proof
+        if: ${{ needs.native-cache.outputs.runtime-pending == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_RUN_ID: ${{ inputs.runtime_proof_run }}
+          PROOF_WAIT_SECONDS: '1800'
+        run: python3 .github/scripts/ios-runtime-proof.py
       - name: Upload iPad test IPA directly
         uses: actions/upload-artifact@v7
         with:
@@ -118,4 +128,4 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ${{ steps.native-engine.outcome == 'success' && steps.rust-cache.outputs.cache-primary-key || format('{0}-partial-{1}-{2}', steps.rust-cache.outputs.cache-primary-key, github.run_id, github.run_attempt) }}
+          key: ${{ steps.native-engine.outcome == 'success' && (needs.native-cache.outputs.runtime-pending != 'true' || steps.runtime-proof.outcome == 'success') && steps.rust-cache.outputs.cache-primary-key || format('{0}-partial-{1}-{2}', steps.rust-cache.outputs.cache-primary-key, github.run_id, github.run_attempt) }}

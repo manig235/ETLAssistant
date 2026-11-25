@@ -455,12 +455,14 @@ final class ChatController {
 
     private func purgeNativeThreads() async {
         guard let client = auth.codex else { return }
-        for id in settings.pendingNativeThreadDeletes {
+        for id in settings.pendingNativeThreadDeletes.union(StudyDataProfile.demoNativeThreadDeletes) {
             do {
                 _ = try await client.request("thread/delete", ["threadId": .string(id)])
                 settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.subtracting([id])
+                StudyDataProfile.demoNativeThreadDeletes = StudyDataProfile.demoNativeThreadDeletes.subtracting([id])
             } catch let error as CodexError where error.message == "thread not found: \(id)" {
                 settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.subtracting([id])
+                StudyDataProfile.demoNativeThreadDeletes = StudyDataProfile.demoNativeThreadDeletes.subtracting([id])
             } catch {
                 // Keep the ID for the next foreground refresh, including after restart.
             }

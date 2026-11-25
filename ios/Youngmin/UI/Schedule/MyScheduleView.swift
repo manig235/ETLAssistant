@@ -196,7 +196,7 @@ struct MyScheduleView: View {
             onToggleDone: { if let m = r.mine { model.toggleDone(m) } },
             onDelete: { deleting = r.mine },
             onCheck: r.assignment.flatMap { a in a.submitted ? { model.checkSubmission(a) } : nil },
-            onAddToCalendar: r.kind == .CALENDAR ? nil : { addToCalendar(r) }
+            onAddToCalendar: (r.kind == .CALENDAR || StudyDataProfile.isDemo) ? nil : { addToCalendar(r) }
         )
     }
 
