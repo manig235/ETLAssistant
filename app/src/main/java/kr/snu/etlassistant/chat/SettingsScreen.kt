@@ -926,7 +926,11 @@ private fun AboutSection(s: SettingsState, a: SettingsActions) {
     var feedbackOpen by remember { mutableStateOf(false) }
     Section("앱 정보") {
         SettingsCard {
-            Text("영민이", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+            Row {
+                Text("영민이", style = DesignSystemTheme.typography.body1Bold, color = DesignSystemTheme.colors.foregroundNeutralPrimary, modifier = Modifier.alignByBaseline())
+                Spacer(Modifier.width(8.dp))
+                BrandWordmark(Modifier.alignByBaseline(), style = DesignSystemTheme.typography.label1Medium)
+            }
             Spacer(Modifier.height(4.dp))
             Caption("만든 사람: 박영민 · 버전 $version")
             Spacer(Modifier.height(10.dp))

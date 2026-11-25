@@ -47,7 +47,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import kr.snu.etlassistant.chat.Brand
+import kr.snu.etlassistant.chat.BrandWordmark
 import kr.snu.etlassistant.chat.PrivacyPolicyActivity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -266,13 +269,16 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
         header = {
             Image(
                 painter = painterResource(R.drawable.etl_logo),
-                contentDescription = "영민이 로고",
+                contentDescription = "영민이(${Brand.ENGLISH_NAME}) 로고",
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .size(120.dp)
+                    .size(112.dp)
                     .clip(RoundedCornerShape(24.dp)),
             )
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(10.dp))
+            // 로고 설명에 이미 들어 있으므로 화면 읽기에서는 한 번만 읽히게 뺀다.
+            BrandWordmark(Modifier.align(Alignment.CenterHorizontally).clearAndSetSemantics { })
+            Spacer(Modifier.height(20.dp))
         },
         bottom = { PrimaryButton("시작하기") { vm.goNext() } },
     ) {
@@ -281,7 +287,7 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
             FeatureRow(Icons.Outlined.ChatBubbleOutline, "채팅으로 물어보기", "이번 주 할 일, 제출 확인, 파일 내용까지")
             FeatureRow(Icons.Outlined.FileDownload, "강의 파일 받기", "필요한 자료를 폰에 바로 저장해요")
         }
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(24.dp))
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = DesignSystemTheme.colors.foregroundNeutralSecondary, modifier = Modifier.size(20.dp))
