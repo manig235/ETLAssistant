@@ -81,7 +81,7 @@ jobs:
           CODEX_PROBE_COMPONENT: bridge
           CODEX_PROBE_OPERATION: build
           CODEX_NATIVE_OPT_LEVEL: ${{ inputs.fast && '0' || '1' }}
-          CODEX_REUSE_COMPILED_LIBRARY: ${{ steps.rust-cache.outputs.cache-hit }}
+          CODEX_REUSE_COMPILED_LIBRARY: ${{ steps.rust-cache.outputs.cache-matched-key != '' }}
           CODEX_NATIVE_CACHE_KEY: ${{ steps.rust-cache.outputs.cache-primary-key }}
         run: bash .github/scripts/ios-codex-probe.sh
       - name: Test Swift authentication transport and chat integration
