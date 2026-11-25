@@ -130,6 +130,8 @@ PY
       -in "$dir/$key.plist" -out "$dir/$key.mobileprovision"
     printf -v "IOS_PROFILE_${key}_BASE64" '%s' "$(base64 < "$dir/$key.mobileprovision" | tr -d '\n')"
   done
+  # Read indirectly through decode_secret.
+  # shellcheck disable=SC2034
   IOS_DIST_P12_BASE64="$(base64 < "$dir/dist.p12" | tr -d '\n')"
   IOS_DIST_P12_PASSWORD="$password"
   IOS_TEAM_ID=DRYRUN0000
