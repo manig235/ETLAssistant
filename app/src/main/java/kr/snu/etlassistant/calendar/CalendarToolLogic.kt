@@ -97,6 +97,40 @@ object CalendarToolLogic {
         return When(false, s.toEpochMilli(), e.toEpochMilli())
     }
 
+    /**
+     * 종일 일정의 시작만 [newStartDate]로 옮길 때 원래 길이를 유지한 끝 날짜(포함).
+     * 종일 일정은 끝이 다음 날 0시(배타)라 날짜 수 = (dtEnd - dtStart)/1일, 0분짜리(dtEnd == dtStart)는 하루로 본다.
+     */
+    fun allDayEndKeepingLength(dtStart: Long, dtEnd: Long, newStartDate: LocalDate): LocalDate =
+        newStartDate.plusDays(((dtEnd - dtStart) / 86_400_000L - 1).coerceAtLeast(0))
+
+    /** 시작만 옮길 때 원래 길이를 유지하는 end 문자열. */
+    fun keepLength(b: Backup, newStart: String, allDay: Boolean?): String? {
+        if (allDay ?: b.allDay) {
+            return runCatching { allDayEndKeepingLength(b.dtStart, b.dtEnd, LocalDate.parse(newStart.trim().take(10))).toString() }.getOrNull()
+        }
+        if (b.allDay) return null
+        val m = Regex("^(\\d{4}-\\d{2}-\\d{2})[ T](\\d{1,2}):(\\d{2})").find(newStart.trim()) ?: return null
+        val s = runCatching { LocalDateTime.of(LocalDate.parse(m.groupValues[1]), LocalTime.of(m.groupValues[2].toInt(), m.groupValues[3].toInt())) }.getOrNull() ?: return null
+        val e = s.plusSeconds((b.dtEnd - b.dtStart) / 1000)
+        return "%s %02d:%02d".format(e.toLocalDate(), e.hour, e.minute)
+    }
+
+    /** 고치기 전 일정의 시작을 parseWhen에 다시 넣을 문자열로(종일은 UTC 날짜, 시간 일정은 KST). */
+    fun startText(b: Backup, allDay: Boolean): String =
+        if (b.allDay) Instant.ofEpochMilli(b.dtStart).atZone(ZoneOffset.UTC).toLocalDate().toString()
+        else Instant.ofEpochMilli(b.dtStart).atZone(ZONE).let { z -> if (allDay) z.toLocalDate().toString() else "%s %02d:%02d".format(z.toLocalDate(), z.hour, z.minute) }
+
+    /**
+     * calendar_update의 새 시각. 시작을 주면 그것으로(end가 없으면 길이 유지), end나 all_day만 주면 원래 시작으로 다시 읽고,
+     * 시각 인자가 없으면(제목·장소·메모만 고침) 원래 dtStart/dtEnd를 그대로 둔다.
+     */
+    fun updatedWhen(before: Backup, start: String?, end: String?, allDay: Boolean?): When = when {
+        start != null -> parseWhen(start, end ?: keepLength(before, start, allDay), allDay)
+        end != null || allDay != null -> parseWhen(startText(before, allDay ?: before.allDay), end, allDay ?: before.allDay)
+        else -> When(before.allDay, before.dtStart, before.dtEnd)
+    }
+
     /** 제목·장소·메모 정리와 검사. */
     fun cleanTitle(s: String?): String {
         val t = NoticeText.clean(s).trim()
