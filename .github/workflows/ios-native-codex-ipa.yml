@@ -1,0 +1,74 @@
+name: iOS Native Codex IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-native-codex-ipa-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-native-app:
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Restore native Rust dependencies
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
+          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
+      - name: Test Swift authentication transport and chat integration
+        run: swift test --package-path ios/YoungminKit
+      - name: Build the embedded official Codex library
+        env:
+          CODEX_PROBE_COMPONENT: bridge
+          CODEX_PROBE_OPERATION: build
+        run: bash .github/scripts/ios-codex-probe.sh
+      - name: Build native-login IPA
+        env:
+          YOUNGMIN_USE_NATIVE_CODEX: '1'
+        run: bash .github/scripts/ios-device-ipa.sh
+      - name: Upload the app and installation instructions
+        uses: actions/upload-artifact@v7
+        with:
+          name: youngmin-native-codex-ipa-${{ github.run_attempt }}
+          path: |
+            ios-device-output/Youngmin-unsigned.ipa
+            ios-device-output/Youngmin-unsigned.ipa.sha256
+            ios-device-output/Youngmin-unsigned.json
+            ios-device-output/INSTALL-WINDOWS.md
+            ios/NativeCodex/Generated/*LICENSE*
+            ios/NativeCodex/Generated/*NOTICE*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save native compilation cache
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+      - name: Save diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-codex-logs-${{ github.run_attempt }}
+          path: |
+            ios-codex-probe/*.log
+            ios-codex-probe/*.txt
+            ios-device-output/*.log
+            ios-device-output/*.json
+          retention-days: 7

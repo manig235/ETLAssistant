@@ -40,8 +40,22 @@ PACKAGE=codex-app-server
 if [[ "${CODEX_PROBE_COMPONENT:-upstream}" == bridge ]]; then
   PACKAGE=youngmin-codex-bridge
 fi
-cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \
-  2>&1 | tee "$OUT/cargo-check.log"
+if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
+  test "$PACKAGE" == youngmin-codex-bridge
+  # Keep iteration builds reasonably small without release LTO costs.
+  export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=1
+  export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
+  cargo +"$TOOLCHAIN" build --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small \
+    2>&1 | tee "$OUT/cargo-build.log"
+  GENERATED="$ROOT/ios/NativeCodex/Generated/iphoneos/arm64"
+  mkdir -p "$GENERATED"
+  cp "target/$TARGET/dev-small/libyoungmin_codex_bridge.a" "$GENERATED/"
+  cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"
+  if [[ -f "$SOURCE/NOTICE" ]]; then cp "$SOURCE/NOTICE" "$ROOT/ios/NativeCodex/Generated/Codex-NOTICE.txt"; fi
+else
+  cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \
+    2>&1 | tee "$OUT/cargo-check.log"
+fi
 printf 'Official Codex app-server library passed cargo check for %s.\n' "$TARGET" > "$OUT/result.txt"
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   cat "$OUT/result.txt" >> "$GITHUB_STEP_SUMMARY"

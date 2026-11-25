@@ -7,6 +7,19 @@ xcodebuild -version | tee ios-device-output/toolchain.log
 git rev-parse HEAD | tee ios-device-output/revision.log
 
 device_derived="${RUNNER_TEMP:-/tmp}/youngmin-device-derived"
+native_args=('YOUNGMIN_NATIVE_CONDITIONS=')
+if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
+  test -f ios/NativeCodex/Generated/iphoneos/arm64/libyoungmin_codex_bridge.a
+  native_args=(
+    'YOUNGMIN_NATIVE_CONDITIONS=YOUNGMIN_NATIVE_CODEX'
+    'YOUNGMIN_NATIVE_BRIDGING_HEADER=$(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h'
+    'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
+    'YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -lc++ -lz -liconv -framework Security -framework SystemConfiguration -framework CoreFoundation -framework Foundation -framework Network'
+    'INFOPLIST_KEY_YoungminAuthEngine=codex-in-process'
+    'INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91'
+    'CURRENT_PROJECT_VERSION=23'
+  )
+fi
 xcodebuild build \
   -project ios/Youngmin.xcodeproj -scheme Youngmin \
   -configuration Debug -sdk iphoneos \
@@ -15,9 +28,16 @@ xcodebuild build \
   ARCHS=arm64 ONLY_ACTIVE_ARCH=NO ENABLE_DEBUG_DYLIB=NO \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS= \
+  "${native_args[@]}" \
   2>&1 | tee ios-device-output/xcodebuild.log
 
 # Package a copy, keeping the normal app/extension build products intact.
+if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
+  cp ios/NativeCodex/Generated/*LICENSE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"
+  if compgen -G 'ios/NativeCodex/Generated/*NOTICE*' > /dev/null; then
+    cp ios/NativeCodex/Generated/*NOTICE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"
+  fi
+fi
 python3 .github/scripts/package-device-ipa.py \
   --app "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app" \
   --output ios-device-output/Youngmin-unsigned.ipa \

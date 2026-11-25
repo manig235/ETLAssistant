@@ -35,7 +35,11 @@ public actor CodexEngine {
     private func run(history: [ChatJSON], input: [ChatJSON], config: TurnConfig, tools: @escaping ToolExecutor,
                      output: AsyncStream<ResponsesEvent>.Continuation) async {
         let (subscription, events) = await client.subscribe()
-        defer { Task { await client.cancelEvents(subscription) }; output.yield(.activity(nil)); output.finish() }
+        defer {
+            Task { await client.cancelEvents(subscription) }
+            current = nil
+            output.yield(.activity(nil)); output.finish()
+        }
         output.yield(.activity(ActivityTracker.THINKING))
         var threadID: String?
         var turnID: String?
