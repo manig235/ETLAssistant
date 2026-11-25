@@ -11,6 +11,16 @@ manifest = workspace / "Cargo.toml"
 text = manifest.read_text()
 lock = workspace / "Cargo.lock"
 lock_text = lock.read_text()
+version = tomllib.loads(text)["workspace"]["package"]["version"]
+# Release packaging updates workspace.package.version but retains 0.0.0 for
+# local crates in Cargo.lock. Normalize only those local package versions;
+# registry/git versions and checksums remain exactly as upstream locked them.
+blocks = lock_text.split("[[package]]")
+lock_text = "[[package]]".join(
+    block.replace('version = "0.0.0"', f'version = "{version}"')
+    if "source = " not in block else block
+    for block in blocks
+)
 v8_revision = "90a65f887a0c0f048f3784afbcb320b373c8a2e0"
 v8 = workspace.parent / "youngmin-vendor/rusty-v8"
 assert tomllib.loads((v8 / "Cargo.toml").read_text())["package"]["version"] == "152.2.0"
@@ -46,7 +56,6 @@ server = next(p for p in packages if p["name"] == "codex-app-server")
 deps = tomllib.loads((bridge / "Cargo.toml").read_text())["dependencies"]
 identifiers = {d.split(" ")[0]: d for d in server["dependencies"]}
 identifiers["codex-app-server"] = "codex-app-server"
-version = tomllib.loads(text)["workspace"]["package"]["version"]
 with lock.open("a") as file:
     file.write(f'\n[[package]]\nname = "youngmin-codex-bridge"\nversion = "{version}"\ndependencies = [\n')
     for dependency in sorted(deps):
