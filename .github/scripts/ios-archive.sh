@@ -210,6 +210,19 @@ setup_signing() {
 if [[ "$signing" == 0 && "$dry_run" == 1 ]]; then make_dry_run_identity; fi
 if [[ "$signing" == 1 || "$dry_run" == 1 ]]; then setup_signing; fi
 
+check_profiles() { # project settings... : each YOUNGMIN_PROFILE_<target> must reach only that target
+  local check_project="$1" setting target expected value
+  shift
+  for setting in "$@"; do
+    [[ "$setting" == YOUNGMIN_PROFILE_*=* ]] || continue
+    target="${setting%%=*}" target="${target#YOUNGMIN_PROFILE_}" expected="${setting#*=}"
+    value="$(xcodebuild -showBuildSettings -project "$check_project" -target "$target" -configuration Release \
+      -sdk iphoneos "$@" 2>/dev/null | sed -n 's/^ *PROVISIONING_PROFILE_SPECIFIER = //p' | head -n 1)"
+    [[ "$value" == "$expected" ]] || { echo "Provisioning profile for $target resolves to '$value', expected '$expected'" >&2; exit 1; }
+  done
+  echo "PASS: per-target provisioning profiles resolve correctly ($(basename "$check_project"))"
+}
+
 # ----------------------------------------------------------------- archive
 project=ios/Youngmin.xcodeproj
 if [[ "$mode" == app-only ]]; then
@@ -226,23 +239,13 @@ if [[ "$signing" == 1 || "$dry_run" == 1 ]]; then
            "OTHER_CODE_SIGN_FLAGS=--keychain $keychain")
   # App-only builds ship without the App Group, so the app's App ID needs no capability.
   if [[ "$mode" == app-only ]]; then planned+=(CODE_SIGN_ENTITLEMENTS=); fi
-  xcodebuild -showBuildSettings "${common[@]}" "${planned[@]}" > "$out/signing-settings.log" 2>&1
-  python3 - "$out/signing-settings.log" "$mode" "${profile_args[@]}" <<'PY'
-import re, sys
-log, mode, *pairs = sys.argv[1:]
-expected = dict(p.removeprefix("YOUNGMIN_PROFILE_").split("=", 1) for p in pairs)
-actual, target = {}, None
-for line in open(log):
-    m = re.match(r"Build settings for action \w+ and target (.+):", line)
-    if m: target = m[1]; continue
-    m = re.match(r"\s+PROVISIONING_PROFILE_SPECIFIER = (.*)", line)
-    if m and target: actual[target] = m[1].strip()
-apps = {t: v for t, v in actual.items() if t in ("Youngmin", "YoungminWidgets", "YoungminShare")}
-if apps != expected: raise SystemExit(f"Per-target provisioning profiles resolve to {apps}, expected {expected}")
-others = {t: v for t, v in actual.items() if t not in apps and v}
-if others: raise SystemExit(f"Profiles leak into non-app targets: {others}")
-print(f"PASS: per-target provisioning profiles resolve correctly for {sorted(apps)} ({mode})")
-PY
+  check_profiles "$project" "${planned[@]}"
+  if [[ "$dry_run" == 1 && "$mode" == app-only ]]; then
+    # Also prove the per-target expansion for the full (extension) layout.
+    check_profiles ios/Youngmin.xcodeproj "${planned[@]}" \
+      YOUNGMIN_PROFILE_YoungminWidgets=00000000-0000-0000-0000-00000000WIDG \
+      YOUNGMIN_PROFILE_YoungminShare=00000000-0000-0000-0000-00000000SHAR
+  fi
   if [[ "$signing" == 1 ]]; then signing_args=("${planned[@]}"); fi
 fi
 
