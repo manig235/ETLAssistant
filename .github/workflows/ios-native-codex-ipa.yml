@@ -72,3 +72,51 @@ jobs:
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
           key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+
+  native-simulator-tests:
+    needs: build-native-app
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Restore compiled native dependencies
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-minimal-${{ runner.arch }}-simulator-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
+          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
+      - name: Build the simulator native library
+        env:
+          CODEX_PROBE_COMPONENT: bridge
+          CODEX_PROBE_OPERATION: build
+          CODEX_PROBE_PLATFORM: simulator
+        run: bash .github/scripts/ios-codex-probe.sh
+      - name: Exercise the native engine and app UI
+        env:
+          YOUNGMIN_USE_NATIVE_CODEX: '1'
+        run: bash .github/scripts/ios-simulator.sh
+      - name: Save native simulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-codex-simulator-${{ github.run_attempt }}
+          path: |
+            ios-codex-probe/*.log
+            ios-codex-probe/*.txt
+            ios-test-results/
+          retention-days: 7
+      - name: Save simulator compilation cache
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}

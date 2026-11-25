@@ -9,7 +9,13 @@ SOURCE="$OUT/source"
 REVISION=29eb79e9866b3262a777fdf8195c1b9e63684c91
 ARCHIVE_SHA256=af62862cf5eb25b0ef0c45d2a964b1337a31b502c0627257d8339f582d431c60
 TOOLCHAIN=1.95.0
+SDK=iphoneos
+ARCH=arm64
 TARGET=aarch64-apple-ios
+if [[ "${CODEX_PROBE_PLATFORM:-device}" == simulator ]]; then
+  SDK=iphonesimulator
+  if [[ "$(uname -m)" == arm64 ]]; then TARGET=aarch64-apple-ios-sim; else TARGET=x86_64-apple-ios; ARCH=x86_64; fi
+fi
 
 mkdir -p "$OUT" "$SOURCE"
 exec > >(tee "$OUT/probe.log") 2>&1
@@ -41,7 +47,7 @@ python3 "$ROOT/.github/scripts/prepare-ios-codex.py" "$SOURCE" "${CODEX_PROBE_CO
 rustup toolchain install "$TOOLCHAIN" --profile minimal --target "$TARGET"
 rustc +"$TOOLCHAIN" --version
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
-export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+export SDKROOT="$(xcrun --sdk "$SDK" --show-sdk-path)"
 export CARGO_TERM_COLOR=never
 cd "$SOURCE/codex-rs"
 PACKAGE=codex-app-server
@@ -55,7 +61,7 @@ if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
   cargo +"$TOOLCHAIN" build --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small \
     2>&1 | tee "$OUT/cargo-build.log"
-  GENERATED="$ROOT/ios/NativeCodex/Generated/iphoneos/arm64"
+  GENERATED="$ROOT/ios/NativeCodex/Generated/$SDK/$ARCH"
   mkdir -p "$GENERATED"
   cp "target/$TARGET/dev-small/libyoungmin_codex_bridge.a" "$GENERATED/"
   cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"

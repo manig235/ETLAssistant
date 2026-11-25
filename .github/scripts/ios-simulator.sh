@@ -39,6 +39,16 @@ xcrun simctl status_bar "$simulator_id" override --time '9:41' --batteryState ch
 
 # Disabling parallel testing keeps screenshot capture on the selected device.
 # pipefail ensures a failing build/test fails CI even though tee succeeds.
+native_args=('YOUNGMIN_NATIVE_CONDITIONS=' '-skip-testing:YoungminUITests/YoungminUITests/testNativeCodexStartup')
+if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
+  test -f "ios/NativeCodex/Generated/iphonesimulator/$(uname -m)/libyoungmin_codex_bridge.a"
+  native_args=(
+    'YOUNGMIN_NATIVE_CONDITIONS=YOUNGMIN_NATIVE_CODEX'
+    'YOUNGMIN_NATIVE_BRIDGING_HEADER=$(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h'
+    'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
+    'YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -lc++ -lz -liconv -framework Security -framework SystemConfiguration -framework CoreFoundation -framework Foundation -framework Network'
+  )
+fi
 xcodebuild test \
   -project ios/Youngmin.xcodeproj -scheme Youngmin \
   -configuration Debug \
@@ -48,4 +58,5 @@ xcodebuild test \
   -resultBundlePath "$PWD/ios-test-results/Youngmin.xcresult" \
   -parallel-testing-enabled NO \
   CODE_SIGNING_ALLOWED=NO \
+  "${native_args[@]}" \
   2>&1 | tee ios-test-results/xcodebuild.log

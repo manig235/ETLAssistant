@@ -2,6 +2,20 @@ import XCTest
 
 /// Exercise the real app with its existing DEBUG sample data, without accounts.
 final class YoungminUITests: XCTestCase {
+    @MainActor
+    func testNativeCodexStartup() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["--native-codex-smoke"]
+        app.launch()
+        let status = app.staticTexts["native-codex-status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 20))
+        let terminal = NSPredicate(format: "label BEGINSWITH 'ready:' OR label BEGINSWITH 'failed:'")
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: terminal, object: status)], timeout: 90)
+        capture("native-codex-startup")
+        XCTAssertEqual(result, .completed, "Native startup timed out: \(status.label)")
+        XCTAssertTrue(status.label.hasPrefix("ready:"), status.label)
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

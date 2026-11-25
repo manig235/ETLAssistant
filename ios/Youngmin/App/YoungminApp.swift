@@ -24,7 +24,15 @@ struct YoungminApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                #if DEBUG && YOUNGMIN_NATIVE_CODEX
+                if ProcessInfo.processInfo.arguments.contains("--native-codex-smoke") {
+                    NativeCodexSmokeView(client: app.auth.codex)
+                } else { RootView() }
+                #else
+                RootView()
+                #endif
+            }
                 .environment(app)
                 .preferredColorScheme(appearance.mode.colorScheme)
                 .tint(YMColor.brandPrimary)
