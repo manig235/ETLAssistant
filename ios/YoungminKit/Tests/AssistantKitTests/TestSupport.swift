@@ -15,28 +15,43 @@ final class Counter: @unchecked Sendable {
 final class RequestObserver: @unchecked Sendable {
     private let lock = NSLock()
     private var seen = Set<String>()
-    private var queue: [WriteApprovalGate.Request] = []
+    private let stream: AsyncStream<WriteApprovalGate.Request>
+    private let continuation: AsyncStream<WriteApprovalGate.Request>.Continuation
     private weak var gate: WriteApprovalGate?
 
     init(_ gate: WriteApprovalGate) {
+        let pair = AsyncStream<WriteApprovalGate.Request>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
         self.gate = gate
         gate.setChangeHandler { [weak self] in self?.poke() }
     }
+
+    deinit { continuation.finish() }
 
     /// 변경 알림을 한 번 더 흉내 낸다(반복 알림이 새 요청처럼 보이면 안 된다).
     func poke() {
         guard let gate else { return }
         let list = gate.pending()
-        lock.withLock { for r in list where seen.insert(r.id).inserted { queue.append(r) } }
+        lock.withLock { for r in list where seen.insert(r.id).inserted { continuation.yield(r) } }
     }
 
-    func next(timeout: TimeInterval = 2) async -> WriteApprovalGate.Request? {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if let r = lock.withLock({ queue.isEmpty ? nil : queue.removeFirst() }) { return r }
-            try? await Task.sleep(nanoseconds: 5_000_000)
+    func next(timeout: TimeInterval = 30) async -> WriteApprovalGate.Request? {
+        // 전체 테스트가 병렬로 CPU를 쓰더라도 폴링 주기에 따라 요청을 놓치지 않는다.
+        let stream = stream
+        return await withTaskGroup(of: WriteApprovalGate.Request?.self) { group in
+            group.addTask {
+                for await request in stream { return request }
+                return nil
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return nil
+            }
+            let request = await group.next() ?? nil
+            group.cancelAll()
+            return request
         }
-        return nil
     }
 }
 
