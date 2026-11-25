@@ -9,6 +9,7 @@ on:
       - '.github/scripts/ios-device-ipa.sh'
       - '.github/scripts/package-device-ipa.py'
       - 'scripts/test-ios-device-ipa.py'
+      - '.github/scripts/check-privacy-manifests.py'
 
 permissions:
   contents: read

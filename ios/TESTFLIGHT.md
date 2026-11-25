@@ -32,7 +32,7 @@ JavaScriptCore의 비공개 실행 시간 제한 함수 대신 앱에 소스로 
 - Apple Developer Program 가입 및 App Store Connect 앱 등록.
 - 배포용 Bundle ID·개발 팀·배포 인증서·프로비저닝 프로파일·필요한 App Group 권한 설정.
 - 배포 서명한 Release archive와 App Store Connect 업로드 인증. 현재 Actions의 서명 없는 IPA는 Windows Sideloadly 설치용이며 TestFlight에 그대로 업로드할 수 없다.
-- 앱과 확장에 설정 저장·앱 파일/사용자 선택 파일 메타데이터·타이머의 required reason API 선언을 포함했다. 최종 서명 archive에서 실제 API 사용과 개인정보 공개 내용을 다시 확인한다. [Apple 문서](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
+- 앱과 확장에 설정 저장·앱 파일/사용자 선택 파일 메타데이터·타이머의 required reason API 선언을 포함했다. 앱은 내장 Codex 정적 라이브러리(SQLite·Rust `nix`)가 `statfs`/`fstatfs`/`fstatvfs`를 import하므로 디스크 공간(E174.1)도 선언한다(실제 쓰임은 파일 시스템 종류 확인이라 딱 맞는 이유가 없어 가장 가까운 것을 골랐다). CI의 `.github/scripts/check-privacy-manifests.py`가 각 .app/.appex의 매니페스트 유무와 `plutil -lint`, Mach-O import·selector 기준 미선언 범주를 검사한다. 최종 서명 archive에서 실제 API 사용과 개인정보 공개 내용을 다시 확인한다. [Apple 문서](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 - 앱 정보·아이콘·스크린샷·개인정보 공개 내용·지원/개인정보 URL·암호화 관련 질문과 베타 심사 정보 작성.
 - 심사 메모에 가상 eTL 진입 절차와 채팅에 OpenAI 로그인이 필요하다는 점을 설명한다. 검증에 전용 계정이 필요하면 승인된 전용 테스트 계정을 App Store Connect 심사 정보에 제공한다. 실제 학교 계정이나 자격 증명을 소스·아티팩트에 넣지 않는다.
 
