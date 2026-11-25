@@ -21,6 +21,7 @@ struct Bridge {
     commands: async_mpsc::Sender<Value>,
     events: Mutex<mpsc::Receiver<String>>,
     failed: Arc<AtomicBool>,
+    failure_reported: AtomicBool,
 }
 static NEXT: AtomicU64 = AtomicU64::new(1);
 static HANDLES: OnceLock<Mutex<HashMap<u64, Arc<Bridge>>>> = OnceLock::new();
@@ -68,6 +69,7 @@ pub unsafe extern "C" fn ym_codex_start(home: *const c_char, workspace: *const c
         commands: command_tx,
         events: Mutex::new(event_rx),
         failed: failed.clone(),
+        failure_reported: AtomicBool::new(false),
     });
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let Ok(mut table) = handles().lock() else {
@@ -145,7 +147,9 @@ pub extern "C" fn ym_codex_poll(id: u64) -> *mut c_char {
     let Some(bridge) = handle(id) else {
         return std::ptr::null_mut();
     };
-    let value = if bridge.failed.swap(false, Ordering::AcqRel) {
+    let value = if bridge.failed.load(Ordering::Acquire)
+        && !bridge.failure_reported.swap(true, Ordering::AcqRel)
+    {
         json!({"method":"youngmin/fatal","params":{"message":"Codex 이벤트 수신이 지연됐어요. 앱을 다시 열어 주세요"}}).to_string()
     } else {
         let Ok(events) = bridge.events.lock() else {

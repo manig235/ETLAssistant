@@ -90,6 +90,10 @@ public actor CodexEngine {
                 let method = event["method"]?.string ?? ""
                 let p = event["params"] ?? [:]
                 if method == "youngmin/fatal" { throw CodexError(p["message"]?.string ?? "Codex 실행이 중단됐어요") }
+                if let requestID = event["id"], p["threadId"] == nil {
+                    try await client.reject(id: requestID, message: "이 iOS 앱에서 지원하지 않는 요청입니다")
+                    continue
+                }
                 guard p["threadId"]?.string == id else { continue }
                 if let eventTurn = p["turnId"]?.string, let turnID, eventTurn != turnID { continue }
                 switch method {
