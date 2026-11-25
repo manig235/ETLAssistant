@@ -22,7 +22,7 @@ Actions → **iOS Native Codex IPA** → **Run workflow**. 빠른 기기 테스�
 1. 빠른 빌드는 Rust 최적화와 이 작업 안의 중복 Swift 테스트를 생략한다. Swift 로직 검증은 별도 iOS CI에서 실행한다.
 2. Android와 같은 Codex `rust-v0.170.0`의 커밋 `29eb79e9866b3262a777fdf8195c1b9e63684c91`을 SHA-256 검증 후 받는다.
 3. QuickJS 실행기와 Codex 세션·도구 delegate 연결 테스트가 통과하면, Rust 1.95.0으로 iOS arm64용 정적 라이브러리를 빌드한다.
-4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 Release 구성 build 26 IPA를 만든다.
+4. 커밋된 Release 구성(`ios/Config/NativeCodex.xcconfig`, 앱 타깃만 `YOUNGMIN_NATIVE_CODEX`)으로 연결하고, 서명하지 않은 IPA를 만든다. 스크립트가 엔진 설정을 따로 넣지 않는다.
 5. 성공하면 아티팩트의 `Youngmin-iPad-test.ipa` 한 파일을 Windows Sideloadly로 설치한다. 바깥쪽 ZIP으로 다시 묶지 않고 업로드한다. 설치 과정은 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)를 따른다.
 
 기기용 IPA 생성을 우선한다. 추가 네이티브 시뮬레이터 실행 검증은 별도로 진행할 수 있으며, 새 실행기의 실제 SNU 로그인·채팅은 사용자 iPad에서 다시 확인해야 한다.
@@ -57,4 +57,4 @@ QuickJS 2026-06-04의 MIT 소스를 `javascript/vendor/quickjs`에 포함했다.
 
 `check-ios-private-apis.py`가 이전 JavaScriptCore SPI 두 개가 소스와 최종 실행 파일의 import에 남아 있지 않은지 검사한다. 이 검사는 알려진 두 함수의 재유입 검사이며 앱 전체의 App Review 적합성 인증은 아니다.
 
-가상 eTL 사용법과 TestFlight에 남은 준비는 [TESTFLIGHT.md](TESTFLIGHT.md)를 따른다.
+Release 구성은 항상 이 엔진을 포함한다. 엔진 없이 Release를 빌드하면 실패한다. 서명 archive·TestFlight 업로드(**iOS Release Archive** 워크플로)와 가상 eTL 사용법은 [TESTFLIGHT.md](TESTFLIGHT.md)를 따른다.

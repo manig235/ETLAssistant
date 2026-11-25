@@ -103,4 +103,4 @@ macOS에서 CI와 같은 명령을 실행하려면 저장소 루트에서 `bash 
 
 - **서명:** 세 타깃(Youngmin, YoungminWidgets, YoungminShare)의 Signing & Capabilities에서 Team을 지정한다. 번들 ID나 App Group이 이미 쓰이고 있으면 세 타깃 모두 같은 규칙으로 바꾼다.
 - **무료 Apple ID:** 본인 기기에만 설치할 수 있고, 7일마다 다시 설치해야 한다.
-- **다른 사람에게 배포:** Apple Developer Program 계정으로 Archive를 만들어 TestFlight나 App Store에 올린다.
+- **다른 사람에게 배포:** Apple Developer Program 계정으로 서명한 Release archive를 TestFlight에 올린다. Release는 항상 내장 Codex 엔진을 포함하므로 먼저 엔진을 빌드해야 한다. **Actions → iOS Release Archive**와 필요한 Apple 설정·Secrets는 [TESTFLIGHT.md](TESTFLIGHT.md)에 있다.
