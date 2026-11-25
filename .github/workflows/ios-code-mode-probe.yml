@@ -33,10 +33,10 @@ jobs:
           sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           swiftc -swift-version 5 -sdk "$sdk" -target x86_64-apple-ios17.0-simulator ios/NativeCodex/JavaScriptCoreProbe.swift -o ios-javascript-probe/ios-probe
           simulator="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; print(next(d["udid"] for k,v in json.load(sys.stdin)["devices"].items() if ".iOS-" in k for d in v if d.get("isAvailable") and d["name"].startswith("iPhone")))')"
+          printf '%s\n' "$simulator" > ios-javascript-probe/simulator-id
           xcrun simctl boot "$simulator"
           xcrun simctl bootstatus "$simulator" -b
           xcrun simctl spawn "$simulator" "$PWD/ios-javascript-probe/ios-probe" | tee ios-javascript-probe/ios.log
-          printf '%s\n' "$simulator" > ios-javascript-probe/simulator-id
       - name: Test JavaScript execution and cancellation inside iOS Simulator
         run: |
           set -o pipefail
@@ -50,6 +50,14 @@ jobs:
           export SDKROOT="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           export IPHONEOS_DEPLOYMENT_TARGET=17.0
           cargo +1.95.0 test --locked --manifest-path ios/NativeCodex/javascript/Cargo.toml --target x86_64-apple-ios -- --test-threads=1 2>&1 | tee ios-javascript-probe/rust-ios.log
+      - name: Shut down the simulator
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          if [[ -f ios-javascript-probe/simulator-id ]]; then
+            xcrun simctl shutdown "$(cat ios-javascript-probe/simulator-id)"
+          fi
       - name: Upload probe logs
         if: always()
         continue-on-error: true
