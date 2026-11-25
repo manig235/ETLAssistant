@@ -2,6 +2,14 @@ name: iOS Codex Runtime Probe
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: Mac runner (Intel also cross-compiles native arm64 iOS)
+        type: choice
+        default: macos-26-intel
+        options:
+          - macos-26-intel
+          - macos-26
 
 permissions:
   contents: read
@@ -12,7 +20,7 @@ concurrency:
 
 jobs:
   check-native-runtime:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
@@ -25,8 +33,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh') }}
-          restore-keys: ios-codex-170-ios-arm64-
+          key: ios-codex-170-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh') }}
+          restore-keys: ios-codex-170-${{ runner.arch }}-ios-arm64-
       - name: Compile the official in-process app server for iOS
         run: bash .github/scripts/ios-codex-probe.sh
       - name: Upload native build diagnostics
