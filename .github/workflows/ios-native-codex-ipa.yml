@@ -2,12 +2,17 @@ name: iOS Native Codex IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      fast:
+        description: 빠른 iPad 설치 테스트용 빌드
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-native-codex-ipa-${{ github.ref }}
+  group: ios-native-codex-ipa-${{ inputs.fast && 'test' || 'optimized' }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -26,30 +31,28 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-device-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
           restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
       - name: Build the embedded official Codex library
         env:
           CODEX_PROBE_COMPONENT: bridge
           CODEX_PROBE_OPERATION: build
+          CODEX_NATIVE_OPT_LEVEL: ${{ inputs.fast && '0' || '1' }}
         run: bash .github/scripts/ios-codex-probe.sh
       - name: Test Swift authentication transport and chat integration
+        if: ${{ !inputs.fast }}
         run: swift test --package-path ios/YoungminKit
       - name: Build native-login IPA
         env:
           YOUNGMIN_USE_NATIVE_CODEX: '1'
         run: bash .github/scripts/ios-device-ipa.sh
-      - name: Upload the app and installation instructions
+      - name: Prepare one iPad installation file
+        run: cp ios-device-output/Youngmin-unsigned.ipa ios-device-output/Youngmin-iPad-test.ipa
+      - name: Upload iPad test IPA directly
         uses: actions/upload-artifact@v7
         with:
-          name: youngmin-native-codex-ipa-${{ github.run_attempt }}
-          path: |
-            ios-device-output/Youngmin-unsigned.ipa
-            ios-device-output/Youngmin-unsigned.ipa.sha256
-            ios-device-output/Youngmin-unsigned.json
-            ios-device-output/INSTALL-WINDOWS.md
-            ios/NativeCodex/Generated/*LICENSE*
-            ios/NativeCodex/Generated/*NOTICE*
+          path: ios-device-output/Youngmin-iPad-test.ipa
+          archive: false
           if-no-files-found: error
           retention-days: 7
       - name: Save diagnostics
@@ -64,53 +67,6 @@ jobs:
             ios-device-output/*.json
           retention-days: 7
       - name: Save native compilation cache
-        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
-
-  native-simulator-tests:
-    runs-on: macos-26-intel
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Restore compiled native dependencies
-        id: rust-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-simulator-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
-          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
-      - name: Build the simulator native library
-        env:
-          CODEX_PROBE_COMPONENT: bridge
-          CODEX_PROBE_OPERATION: build
-          CODEX_PROBE_PLATFORM: simulator
-        run: bash .github/scripts/ios-codex-probe.sh
-      - name: Exercise the native engine and app UI
-        env:
-          YOUNGMIN_USE_NATIVE_CODEX: '1'
-        run: bash .github/scripts/ios-simulator.sh
-      - name: Save native simulator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-native-codex-simulator-${{ github.run_attempt }}
-          path: |
-            ios-codex-probe/*.log
-            ios-codex-probe/*.txt
-            ios-test-results/
-          retention-days: 7
-      - name: Save simulator compilation cache
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:

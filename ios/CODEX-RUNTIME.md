@@ -14,15 +14,15 @@
 
 ## 네이티브 설치용 IPA
 
-Actions → **iOS Native Codex IPA** → **Run workflow**.
+Actions → **iOS Native Codex IPA** → **Run workflow**. 빠른 기기 테스트 옵션이 기본이다.
 
-1. Swift 테스트를 실행한다.
+1. 빠른 빌드는 Rust 최적화와 이 작업 안의 중복 Swift 테스트를 생략한다. Swift 로직 검증은 별도 iOS CI에서 실행한다.
 2. Android와 같은 Codex `rust-v0.170.0`의 커밋 `29eb79e9866b3262a777fdf8195c1b9e63684c91`을 SHA-256 검증 후 받는다.
 3. Rust 1.95.0으로 iOS arm64용 정적 라이브러리를 빌드한다.
 4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 build 23 IPA를 만든다.
-5. 성공하면 `youngmin-native-codex-ipa-*` 아티팩트의 `Youngmin-unsigned.ipa`를 Windows Sideloadly로 설치한다. 설치 과정은 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)를 따른다.
+5. 성공하면 아티팩트의 `Youngmin-iPad-test.ipa` 한 파일을 Windows Sideloadly로 설치한다. 바깥쪽 ZIP으로 다시 묶지 않고 업로드한다. 설치 과정은 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)를 따른다.
 
-병렬 시뮬레이터 작업은 내장 엔진으로 로그인 전 계정 상태와 모델 목록을 읽고, 샘플 화면을 탐색한다. 실제 사용자 토큰이나 SNU 계정은 CI에 전달하지 않는다.
+기기용 IPA 생성을 우선한다. 추가 네이티브 시뮬레이터 실행 검증은 별도로 진행할 수 있으며, 실제 SNU 로그인은 사용자 iPad에서 확인해야 한다.
 
 빌드에는 Apple 개발자 계정이나 사용자 ChatGPT 토큰이 필요 없다. 실제 로그인은 설치한 iPad의 공식 OpenAI 로그인 페이지에서 진행한다. 학교 워크스페이스 정책은 그대로 적용된다.
 

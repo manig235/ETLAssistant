@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 mkdir -p ios-test-results
 xcodebuild -version | tee ios-test-results/toolchain.log
+git rev-parse HEAD > ios-test-results/revision.log
 xcrun simctl list devices available --json > ios-test-results/devices.json
 
 # Use an installed iPhone from the newest available iOS runtime. Do not
@@ -42,11 +43,12 @@ xcrun simctl status_bar "$simulator_id" override --time '9:41' --batteryState ch
 native_args=('YOUNGMIN_NATIVE_CONDITIONS=' '-skip-testing:YoungminUITests/YoungminUITests/testNativeCodexStartup')
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
   test -f "ios/NativeCodex/Generated/iphonesimulator/$(uname -m)/libyoungmin_codex_bridge.a"
+  native_system_libs="$(cat "ios/NativeCodex/Generated/iphonesimulator/$(uname -m)/native-static-libs.txt")"
   native_args=(
     'YOUNGMIN_NATIVE_CONDITIONS=YOUNGMIN_NATIVE_CODEX'
     'YOUNGMIN_NATIVE_BRIDGING_HEADER=$(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h'
     'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
-    'YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -lc++ -lz -liconv -framework Security -framework SystemConfiguration -framework CoreFoundation -framework Foundation -framework Network'
+    "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge $native_system_libs"
   )
 fi
 xcodebuild test \

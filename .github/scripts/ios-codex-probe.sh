@@ -58,22 +58,26 @@ fi
 if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   test "$PACKAGE" == youngmin-codex-bridge
   # Keep iteration builds reasonably small without release LTO costs.
-  export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=1
+  export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL="${CODEX_NATIVE_OPT_LEVEL:-1}"
   if [[ "$SDK" == iphonesimulator ]]; then export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=0; fi
   export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
-  cargo +"$TOOLCHAIN" build --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small \
+  cargo +"$TOOLCHAIN" rustc --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small -- --print native-static-libs \
     2>&1 | tee "$OUT/cargo-build.log"
   GENERATED="$ROOT/ios/NativeCodex/Generated/$SDK/$ARCH"
   mkdir -p "$GENERATED"
+  native_libs="$(sed -n 's/^note: native-static-libs: //p' "$OUT/cargo-build.log" | tail -n 1)"
+  if [[ -z "$native_libs" ]]; then echo 'Rust did not report its required native system libraries.' >&2; exit 1; fi
+  printf '%s\n' "$native_libs" > "$GENERATED/native-static-libs.txt"
   cp "target/$TARGET/dev-small/libyoungmin_codex_bridge.a" "$GENERATED/"
   cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"
   cp "$SOURCE/youngmin-vendor/mxc/LICENSE" "$ROOT/ios/NativeCodex/Generated/MXC-LICENSE.txt"
   if [[ -f "$SOURCE/NOTICE" ]]; then cp "$SOURCE/NOTICE" "$ROOT/ios/NativeCodex/Generated/Codex-NOTICE.txt"; fi
+  printf 'Built %s static library for %s.\n' "$PACKAGE" "$TARGET" > "$OUT/result.txt"
 else
   cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \
     2>&1 | tee "$OUT/cargo-check.log"
+  printf 'Official Codex app-server library passed cargo check for %s.\n' "$TARGET" > "$OUT/result.txt"
 fi
-printf 'Official Codex app-server library passed cargo check for %s.\n' "$TARGET" > "$OUT/result.txt"
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   cat "$OUT/result.txt" >> "$GITHUB_STEP_SUMMARY"
   printf '\nThis checks compilation only. Linking, device execution, Keychain authentication and tool calls still need verification.\n' >> "$GITHUB_STEP_SUMMARY"

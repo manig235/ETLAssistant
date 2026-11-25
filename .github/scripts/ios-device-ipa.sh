@@ -10,11 +10,12 @@ device_derived="${RUNNER_TEMP:-/tmp}/youngmin-device-derived"
 native_args=('YOUNGMIN_NATIVE_CONDITIONS=')
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
   test -f ios/NativeCodex/Generated/iphoneos/arm64/libyoungmin_codex_bridge.a
+  native_system_libs="$(cat ios/NativeCodex/Generated/iphoneos/arm64/native-static-libs.txt)"
   native_args=(
     'YOUNGMIN_NATIVE_CONDITIONS=YOUNGMIN_NATIVE_CODEX'
     'YOUNGMIN_NATIVE_BRIDGING_HEADER=$(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h'
     'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
-    'YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -lc++ -lz -liconv -framework Security -framework SystemConfiguration -framework CoreFoundation -framework Foundation -framework Network'
+    "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge $native_system_libs"
     'INFOPLIST_KEY_YoungminAuthEngine=codex-in-process'
     'INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91'
     'CURRENT_PROJECT_VERSION=23'
