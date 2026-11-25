@@ -55,19 +55,9 @@ struct YoungminApp: App {
 private struct AppSessionView: View {
     let app: AppState
     @State private var appearance = AppAppearanceStore.shared
+
     var body: some View {
-        Group {
-            #if DEBUG && YOUNGMIN_NATIVE_CODEX
-            if ProcessInfo.processInfo.arguments.contains("--native-codex-smoke") {
-                NativeCodexSmokeView(client: app.auth.codex)
-            } else { RootView() }
-            #else
-            RootView()
-            #endif
-        }
-        .environment(app)
-        .preferredColorScheme(appearance.mode.colorScheme)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        VStack(spacing: 0) {
             if StudyDataProfile.isDemo {
                 Text("가상 eTL · 채팅은 실제 ChatGPT 계정을 사용해요")
                     .font(YMFont.caption1Regular)
@@ -76,7 +66,18 @@ private struct AppSessionView: View {
                     .background(YMColor.bannerBackground)
                     .accessibilityIdentifier("fake-etl-banner")
             }
+            Group {
+                #if DEBUG && YOUNGMIN_NATIVE_CODEX
+                if ProcessInfo.processInfo.arguments.contains("--native-codex-smoke") {
+                    NativeCodexSmokeView(client: app.auth.codex)
+                } else { RootView() }
+                #else
+                RootView()
+                #endif
+            }
         }
+        .environment(app)
+        .preferredColorScheme(appearance.mode.colorScheme)
         .task { AppWiring.start(app: app) }
         .onOpenURL { url in HomeWidgetBridge.handle(url, app: app) }
     }

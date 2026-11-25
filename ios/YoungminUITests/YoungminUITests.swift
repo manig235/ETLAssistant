@@ -74,6 +74,9 @@ final class YoungminUITests: XCTestCase {
         app.buttons["대화 목록"].tap()
         app.buttons["내 일정"].tap()
         XCTAssertTrue(app.staticTexts["RC 회로 과제"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertGreaterThanOrEqual(app.buttons["뒤로"].frame.minY,
+                                    app.staticTexts["fake-etl-banner"].frame.maxY - 1,
+                                    "The fake-data banner must not cover the navigation controls")
         capture("fake-etl-schedule")
         app.buttons["뒤로"].tap()
         app.buttons["설정"].tap()
