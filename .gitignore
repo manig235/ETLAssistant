@@ -31,3 +31,5 @@ DerivedData/
 .swiftpm/
 *.xcresult
 /ios-test-results/
+/ios-device-output/
+__pycache__/

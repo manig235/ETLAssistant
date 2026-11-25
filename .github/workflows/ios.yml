@@ -7,7 +7,7 @@ on:
       - '.github/workflows/ios.yml'
       - '.github/scripts/ios-simulator.sh'
   push:
-    branches: [main, ios-port, 'codex/ios-*']
+    branches: [main, ios-port]
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
@@ -18,7 +18,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-${{ github.ref }}
+  # A manual run should not cancel the automatic check of the same branch.
+  group: ios-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,7 +27,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Toolchain
@@ -40,7 +41,7 @@ jobs:
           swift test --package-path ios/YoungminKit 2>&1 | tee ios-test-results/swift-test.log
       - name: Save logic test log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-logic-tests-${{ github.run_attempt }}
           path: ios-test-results/
@@ -50,7 +51,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Run app UI tests on an iPhone simulator
@@ -58,14 +59,14 @@ jobs:
       - name: Export UI screenshots and diagnostics
         if: always()
         run: |
-          if [ -d ios-test-results/Youngmin.xcresult ]; then
+          if [ -f ios-test-results/Youngmin.xcresult/Info.plist ]; then
             xcrun xcresulttool export attachments \
               --path ios-test-results/Youngmin.xcresult \
               --output-path ios-test-results/attachments
           fi
       - name: Save simulator test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-simulator-tests-${{ github.run_attempt }}
           path: ios-test-results/

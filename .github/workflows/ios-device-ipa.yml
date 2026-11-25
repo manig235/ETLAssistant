@@ -1,0 +1,51 @@
+name: iOS Device IPA
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-device-ipa.yml'
+      - '.github/scripts/ios-device-ipa.sh'
+      - '.github/scripts/package-device-ipa.py'
+      - 'scripts/test-ios-device-ipa.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-device-ipa-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-device-ipa:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check IPA packaging rules
+        run: python3 scripts/test-ios-device-ipa.py
+      - name: Build an unsigned app for iPhone and iPad installation
+        run: bash .github/scripts/ios-device-ipa.sh
+      - name: Upload IPA and Windows installation guide
+        uses: actions/upload-artifact@v7
+        with:
+          name: youngmin-device-ipa-${{ github.run_attempt }}
+          path: |
+            ios-device-output/Youngmin-unsigned.ipa
+            ios-device-output/Youngmin-unsigned.ipa.sha256
+            ios-device-output/Youngmin-unsigned.json
+            ios-device-output/INSTALL-WINDOWS.md
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save device build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-device-build-logs-${{ github.run_attempt }}
+          path: |
+            ios-device-output/*.log
+            ios-device-output/*.json
+          retention-days: 7

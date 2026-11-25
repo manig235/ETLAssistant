@@ -26,8 +26,9 @@ cd ios && xcodebuild -project Youngmin.xcodeproj -scheme Youngmin -destination '
 저장소의 **Actions → iOS**에서 로직 테스트와 iPhone 시뮬레이터 UI 테스트 결과를 확인한다.
 macOS 실행 환경은 GitHub에서 제공하므로 개인 맥, Apple 계정, 서명 인증서, Apple Developer Program 가입은 필요 없다.
 
-- `ios/` 변경 PR과 `main`, `ios-port`, `codex/ios-*` 브랜치의 push에서 자동 실행한다.
+- `ios/` 변경 PR과 `main`, `ios-port` 브랜치의 push에서 자동 실행한다. 작업 브랜치에서는 PR 검사로 실행해 push와 PR의 중복 검사를 피한다.
 - 수동 실행은 **Actions → iOS → Run workflow**에서 브랜치를 선택한다. 버튼은 워크플로가 기본 브랜치(`main`)에도 있어야 나타난다. 머지 전에는 PR의 **Checks**에서 자동 실행 결과를 본다.
+- 자동 실행과 수동 실행은 서로 취소하지 않는다. 같은 종류·같은 브랜치에서 다시 실행하면 최신 실행을 남기고 이전 실행을 취소하므로, `Canceling since a higher priority waiting request…` / `The operation was canceled` 표시는 코드 테스트 실패와 구분해서 본다. macOS 대기 시간 안내는 GitHub 실행 환경의 용량 안내다.
 - `logic-tests`: `YoungminKit`의 전체 Swift 테스트를 실행한다.
 - `simulator-tests`: 설치된 최신 iOS 런타임의 iPhone을 골라 앱·위젯·공유 확장을 빌드하고 앱의 UI 테스트를 실행한다.
 - UI 테스트는 새 시뮬레이터에서 환영 화면 → **샘플 데이터로 둘러보기** → 채팅 → 다크/라이트 전환 → 설정 → 내 일정 → 시간표 → 알림 기록을 확인한다. 실제 eTL/OpenAI 계정이나 네트워크 응답을 검증하는 테스트는 아니다.
@@ -97,6 +98,8 @@ macOS에서 CI와 같은 명령을 실행하려면 저장소 루트에서 `bash 
   - 백그라운드 장기 동작
 
 ## 기기 설치·배포
+
+- **Windows PC로 본인 아이패드·아이폰에 설치:** [Windows 설치 안내](INSTALL-WINDOWS.md). **Actions → iOS Device IPA**에서 기기용 unsigned IPA를 받고 Sideloadly로 서명·설치한다. 이 테스트 패키지는 앱 본체만 포함하며 위젯·공유 확장은 제외한다.
 
 - **서명:** 세 타깃(Youngmin, YoungminWidgets, YoungminShare)의 Signing & Capabilities에서 Team을 지정한다. 번들 ID나 App Group이 이미 쓰이고 있으면 세 타깃 모두 같은 규칙으로 바꾼다.
 - **무료 Apple ID:** 본인 기기에만 설치할 수 있고, 7일마다 다시 설치해야 한다.
