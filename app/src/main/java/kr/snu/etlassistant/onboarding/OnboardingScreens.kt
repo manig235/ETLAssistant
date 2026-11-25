@@ -112,7 +112,7 @@ fun OnboardingRoot(vm: OnboardingViewModel, a: OnboardingActions) {
                 .systemBarsPadding()
                 .imePadding()
         ) {
-            TopProgress(vm)
+            TopProgress(vm.step) { vm.goBack() }
             AnimatedContent(
                 targetState = vm.step,
                 transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
@@ -120,7 +120,7 @@ fun OnboardingRoot(vm: OnboardingViewModel, a: OnboardingActions) {
                 label = "step",
             ) { step ->
                 when (step) {
-                    Step.WELCOME -> WelcomeStep(vm)
+                    Step.WELCOME -> WelcomeStep { vm.goNext() }
                     Step.TOKEN -> TokenStep(vm, a)
                     Step.LOGIN -> LoginStep(vm, a)
                     Step.NOTIFY -> NotifyStep(vm, a)
@@ -131,8 +131,27 @@ fun OnboardingRoot(vm: OnboardingViewModel, a: OnboardingActions) {
     }
 }
 
+/**
+ * 환영 단계만 그린다(디버그 빌드의 미리보기 화면용). 뷰모델을 만들지 않으므로 완료 여부나 저장된 설정을 바꾸지 않는다.
+ * 틀은 [OnboardingRoot]와 같다.
+ */
 @Composable
-private fun TopProgress(vm: OnboardingViewModel) {
+internal fun OnboardingWelcomeOnly(onStart: () -> Unit) {
+    DesignSystemTheme {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(DesignSystemTheme.colors.backgroundNeutralPrimary)
+                .systemBarsPadding()
+        ) {
+            TopProgress(Step.WELCOME) {}
+            Box(Modifier.weight(1f)) { WelcomeStep(onStart) }
+        }
+    }
+}
+
+@Composable
+private fun TopProgress(step: Step, onBack: () -> Unit) {
     val c = DesignSystemTheme.colors
     Row(
         Modifier
@@ -141,15 +160,15 @@ private fun TopProgress(vm: OnboardingViewModel) {
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (vm.step != Step.WELCOME) {
-            IconButton(onClick = { vm.goBack() }) {
+        if (step != Step.WELCOME) {
+            IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "이전", tint = c.foregroundNeutralPrimary)
             }
         } else {
             Spacer(Modifier.width(48.dp))
         }
         Box(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            WantedLinearProgressIndicator(currentProgress = OnboardingLogic.progress(vm.step), modifier = Modifier.fillMaxWidth())
+            WantedLinearProgressIndicator(currentProgress = OnboardingLogic.progress(step), modifier = Modifier.fillMaxWidth())
         }
         Spacer(Modifier.width(48.dp))
     }
@@ -261,7 +280,7 @@ private fun StatusCard(text: String, positive: Boolean = true) {
 // ---- 1. 환영 ----------------------------------------------------------------
 
 @Composable
-private fun WelcomeStep(vm: OnboardingViewModel) {
+private fun WelcomeStep(onStart: () -> Unit) {
     val context = LocalContext.current
     StepFrame(
         title = "안녕하세요,\n영민이예요",
@@ -280,7 +299,7 @@ private fun WelcomeStep(vm: OnboardingViewModel) {
             BrandWordmark(Modifier.align(Alignment.CenterHorizontally).clearAndSetSemantics { })
             Spacer(Modifier.height(20.dp))
         },
-        bottom = { PrimaryButton("시작하기") { vm.goNext() } },
+        bottom = { PrimaryButton("시작하기", onClick = onStart) },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             FeatureRow(Icons.Outlined.NotificationsNone, "마감·공지 알림", "마감이 다가오면 미리 알려드려요")
