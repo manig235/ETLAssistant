@@ -1,0 +1,26 @@
+// The embedded official Codex engine (ios/CODEX-RUNTIME.md).
+//
+// This file is the base configuration of the Youngmin app target's Release
+// configuration, so every Release build and archive links the engine; there is
+// no fallback to the Swift-only path. If the generated static library is
+// missing, linking fails ("library not found for -lyoungmin_codex_bridge"), and
+// App/ReleaseEngineGuard.swift fails compilation if these conditions are
+// overridden away. Build the library first:
+//   CODEX_PROBE_COMPONENT=bridge CODEX_PROBE_OPERATION=build bash .github/scripts/ios-codex-probe.sh
+//
+// Debug builds opt in with `xcodebuild -xcconfig ios/Config/NativeCodex.xcconfig`.
+// Only the app target reads YOUNGMIN_*; extensions and tests ignore them.
+
+// Must equal REVISION in .github/scripts/ios-codex-probe.sh (checked by
+// .github/scripts/ios-release-helper.py config-check and by the archive script).
+YOUNGMIN_CODEX_SOURCE_REVISION = 29eb79e9866b3262a777fdf8195c1b9e63684c91
+YOUNGMIN_AUTH_ENGINE = codex-in-process
+YOUNGMIN_CODE_MODE_RUNTIME = quickjs
+
+YOUNGMIN_NATIVE_CONDITIONS = YOUNGMIN_NATIVE_CODEX
+YOUNGMIN_NATIVE_BRIDGING_HEADER = $(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h
+YOUNGMIN_NATIVE_LIBRARY_PATH = $(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)
+// Must cover every library Rust reports (ios/NativeCodex/native-static-libs.txt
+// and the generated copy); the archive script fails if one is missing.
+YOUNGMIN_NATIVE_SYSTEM_LIBS = -framework UIKit -framework UserNotifications -framework CoreData -framework CoreLocation -framework CoreText -framework CoreImage -framework CloudKit -framework QuartzCore -framework CoreGraphics -framework Foundation -framework CoreFoundation -framework Security -lobjc -liconv -lSystem -lc -lm
+YOUNGMIN_NATIVE_LDFLAGS = -lyoungmin_codex_bridge $(YOUNGMIN_NATIVE_SYSTEM_LIBS)

@@ -9,20 +9,15 @@ xcodebuild -version | tee ios-device-output/toolchain.log
 git rev-parse HEAD | tee ios-device-output/revision.log
 
 device_derived="${RUNNER_TEMP:-/tmp}/youngmin-device-derived"
-native_args=('YOUNGMIN_NATIVE_CONDITIONS=')
+# Release always embeds Codex through ios/Config/NativeCodex.xcconfig. Debug can
+# opt in with the same file; no engine settings are duplicated here.
+native_args=()
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
-  test -f ios/NativeCodex/Generated/iphoneos/arm64/libyoungmin_codex_bridge.a
-  native_system_libs="$(cat ios/NativeCodex/Generated/iphoneos/arm64/native-static-libs.txt)"
-  native_args=(
-    'YOUNGMIN_NATIVE_CONDITIONS=YOUNGMIN_NATIVE_CODEX'
-    'YOUNGMIN_NATIVE_BRIDGING_HEADER=$(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h'
-    'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
-    "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge $native_system_libs"
-    'INFOPLIST_KEY_YoungminAuthEngine=codex-in-process'
-    'INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs'
-    'INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91'
-    'CURRENT_PROJECT_VERSION=26'
-  )
+  python3 .github/scripts/ios-release-helper.py native-check --platform iphoneos --arch arm64
+  if [[ "$build_config" == Debug ]]; then native_args=(-xcconfig ios/Config/NativeCodex.xcconfig); fi
+elif [[ "$build_config" == Release ]]; then
+  echo "Release builds always embed the native Codex engine; build it and set YOUNGMIN_USE_NATIVE_CODEX=1." >&2
+  exit 1
 fi
 xcodebuild build \
   -project ios/Youngmin.xcodeproj -scheme Youngmin \
@@ -32,16 +27,13 @@ xcodebuild build \
   ARCHS=arm64 ONLY_ACTIVE_ARCH=NO ENABLE_DEBUG_DYLIB=NO \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS= \
-  "${native_args[@]}" \
+  ${native_args[@]+"${native_args[@]}"} \
   2>&1 | tee ios-device-output/xcodebuild.log
 
 # Package a copy, keeping the normal app/extension build products intact.
+# Third-party licenses are bundled resources (ios/Youngmin/Resources/Licenses).
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
   python3 .github/scripts/check-ios-private-apis.py "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app/Youngmin"
-  cp ios/NativeCodex/Generated/*LICENSE* "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app/"
-  if compgen -G 'ios/NativeCodex/Generated/*NOTICE*' > /dev/null; then
-    cp ios/NativeCodex/Generated/*NOTICE* "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app/"
-  fi
 fi
 python3 .github/scripts/package-device-ipa.py \
   --app "$device_derived/Build/Products/$build_config-iphoneos/Youngmin.app" \

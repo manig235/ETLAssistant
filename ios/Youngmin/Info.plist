@@ -17,6 +17,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -41,5 +43,11 @@
 		<key>UIImageRespectsSafeAreaInsets</key>
 		<true/>
 	</dict>
+	<key>YoungminAuthEngine</key>
+	<string>$(YOUNGMIN_AUTH_ENGINE)</string>
+	<key>YoungminCodeModeRuntime</key>
+	<string>$(YOUNGMIN_CODE_MODE_RUNTIME)</string>
+	<key>YoungminCodexSourceRevision</key>
+	<string>$(YOUNGMIN_CODEX_SOURCE_REVISION)</string>
 </dict>
 </plist>

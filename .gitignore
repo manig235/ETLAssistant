@@ -32,6 +32,8 @@ DerivedData/
 *.xcresult
 /ios-test-results/
 /ios-device-output/
+/ios-release-output/
+ios/YoungminAppOnly.xcodeproj/
 __pycache__/
 ios-codex-probe/
 ios/NativeCodex/Generated/

@@ -1,0 +1,13 @@
+// Project-wide defaults for every target and configuration.
+//
+// The app and its extensions must report the same versions or App Store
+// Connect rejects the upload. The release archive script overrides
+// CURRENT_PROJECT_VERSION with a value that is unique per upload.
+MARKETING_VERSION = 0.3.3
+CURRENT_PROJECT_VERSION = 26
+
+// Info.plist markers (Youngmin/Info.plist). Release replaces them through
+// NativeCodex.xcconfig; Debug builds without the engine keep these values.
+YOUNGMIN_AUTH_ENGINE = swift
+YOUNGMIN_CODE_MODE_RUNTIME = none
+YOUNGMIN_CODEX_SOURCE_REVISION = none
