@@ -126,7 +126,7 @@ struct CalendarSettingsView: View {
                 }
                 SettingsSoftButton("지금 맞추기", enabled: s.enabled && !model.busy) { Task { await model.syncNow() } }
                     .padding(.top, 8)
-                SettingsCaption("끄면 \"영민이\" 캘린더를 지우거나(이 기기에만) 앱이 넣은 일정만 지워요(계정 캘린더). 앱을 그냥 지우면 넣은 일정을 정리할 수 없으니, 지우기 전에 먼저 꺼 주세요.")
+                SettingsCaption("끄면 영민이가 넣은 일정만 지워요. \"영민이\" 캘린더에 직접 넣은 일정이 있으면 캘린더는 남겨 두고 다음에 켤 때 그대로 다시 써요. 앱을 그냥 지우면 넣은 일정을 정리할 수 없으니, 지우기 전에 먼저 꺼 주세요.")
                     .padding(.top, 12)
             }
         }
@@ -367,7 +367,7 @@ final class CalendarSettingsModel {
     func setEnabled(_ on: Bool) async {
         let export = self.export
         if !on {
-            await background { export.disable() ?? "껐어요. 넣은 일정을 지웠어요" }
+            await background { export.disable() ?? CalendarExport.offMessage(keptCalendar: export.lastCleanupKeptCalendar) }
             return
         }
         guard await ensureAccess() else { return }
@@ -398,7 +398,7 @@ final class CalendarSettingsModel {
         guard await ensureAccess() else { return }
         next.enabled = true
         let moving = next
-        await background { export.switchTarget(moving) ?? "옮겼어요" }
+        await background { export.switchTarget(moving) ?? CalendarExport.switchedMessage(keptCalendar: export.lastCleanupKeptCalendar) }
     }
 
     func pickAccount() async {

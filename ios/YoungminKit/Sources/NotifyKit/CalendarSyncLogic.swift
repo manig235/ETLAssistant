@@ -747,6 +747,7 @@ public struct CalendarPermissionError: Error, Sendable {
 }
 
 /// 지우기에 성공할 때까지 넣은 일정의 소유(매핑)를 놓지 않는다. 대상을 바꿀 때 이전 일정을 버려 두지 않는다(Kotlin `CalendarCleanupPolicy`).
+/// 무엇을 지우는지는 [CalendarAppCalendarCleanup](앱 캘린더)과 매핑(계정 캘린더)이 정한다. 사용자가 넣은 일정은 지우지 않는다.
 public enum CalendarCleanupPolicy {
     public static let PERMISSION_MESSAGE = "캘린더 권한이 없어 넣은 일정을 지우지 못했어요"
 
@@ -764,4 +765,64 @@ public enum CalendarCleanupPolicy {
     }
 
     public static func switchTarget(cleanup: () -> String?, activate: () -> String?) -> String? { cleanup() ?? activate() }
+}
+
+/// 앱 캘린더("영민이")를 정리할 때 읽은 일정 하나. 반복 일정은 회차마다 따로 올 수 있다(같은 [id]).
+public struct CalendarScannedEvent: Hashable, Sendable {
+    public var id: String
+    public var url: String?
+    public var notes: String?
+
+    public init(_ id: String, url: String? = nil, notes: String? = nil) {
+        self.id = id
+        self.url = url
+        self.notes = notes
+    }
+}
+
+/// 캘린더 하나를 넓은 기간에 걸쳐 읽은 결과. [complete]가 false면(캘린더를 못 찾았거나 기간 일부를 못 읽음) 비어 있다고 믿지 않는다.
+public struct CalendarScan: Hashable, Sendable {
+    public var events: [CalendarScannedEvent]
+    public var complete: Bool
+
+    public init(_ events: [CalendarScannedEvent], complete: Bool = true) {
+        self.events = events
+        self.complete = complete
+    }
+}
+
+/// 앱 캘린더 정리 규칙(끄기·대상 바꾸기). 사용자가 앱 캘린더에 직접 넣은 일정(iCloud에 있는 "영민이" 캘린더 포함)은 절대 지우지 않는다.
+/// 1. 앱이 넣은 일정만 지운다: 매핑에 있는 일정 + 영민이 표시(주소 `youngmin://item/` 또는 설명 끝 문구)가 있는 일정.
+/// 2. 지운 뒤 다시 읽어, 넓은 기간 전체를 읽었고 앱이 넣지 않은 일정이 하나도 없을 때만 캘린더를 지운다. 확신할 수 없으면 캘린더를 남긴다
+///    (남긴 캘린더는 식별자를 기억해 다음에 켤 때 그대로 다시 쓴다).
+public enum CalendarAppCalendarCleanup {
+    /// 정리할 때 읽는 기간(지금 앞뒤로). EventKit 조회는 4년까지라 1년씩 나눠 읽는다.
+    public static let SCAN_YEARS_BACK = 30
+    public static let SCAN_YEARS_AHEAD = 30
+
+    /// 영민이가 넣은 일정인가(주소 또는 설명 끝 문구).
+    public static func isAppEvent(url: String?, notes: String?) -> Bool {
+        (url?.hasPrefix(CalendarSyncLogic.APP_URI_PREFIX) ?? false) || (notes ?? "").contains(CalendarSyncLogic.FOOTER)
+    }
+
+    public static func isAppEvent(_ e: CalendarScannedEvent) -> Bool { isAppEvent(url: e.url, notes: e.notes) }
+
+    /// 지울 일정: 매핑에 있는 일정(묘비 빼고) + 읽은 일정 중 앱이 넣은 것. 겹치지 않게, 순서는 일정하게.
+    public static func eventsToDelete(mapped: [String: CalendarSyncLogic.Entry], scan: CalendarScan?) -> [String] {
+        var seen = Set<String>()
+        let fromMapping = mapped.sorted { $0.key < $1.key }.map(\.value).filter { !$0.tombstone }.map(\.eventId)
+        let fromScan = (scan?.events ?? []).filter { isAppEvent($0) }.map(\.id)
+        return (fromMapping + fromScan).filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    /// 앱이 넣지 않은 일정 수(반복 회차는 하나로 센다).
+    public static func userEventCount(_ scan: CalendarScan?) -> Int {
+        Set((scan?.events ?? []).filter { !isAppEvent($0) }.map(\.id)).count
+    }
+
+    /// 앱 일정을 지운 뒤 다시 읽은 결과로 캘린더 자체를 지워도 되는가. 기간 전체를 읽었고 사용자 일정이 없을 때만.
+    public static func canRemoveCalendar(_ afterDelete: CalendarScan?) -> Bool {
+        guard let afterDelete, afterDelete.complete else { return false }
+        return userEventCount(afterDelete) == 0
+    }
 }

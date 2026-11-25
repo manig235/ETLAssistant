@@ -4,7 +4,8 @@ import Foundation
 /*
  * 캘린더 연동 "영민이 → 캘린더"의 맞추기 순서와 설정 저장(Kotlin `calendar/CalendarExport.kt`).
  * 기기 캘린더 읽기·쓰기는 [CalendarSyncBackend](EventKit 구현은 CalendarSyncEventKit.swift, 테스트는 메모리 가짜)가 한다.
- * - LOCAL: 앱이 만든 "영민이" 캘린더(로컬 소스, 없으면 iCloud)에 쓴다.
+ * - LOCAL: 앱이 만든 "영민이" 캘린더(로컬 소스, 없으면 iCloud)에 쓴다. 끄거나 대상을 바꾸면 앱이 넣은 일정만 지우고,
+ *   사용자가 그 캘린더에 직접 넣은 일정이 있으면 캘린더를 남긴다([CalendarAppCalendarCleanup]). 남긴 캘린더는 다음에 켤 때 다시 쓴다.
  * - GOOGLE: 사용자가 고른 계정 캘린더(iCloud·구글 등)에 쓴다(그 계정의 동기화가 서버로 올린다).
  * 네트워크는 쓰지 않는다. 권한이 없어지면 내보내기를 끄고 이유를 남긴다.
  */
@@ -43,11 +44,16 @@ public protocol CalendarSyncBackend: AnyObject, Sendable {
     func findLocalCalendar(_ known: String?) -> String?
     /// 앱 캘린더가 있는 곳([calendarId]가 nil이면 새로 만들 곳).
     func localPlacement(_ calendarId: String?) -> CalendarLocalPlacement
+    /// 다시 쓸 수 있는 "영민이" 캘린더(로컬·iCloud, 고칠 수 있음). 사용자 일정이 있어 남겨 둔 캘린더를 켤 때 다시 쓴다. 없으면 nil.
+    func reusableLocalCalendar() -> String?
     /// 앱 캘린더를 만든다. 새 식별자.
     func createLocalCalendar() throws -> String?
     /// 일정을 넣을 수 있는 캘린더([excluding](앱 캘린더)는 뺀다). "영민이"라는 이름을 앞에.
     func accountCalendars(excluding: String?) -> [CalendarExportInfo]
+    /// 캘린더를 지운다. 사용자 일정이 남아 있거나 다 읽지 못하면 지우지 않고 오류를 낸다(마지막 안전장치).
     func deleteCalendar(_ id: String) throws
+    /// [calendarId]의 일정을 넓은 기간에 걸쳐 읽는다(앱 캘린더 정리용). 캘린더가 없으면 nil.
+    func scanCalendar(_ calendarId: String, now: Date) throws -> CalendarScan?
     /// [calendarId]에서 영민이가 넣은 일정(주소 `youngmin://item/` 또는 설명 끝 문구)을 모두 지운다(매핑을 잃었을 때).
     func wipeAppEvents(_ calendarId: String, now: Date) throws
     /// 매핑된 일정 중 [calendarId]에 아직 있는 것의 지금 모양(키 → 일정). 식별자가 바뀌었으면 주소의 키로 다시 찾는다(그때 [CalRow.eventId]가 새 식별자).
@@ -103,9 +109,15 @@ public final class CalendarExportStore: @unchecked Sendable {
     }
 
     /// 내보낸 일정 식별자와 앱 캘린더 식별자(캘린더 읽기에서 영민이가 넣은 일정을 뺄 때 쓴다. EventKit을 건드리지 않는다).
+    /// 앱 캘린더는 내보내기에 쓰는 동안만 넣는다. 끈 뒤 사용자 일정이 있어 남겨 둔 캘린더는 사용자 캘린더로 본다.
     public func ownIdentifiers() -> (events: Set<String>, calendars: Set<String>) {
-        let ids = Set(loadMapping()?.entries.values.filter { !$0.tombstone }.map(\.eventId) ?? [])
-        return (ids, Set([localCalendar].compactMap { $0 }))
+        lock.withLock {
+            let mapping = loadMapping()
+            let ids = Set(mapping?.entries.values.filter { !$0.tombstone }.map(\.eventId) ?? [])
+            let s = settings()
+            let inUse = localCalendar.flatMap { id in mapping?.calendarId == id || (s.enabled && s.target == .LOCAL) ? id : nil }
+            return (events: ids, calendars: Set([inUse].compactMap { $0 }))
+        }
     }
 }
 
@@ -128,6 +140,8 @@ public final class CalendarExport: @unchecked Sendable {
     public var onChanged: (@Sendable () -> Void)?
     /// 진단 기록(Kotlin `CodexRunner.log`).
     public var log: (@Sendable (String) -> Void)?
+    /// 마지막 끄기·대상 바꾸기에서 사용자 일정이 있어 앱 캘린더를 남겼는가(화면 안내용).
+    public private(set) var lastCleanupKeptCalendar = false
 
     public init(store: CalendarExportStore = CalendarExportStore(), backend: CalendarSyncBackend, mine: MyDeadlineStore,
                 snapshot: SnapshotCache, courses: CourseFilterStore) {
@@ -336,6 +350,10 @@ public final class CalendarExport: @unchecked Sendable {
                 case .LOCAL:
                     if let id = localCalendarId() {
                         targetId = id
+                    } else if let id = backend.reusableLocalCalendar() {
+                        // 전에 끌 때 사용자 일정이 있어 남겨 둔 캘린더가 있으면 새로 만들지 않고 다시 쓴다(같은 이름 캘린더가 둘 생기지 않게).
+                        store.localCalendar = id
+                        targetId = id
                     } else if let id = try backend.createLocalCalendar() {
                         store.localCalendar = id
                         targetId = id
@@ -365,25 +383,39 @@ public final class CalendarExport: @unchecked Sendable {
         }
     }
 
-    /// 내보내기를 끈다. LOCAL이면 앱 캘린더를 통째로 지우고, GOOGLE이면 앱이 넣은 일정만 지운다.
+    /// 내보내기를 끈다. 앱이 넣은 일정만 지운다. LOCAL이면 그 뒤 "영민이" 캘린더에 사용자가 넣은 일정이 없을 때만 캘린더도 지운다.
     /// 권한이 없으면 지우지 못하고 설정만 끈다(이유를 돌려준다).
     @discardableResult
     public func disable() -> String? {
         lock.withLock {
+            lastCleanupKeptCalendar = false
             let s = store.settings()
             var off = s
             off.enabled = false
             store.saveSettings(off)
             store.clearNote()
             let r = cleanup(s)
-            store.setResult(r ?? "꺼짐 · 넣은 일정을 지웠어요")
+            store.setResult(r ?? (lastCleanupKeptCalendar ? "꺼짐 · 넣은 일정을 지웠어요(직접 넣은 일정이 있어 캘린더는 남겼어요)" : "꺼짐 · 넣은 일정을 지웠어요"))
             return r
         }
+    }
+
+    /// 끈 뒤 화면에 보일 문구.
+    public static func offMessage(keptCalendar: Bool) -> String {
+        keptCalendar
+            ? "껐어요. 영민이가 넣은 일정만 지우고, 직접 넣은 일정이 있어 \"\(DISPLAY_NAME)\" 캘린더는 남겨 뒀어요"
+            : "껐어요. 넣은 일정을 지웠어요"
+    }
+
+    /// 대상을 옮긴 뒤 화면에 보일 문구.
+    public static func switchedMessage(keptCalendar: Bool) -> String {
+        keptCalendar ? "옮겼어요. 직접 넣은 일정이 있어 \"\(DISPLAY_NAME)\" 캘린더는 남겨 뒀어요" : "옮겼어요"
     }
 
     /// 대상(LOCAL/GOOGLE, 다른 계정 캘린더)을 바꾼다: 이전 대상을 정리하고 새 대상으로 켠다.
     public func switchTarget(_ next: CalendarExportSettings) -> String? {
         lock.withLock {
+            lastCleanupKeptCalendar = false
             let cur = store.settings()
             return CalendarCleanupPolicy.switchTarget(
                 cleanup: { cur.enabled || store.loadMapping() != nil ? cleanup(cur) : nil },
@@ -396,7 +428,8 @@ public final class CalendarExport: @unchecked Sendable {
         }
     }
 
-    private func cleanup(_ s: CalendarExportSettings) -> String? {
+    /// 이전 대상에서 앱이 넣은 일정을 지운다(끄기·대상 바꾸기·켤 때 남은 매핑 정리). 사용자가 넣은 일정은 지우지 않는다.
+    private func cleanup(_ s: CalendarExportSettings, now: Date = Date()) -> String? {
         CalendarCleanupPolicy.cleanup(
             permitted: backend.permitted,
             delete: {
@@ -405,9 +438,7 @@ public final class CalendarExport: @unchecked Sendable {
                 // 꺼져 있을 때도 매핑이 실제 이전 대상을 가진다. 지금 고른 것만 보면 실패한 끄기 뒤의 일정을 버려 둘 수 있다.
                 let id = mapping?.calendarId.nilIfEmpty ?? (s.target == .LOCAL ? localId : nil)
                 if let id, id == localId {
-                    try backend.deleteCalendar(id)
-                    if backend.calendarExists(id) { throw CalendarSyncError("Calendar was not deleted") }
-                    store.localCalendar = nil
+                    try cleanupAppCalendar(id, mapping?.calendarId == id ? mapping!.entries : [:], now)
                 } else if let mapping {
                     let ids = mapping.entries.values.filter { !$0.tombstone }.map(\.eventId)
                     if !ids.isEmpty {
@@ -417,6 +448,28 @@ public final class CalendarExport: @unchecked Sendable {
                 }
             },
             forget: { store.clearMapping() })
+    }
+
+    /// 앱 캘린더: 앱이 넣은 일정(매핑 + 영민이 표시)만 지우고, 다시 읽어 사용자 일정이 없다고 확인될 때만 캘린더를 지운다.
+    /// 남긴 캘린더는 식별자를 기억해 다음에 켤 때 다시 쓴다(내보내기에 쓰지 않는 동안은 캘린더 읽기에서 사용자 캘린더로 보인다).
+    private func cleanupAppCalendar(_ id: String, _ entries: [String: CalendarSyncLogic.Entry], _ now: Date) throws {
+        let before = try backend.scanCalendar(id, now: now)
+        let ids = CalendarAppCalendarCleanup.eventsToDelete(mapped: entries, scan: before)
+        if !ids.isEmpty {
+            try backend.deleteEvents(ids)
+            if !(try backend.existing(id, ids)).isEmpty { throw CalendarSyncError("Events were not deleted") }
+        }
+        let after = try backend.scanCalendar(id, now: now)
+        if CalendarAppCalendarCleanup.canRemoveCalendar(after) {
+            try backend.deleteCalendar(id)
+            if backend.calendarExists(id) { throw CalendarSyncError("Calendar was not deleted") }
+            store.localCalendar = nil
+        } else if backend.calendarExists(id) {
+            lastCleanupKeptCalendar = true
+            log?("앱 캘린더에 사용자 일정 \(CalendarAppCalendarCleanup.userEventCount(after))개가 있어 캘린더는 남김")
+        } else {
+            store.localCalendar = nil
+        }
     }
 
     // ---- .ics ---------------------------------------------------------------------

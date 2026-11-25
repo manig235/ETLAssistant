@@ -88,6 +88,20 @@ public final class CalendarSyncEventKit: CalendarSyncBackend, @unchecked Sendabl
         }
     }
 
+    public func reusableLocalCalendar() -> String? {
+        guard permitted else { return nil }
+        return lock.withLock {
+            // 끌 때 사용자 일정이 있어 남겨 둔 "영민이" 캘린더(다시 설치해 식별자를 잃은 경우 포함). 영민이 일정이 있는 쪽을 먼저.
+            let now = Date()
+            let named = eventStore.calendars(for: .event).filter { c in
+                guard c.title == CalendarExport.DISPLAY_NAME, c.allowsContentModifications, c.type != .subscription, c.type != .birthday,
+                      let s = c.source else { return false }
+                return s.sourceType == .local || isICloud(s)
+            }
+            return (named.first { events(in: $0, around: now).contains(where: isOurs) } ?? named.first)?.calendarIdentifier
+        }
+    }
+
     public func createLocalCalendar() throws -> String? {
         try requirePermission()
         return try lock.withLock {
@@ -122,15 +136,42 @@ public final class CalendarSyncEventKit: CalendarSyncBackend, @unchecked Sendabl
         try requirePermission()
         try lock.withLock {
             guard let c = eventStore.calendar(withIdentifier: id) else { return }
+            // 마지막 안전장치: 지우기 직전에 다시 읽어 사용자 일정이 있거나 다 읽지 못했으면 캘린더를 지우지 않는다.
+            guard CalendarAppCalendarCleanup.canRemoveCalendar(scan(c, now: Date())) else {
+                throw CalendarSyncError("Calendar still has events the app did not create")
+            }
             try eventStore.removeCalendar(c, commit: true)
         }
+    }
+
+    public func scanCalendar(_ calendarId: String, now: Date) throws -> CalendarScan? {
+        try requirePermission()
+        return lock.withLock {
+            // 캘린더 앱에서 방금 넣은 일정도 보이게 붙들고 있던 것을 버리고 읽는다.
+            eventStore.reset()
+            guard let c = eventStore.calendar(withIdentifier: calendarId) else { return nil }
+            return scan(c, now: now)
+        }
+    }
+
+    /// [now] 앞뒤로 넓은 기간(1년씩)의 일정. 반복 일정은 기간 안의 회차마다 온다.
+    private func scan(_ c: EKCalendar, now: Date) -> CalendarScan {
+        let year: TimeInterval = 365 * 86_400
+        let from = now.addingTimeInterval(-Double(CalendarAppCalendarCleanup.SCAN_YEARS_BACK) * year)
+        let to = now.addingTimeInterval(Double(CalendarAppCalendarCleanup.SCAN_YEARS_AHEAD) * year)
+        var complete = true
+        let found: [CalendarScannedEvent] = events(in: c, from: from, to: to).compactMap { e in
+            guard let id = e.eventIdentifier else { complete = false; return nil }
+            return CalendarScannedEvent(id, url: e.url?.absoluteString, notes: e.notes)
+        }
+        return CalendarScan(found, complete: complete)
     }
 
     // MARK: 일정
 
     /// 영민이가 넣은 일정인가(주소 또는 설명 끝 문구).
     private func isOurs(_ e: EKEvent) -> Bool {
-        (e.url?.absoluteString.hasPrefix(CalendarSyncLogic.APP_URI_PREFIX) ?? false) || (e.notes ?? "").contains(CalendarSyncLogic.FOOTER)
+        CalendarAppCalendarCleanup.isAppEvent(url: e.url?.absoluteString, notes: e.notes)
     }
 
     private func key(of e: EKEvent) -> String? { CalendarSyncLogic.keyFromAppUri(e.url?.absoluteString) }

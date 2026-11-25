@@ -510,26 +510,72 @@ struct CalendarCleanupPolicyTests {
 
 /// 메모리 캘린더. 일정 식별자는 "ev{n}".
 final class FakeSyncBackend: CalendarSyncBackend, @unchecked Sendable {
-    struct Ev { var calendar: String; var item: CalItem; var title: String; var start: Int64; var end: Int64; var location: String }
+    struct Ev {
+        var calendar: String; var item: CalItem; var title: String; var start: Int64; var end: Int64; var location: String
+        var url: String? = nil; var notes: String? = nil
+    }
     var permitted = true
     var calendars: [String: (name: String, account: String)] = ["acc": ("개인", "iCloud")]
     var events: [String: Ev] = [:]
     var next = 1
     var failDelete = false
+    /// 정리할 때 기간 일부를 못 읽은 것처럼(캘린더가 비어 있다고 확신할 수 없음).
+    var scanIncomplete = false
+    var createdCalendars = 0
+
+    /// 사용자가 캘린더 앱에서 직접 넣은 일정(영민이 표시 없음). 식별자.
+    @discardableResult
+    func addUserEvent(_ calendar: String, _ title: String = "동아리 모임", at: Date = kst("2026-11-28T19:00")) -> String {
+        let id = "user\(next)"
+        next += 1
+        let item = CalItem("user:\(id)", title, at, at, "")
+        events[id] = Ev(calendar: calendar, item: item, title: title, start: at.epochMilli, end: at.epochMilli, location: "", url: nil, notes: "내 일정")
+        return id
+    }
+
+    /// 매핑에 없는 영민이 일정(예: 정리하다 멈춘 뒤 남은 것). 식별자.
+    @discardableResult
+    func addOrphanAppEvent(_ calendar: String, key: String = "mine:99") -> String {
+        let id = "ev\(next)"
+        next += 1
+        let at = kst("2026-11-29T23:59")
+        let item = CalItem(key, "[내 마감] 남은 일정", at, at, "")
+        events[id] = Ev(calendar: calendar, item: item, title: item.title, start: at.epochMilli, end: at.epochMilli, location: "",
+                        url: CalendarSyncLogic.appUri(key), notes: nil)
+        return id
+    }
 
     func calendarExists(_ id: String) -> Bool { calendars[id] != nil }
     func findLocalCalendar(_ known: String?) -> String? { known.flatMap { calendars[$0] != nil ? $0 : nil } }
     func localPlacement(_ calendarId: String?) -> CalendarLocalPlacement { .device }
-    func createLocalCalendar() throws -> String? { calendars["local"] = ("영민이", "나의 iPhone"); return "local" }
+    func reusableLocalCalendar() -> String? {
+        calendars.filter { $0.value.name == CalendarExport.DISPLAY_NAME }.keys.sorted().first
+    }
+    func createLocalCalendar() throws -> String? {
+        createdCalendars += 1
+        let id = calendars["local"] == nil ? "local" : "local\(createdCalendars)"
+        calendars[id] = ("영민이", "나의 iPhone")
+        return id
+    }
     func accountCalendars(excluding: String?) -> [CalendarExportInfo] {
         calendars.filter { $0.key != excluding }.map { CalendarExportInfo($0.key, $0.value.name, $0.value.account) }
     }
     func deleteCalendar(_ id: String) throws {
         if failDelete { throw CalendarSyncError("fail") }
+        // EventKit 구현처럼 사용자 일정이 남아 있으면 지우지 않는다.
+        guard CalendarAppCalendarCleanup.canRemoveCalendar(try scanCalendar(id, now: Date())) else { throw CalendarSyncError("user events") }
         calendars.removeValue(forKey: id)
         events = events.filter { $0.value.calendar != id }
     }
-    func wipeAppEvents(_ calendarId: String, now: Date) throws { events = events.filter { $0.value.calendar != calendarId } }
+    func scanCalendar(_ calendarId: String, now: Date) throws -> CalendarScan? {
+        guard calendars[calendarId] != nil else { return nil }
+        let found = events.filter { $0.value.calendar == calendarId }.sorted { $0.key < $1.key }
+            .map { CalendarScannedEvent($0.key, url: $0.value.url, notes: $0.value.notes) }
+        return CalendarScan(found, complete: !scanIncomplete)
+    }
+    func wipeAppEvents(_ calendarId: String, now: Date) throws {
+        events = events.filter { $0.value.calendar != calendarId || !CalendarAppCalendarCleanup.isAppEvent(url: $0.value.url, notes: $0.value.notes) }
+    }
     func liveRows(_ calendarId: String, _ entries: [String: CalendarSyncLogic.Entry]) throws -> [String: CalRow] {
         var out: [String: CalRow] = [:]
         for (k, e) in entries { if let ev = events[e.eventId], ev.calendar == calendarId { out[k] = row(e.eventId, ev) } }
@@ -540,12 +586,14 @@ final class FakeSyncBackend: CalendarSyncBackend, @unchecked Sendable {
     func insert(_ calendarId: String, _ item: CalItem) throws -> String? {
         let id = "ev\(next)"
         next += 1
-        events[id] = Ev(calendar: calendarId, item: item, title: item.title, start: item.start.epochMilli, end: item.end.epochMilli, location: item.location)
+        events[id] = Ev(calendar: calendarId, item: item, title: item.title, start: item.start.epochMilli, end: item.end.epochMilli, location: item.location,
+                        url: CalendarSyncLogic.appUri(item.key), notes: item.description)
         return id
     }
     func update(_ eventId: String, _ item: CalItem) throws -> Bool {
         guard let ev = events[eventId] else { return false }
-        events[eventId] = Ev(calendar: ev.calendar, item: item, title: item.title, start: item.start.epochMilli, end: item.end.epochMilli, location: item.location)
+        events[eventId] = Ev(calendar: ev.calendar, item: item, title: item.title, start: item.start.epochMilli, end: item.end.epochMilli, location: item.location,
+                             url: CalendarSyncLogic.appUri(item.key), notes: item.description)
         return true
     }
     func delete(_ eventId: String) throws { events.removeValue(forKey: eventId) }
@@ -559,8 +607,7 @@ final class FakeSyncBackend: CalendarSyncBackend, @unchecked Sendable {
 }
 
 struct CalendarExportFlowTests {
-    private func make(_ list: [MyDeadline] = []) -> (CalendarExport, FakeSyncBackend, MyDeadlineStore) {
-        let backend = FakeSyncBackend()
+    private func make(_ list: [MyDeadline] = [], backend: FakeSyncBackend = FakeSyncBackend()) -> (CalendarExport, FakeSyncBackend, MyDeadlineStore) {
         let mineStore = MyDeadlineStore(InMemoryStore())
         mineStore.save(list)
         let export = CalendarExport(store: CalendarExportStore(InMemoryStore()), backend: backend, mine: mineStore,
@@ -629,5 +676,178 @@ struct CalendarExportFlowTests {
         // 계정 캘린더를 끄면 넣은 일정만 지운다(캘린더는 둔다).
         #expect(export.disable() == nil)
         #expect(backend.calendars["acc"] != nil && backend.events.isEmpty)
+    }
+}
+
+// MARK: - 앱 캘린더 정리: 사용자 일정은 지우지 않는다
+
+struct CalendarAppCalendarCleanupTests {
+    private typealias C = CalendarAppCalendarCleanup
+    private let appUrl = CalendarSyncLogic.appUri("mine:1")
+
+    @Test func recognisesAppEventsByUrlOrFooterOnly() {
+        #expect(C.isAppEvent(url: appUrl, notes: nil))
+        #expect(C.isAppEvent(url: nil, notes: "메모\n\n" + CalendarSyncLogic.FOOTER))
+        #expect(!C.isAppEvent(url: nil, notes: "동아리 모임"))
+        #expect(!C.isAppEvent(url: "https://example.com/youngmin://item/x", notes: nil))
+        #expect(!C.isAppEvent(url: nil, notes: nil))
+    }
+
+    @Test func deletesMappedAndMarkedAppEventsButNeverUserEvents() {
+        let mapped: [String: L.Entry] = [
+            "mine:1": L.Entry("ev1", "h", 0),
+            "mine:2": L.Entry(L.TOMBSTONE, "h", 0),
+            "etl:1:2": L.Entry("ev2", "h", 0),
+        ]
+        let scan = CalendarScan([
+            CalendarScannedEvent("ev1", url: appUrl),
+            CalendarScannedEvent("ev3", url: CalendarSyncLogic.appUri("mine:9")),
+            CalendarScannedEvent("ev4", notes: CalendarSyncLogic.FOOTER),
+            CalendarScannedEvent("user1", notes: "동아리 모임"),
+            CalendarScannedEvent("user2"),
+        ])
+        let ids = C.eventsToDelete(mapped: mapped, scan: scan)
+        #expect(Set(ids) == ["ev1", "ev2", "ev3", "ev4"])
+        #expect(ids.count == 4, "겹친 일정은 한 번만")
+        #expect(!ids.contains("user1") && !ids.contains("user2"))
+        #expect(!ids.contains(""), "묘비는 지울 일정이 아니다")
+        #expect(C.eventsToDelete(mapped: [:], scan: nil).isEmpty)
+    }
+
+    @Test func calendarIsRemovedOnlyWhenProvablyFreeOfUserEvents() {
+        #expect(C.canRemoveCalendar(CalendarScan([])))
+        #expect(C.canRemoveCalendar(CalendarScan([CalendarScannedEvent("ev1", url: appUrl)])), "앱 일정만 남았으면 사용자 데이터가 없다")
+        #expect(!C.canRemoveCalendar(CalendarScan([CalendarScannedEvent("user1")])))
+        #expect(!C.canRemoveCalendar(CalendarScan([], complete: false)), "다 읽지 못했으면 남긴다")
+        #expect(!C.canRemoveCalendar(nil), "캘린더를 읽지 못했으면 남긴다")
+    }
+
+    @Test func recurringUserEventCountsOnce() {
+        let scan = CalendarScan([CalendarScannedEvent("rep"), CalendarScannedEvent("rep"), CalendarScannedEvent("one"),
+                                 CalendarScannedEvent("ev1", url: appUrl)])
+        #expect(C.userEventCount(scan) == 2)
+        #expect(C.userEventCount(nil) == 0)
+    }
+}
+
+struct CalendarKeepUserEventsFlowTests {
+    private func make(_ list: [MyDeadline] = [mine(1, "2026-11-25T23:59"), exam()], backend: FakeSyncBackend = FakeSyncBackend(),
+                      store: CalendarExportStore = CalendarExportStore(InMemoryStore())) -> (CalendarExport, FakeSyncBackend) {
+        let mineStore = MyDeadlineStore(InMemoryStore())
+        mineStore.save(list)
+        let export = CalendarExport(store: store, backend: backend, mine: mineStore,
+                                    snapshot: SnapshotCache(InMemoryStore()), courses: CourseFilterStore(InMemoryStore()))
+        return (export, backend)
+    }
+
+    private func appEvents(_ b: FakeSyncBackend, _ calendar: String) -> Int {
+        b.events.values.filter { $0.calendar == calendar && CalendarAppCalendarCleanup.isAppEvent(url: $0.url, notes: $0.notes) }.count
+    }
+
+    @Test func disableKeepsUserEventsAndTheCalendarButRemovesAppEvents() {
+        let (export, backend) = make()
+        #expect(export.enable(CalendarExportSettings(), now: calNow) == nil)
+        let user = backend.addUserEvent("local")
+        #expect(appEvents(backend, "local") == 2)
+
+        #expect(export.disable() == nil)
+        #expect(appEvents(backend, "local") == 0, "앱이 넣은 일정은 지운다")
+        #expect(backend.events[user] != nil, "사용자가 넣은 일정은 남긴다")
+        #expect(backend.calendars["local"] != nil, "사용자 일정이 있으면 캘린더를 남긴다")
+        #expect(export.store.loadMapping() == nil, "매핑은 비운다")
+        #expect(export.lastCleanupKeptCalendar)
+        #expect(export.store.lastResult()?.contains("캘린더는 남겼어요") == true)
+        #expect(CalendarExport.offMessage(keptCalendar: true).contains("남겨 뒀어요"))
+        #expect(export.store.localCalendar == "local", "다음에 켤 때 다시 쓰려고 기억한다")
+        #expect(export.store.ownIdentifiers().calendars.isEmpty, "끈 뒤 남긴 캘린더는 사용자 캘린더로 읽는다")
+    }
+
+    @Test func reenableReusesKeptCalendarInsteadOfCreatingDuplicate() {
+        let (export, backend) = make()
+        _ = export.enable(CalendarExportSettings(), now: calNow)
+        let user = backend.addUserEvent("local")
+        _ = export.disable()
+        #expect(export.enable(CalendarExportSettings(), now: calNow) == nil)
+        #expect(backend.createdCalendars == 1, "같은 이름 캘린더를 또 만들지 않는다")
+        #expect(backend.calendars.keys.filter { $0.hasPrefix("local") } == ["local"])
+        #expect(appEvents(backend, "local") == 2)
+        #expect(backend.events[user] != nil, "다시 켜며 정리해도 사용자 일정은 그대로")
+        #expect(export.store.ownIdentifiers().calendars == ["local"])
+
+        // 사용자가 자기 일정을 지운 뒤 끄면 이제 비어 있으니 캘린더도 지운다.
+        backend.events.removeValue(forKey: user)
+        #expect(export.disable() == nil)
+        #expect(backend.calendars["local"] == nil)
+        #expect(!export.lastCleanupKeptCalendar)
+        #expect(export.store.localCalendar == nil)
+        #expect(export.store.lastResult() == "꺼짐 · 넣은 일정을 지웠어요")
+    }
+
+    @Test func reenableAfterReinstallReusesNamedCalendarWithUserEvents() {
+        let backend = FakeSyncBackend()
+        let (first, _) = make(backend: backend)
+        _ = first.enable(CalendarExportSettings(), now: calNow)
+        let user = backend.addUserEvent("local")
+        _ = first.disable()
+        // 다시 설치: 앱 저장값이 모두 없어졌다.
+        let (second, _) = make(backend: backend, store: CalendarExportStore(InMemoryStore()))
+        #expect(second.enable(CalendarExportSettings(), now: calNow) == nil)
+        #expect(backend.createdCalendars == 1)
+        #expect(second.store.localCalendar == "local")
+        #expect(backend.events[user] != nil)
+        #expect(appEvents(backend, "local") == 2)
+    }
+
+    @Test func orphanAppEventsAreRemovedAndEmptyCalendarDeleted() {
+        let (export, backend) = make()
+        _ = export.enable(CalendarExportSettings(), now: calNow)
+        backend.addOrphanAppEvent("local")
+        #expect(export.disable() == nil)
+        #expect(backend.calendars["local"] == nil, "앱 일정만 있었으면 캘린더도 지운다")
+        #expect(backend.events.isEmpty)
+    }
+
+    @Test func unprovableEmptinessKeepsCalendar() {
+        let (export, backend) = make()
+        _ = export.enable(CalendarExportSettings(), now: calNow)
+        backend.scanIncomplete = true
+        #expect(export.disable() == nil)
+        #expect(appEvents(backend, "local") == 0)
+        #expect(backend.calendars["local"] != nil, "비어 있다고 확신할 수 없으면 남긴다")
+        #expect(export.lastCleanupKeptCalendar)
+        #expect(export.store.loadMapping() == nil)
+    }
+
+    @Test func switchingTargetKeepsUserEventsInAppCalendar() {
+        let (export, backend) = make([mine(1, "2026-11-25T23:59")])
+        _ = export.enable(CalendarExportSettings(), now: calNow)
+        let user = backend.addUserEvent("local")
+        let next = CalendarExportSettings(enabled: true, target: .GOOGLE, googleCalendarId: "acc", googleCalendarName: "개인")
+        #expect(export.switchTarget(next) == nil)
+        #expect(export.lastCleanupKeptCalendar)
+        #expect(CalendarExport.switchedMessage(keptCalendar: true).hasPrefix("옮겼어요"))
+        #expect(backend.events[user] != nil && backend.calendars["local"] != nil)
+        #expect(appEvents(backend, "local") == 0)
+        #expect(appEvents(backend, "acc") == 1)
+        #expect(export.store.loadMapping()?.calendarId == "acc")
+        #expect(export.store.ownIdentifiers().calendars.isEmpty)
+    }
+
+    @Test func accountCalendarCleanupOnlyRemovesMappedEvents() {
+        let (export, backend) = make([mine(1, "2026-11-25T23:59")])
+        let s = CalendarExportSettings(target: .GOOGLE, googleCalendarId: "acc", googleCalendarName: "개인")
+        #expect(export.enable(s, now: calNow) == nil)
+        let user = backend.addUserEvent("acc")
+        #expect(export.disable() == nil)
+        #expect(backend.events.keys.sorted() == [user])
+        #expect(backend.calendars["acc"] != nil)
+    }
+
+    @Test func backendRefusesToDeleteCalendarWithUserEvents() throws {
+        let backend = FakeSyncBackend()
+        _ = try backend.createLocalCalendar()
+        backend.addUserEvent("local")
+        #expect(throws: CalendarSyncError.self) { try backend.deleteCalendar("local") }
+        #expect(backend.calendars["local"] != nil)
     }
 }
