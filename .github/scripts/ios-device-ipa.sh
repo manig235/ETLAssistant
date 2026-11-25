@@ -33,6 +33,14 @@ xcodebuild build \
   "${native_args[@]}" \
   2>&1 | tee ios-device-output/xcodebuild.log
 
+# App Store Connect rejects bundles whose required-reason API use is undeclared.
+# Check before packaging: the IPA drops PlugIns, the build products keep them.
+python3 .github/scripts/check-privacy-manifests.py --source ios \
+  --app "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app" \
+  --expect-extensions YoungminWidgets.appex YoungminShare.appex \
+  --report ios-device-output/privacy-manifests.json \
+  2>&1 | tee ios-device-output/privacy-manifests.log
+
 # Package a copy, keeping the normal app/extension build products intact.
 if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
   cp ios/NativeCodex/Generated/*LICENSE* "$device_derived/Build/Products/Debug-iphoneos/Youngmin.app/"

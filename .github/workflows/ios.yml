@@ -6,12 +6,16 @@ on:
       - 'ios/**'
       - '.github/workflows/ios.yml'
       - '.github/scripts/ios-simulator.sh'
+      - '.github/scripts/check-privacy-manifests.py'
+      - 'scripts/test-ios-privacy-manifests.py'
   push:
     branches: [main, ios-port]
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
       - '.github/scripts/ios-simulator.sh'
+      - '.github/scripts/check-privacy-manifests.py'
+      - 'scripts/test-ios-privacy-manifests.py'
   workflow_dispatch:
 
 permissions:
@@ -34,6 +38,10 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Check privacy manifests
+        run: |
+          python3 scripts/test-ios-privacy-manifests.py
+          python3 .github/scripts/check-privacy-manifests.py --source ios
       - name: Test YoungminKit
         run: |
           set -o pipefail

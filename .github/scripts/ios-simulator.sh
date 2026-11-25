@@ -51,14 +51,22 @@ if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
     "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge $native_system_libs"
   )
 fi
+simulator_derived="${RUNNER_TEMP:-/tmp}/youngmin-ios-derived"
 xcodebuild test \
   -project ios/Youngmin.xcodeproj -scheme Youngmin \
   -configuration Debug \
   -destination "platform=iOS Simulator,id=$simulator_id" \
   -destination-timeout 120 \
-  -derivedDataPath "${RUNNER_TEMP:-/tmp}/youngmin-ios-derived" \
+  -derivedDataPath "$simulator_derived" \
   -resultBundlePath "$PWD/ios-test-results/Youngmin.xcresult" \
   -parallel-testing-enabled NO \
   CODE_SIGNING_ALLOWED=NO \
   "${native_args[@]}" \
   2>&1 | tee ios-test-results/xcodebuild.log
+
+# App Store Connect rejects bundles whose required-reason API use is undeclared.
+python3 .github/scripts/check-privacy-manifests.py --source ios \
+  --app "$simulator_derived/Build/Products/Debug-iphonesimulator/Youngmin.app" \
+  --expect-extensions YoungminWidgets.appex YoungminShare.appex \
+  --report ios-test-results/privacy-manifests.json \
+  2>&1 | tee ios-test-results/privacy-manifests.log
