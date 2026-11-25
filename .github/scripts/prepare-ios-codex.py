@@ -106,6 +106,15 @@ pub async fn start_with_code_mode(
     mut args: InProcessStartArgs,
     code_mode_session_provider: Option<Arc<dyn codex_code_mode::CodeModeSessionProvider>>,
 ) -> IoResult<InProcessClientHandle> {''')
+start_inner = "    let client = Box::pin(start_uninitialized(args)).await?;"
+assert in_process_text.count(start_inner) == 1
+in_process_text = in_process_text.replace(start_inner, "    let client = Box::pin(start_uninitialized(args, code_mode_session_provider)).await?;")
+inner = "async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {"
+assert in_process_text.count(inner) == 1
+in_process_text = in_process_text.replace(inner, '''async fn start_uninitialized(
+    mut args: InProcessStartArgs,
+    code_mode_session_provider: Option<Arc<dyn codex_code_mode::CodeModeSessionProvider>>,
+) -> IoResult<InProcessClientHandle> {''')
 assert in_process_text.count("                code_mode_session_provider: None,") == 1
 in_process.write_text(in_process_text.replace("                code_mode_session_provider: None,", "                code_mode_session_provider,"))
 

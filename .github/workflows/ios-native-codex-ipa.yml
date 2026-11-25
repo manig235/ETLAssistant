@@ -7,9 +7,14 @@ on:
         description: 빠른 iPad 설치 테스트용 빌드
         type: boolean
         default: true
+      runtime_proof_run:
+        description: 동일 실행기 코드의 검증을 이미 통과한 실행 번호 (선택)
+        type: string
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ios-native-codex-ipa-${{ inputs.fast && 'test' || 'optimized' }}-${{ github.ref }}
@@ -21,6 +26,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       compiled: ${{ steps.lookup.outputs.cache-hit }}
+      runtime-verified: ${{ steps.proof.outputs.verified }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,11 +41,17 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+      - name: Verify explicitly supplied execution-test results
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_RUN_ID: ${{ inputs.runtime_proof_run }}
+        run: python3 .github/scripts/ios-runtime-proof.py
 
   javascript-runtime-tests:
     needs: native-cache
-    if: ${{ needs.native-cache.outputs.compiled != 'true' }}
+    if: ${{ needs.native-cache.outputs.compiled != 'true' && needs.native-cache.outputs.runtime-verified != 'true' }}
     uses: ./.github/workflows/ios-code-mode-probe.yml
 
   build-native-app:
@@ -59,7 +71,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
           restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
       - name: Build the embedded official Codex library
         env:
@@ -67,6 +79,7 @@ jobs:
           CODEX_PROBE_OPERATION: build
           CODEX_NATIVE_OPT_LEVEL: ${{ inputs.fast && '0' || '1' }}
           CODEX_REUSE_COMPILED_LIBRARY: ${{ steps.rust-cache.outputs.cache-hit }}
+          CODEX_NATIVE_CACHE_KEY: ${{ steps.rust-cache.outputs.cache-primary-key }}
         run: bash .github/scripts/ios-codex-probe.sh
       - name: Test Swift authentication transport and chat integration
         if: ${{ !inputs.fast }}

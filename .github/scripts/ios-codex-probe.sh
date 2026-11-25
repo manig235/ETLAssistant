@@ -72,12 +72,19 @@ elif [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   if [[ "$SDK" == iphonesimulator ]]; then export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=0; fi
   export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
   library="target/$TARGET/dev-small/libyoungmin_codex_bridge.a"
-  if [[ "${CODEX_REUSE_COMPILED_LIBRARY:-false}" == true && "$SDK" == iphoneos && -s "$library" ]]; then
+  cache_marker="target/$TARGET/dev-small/youngmin-native-cache-key.txt"
+  cached_flags="target/$TARGET/dev-small/youngmin-native-static-libs.txt"
+  expected_key="${CODEX_NATIVE_CACHE_KEY:-}"
+  if [[ "${CODEX_REUSE_COMPILED_LIBRARY:-false}" == true && "$SDK" == iphoneos && -n "$expected_key" && -s "$library" && -s "$cache_marker" && -s "$cached_flags" && "$(cat "$cache_marker")" == "$expected_key" ]]; then
     # The exact cache key includes all patched source and bridge inputs. A
     # finished static library can survive a later packaging-only failure.
     echo 'Reusing the compiled native library from the exact source cache.'
-    native_libs="$(cat "$ROOT/ios/NativeCodex/native-static-libs.txt")"
+    native_libs="$(cat "$cached_flags")"
   else
+    # A restored target directory can contain an older .a after a failed build.
+    # Only a completed compiler invocation can mark a library reusable.
+    rm -f "$cache_marker" "$cached_flags"
+    touch youngmin-ios-bridge/src/lib.rs
     cargo +"$TOOLCHAIN" rustc --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small -- --print native-static-libs \
       2>&1 | tee "$OUT/cargo-build.log"
     native_libs="$(sed -n 's/^note: native-static-libs: //p' "$OUT/cargo-build.log" | tail -n 1)"
@@ -90,6 +97,8 @@ elif [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   cp "$SOURCE/LICENSE" "$ROOT/ios/NativeCodex/Generated/Codex-LICENSE.txt"
   cp "$SOURCE/youngmin-vendor/mxc/LICENSE.md" "$ROOT/ios/NativeCodex/Generated/MXC-LICENSE.txt"
   if [[ -f "$SOURCE/NOTICE" ]]; then cp "$SOURCE/NOTICE" "$ROOT/ios/NativeCodex/Generated/Codex-NOTICE.txt"; fi
+  printf '%s\n' "$native_libs" > "$cached_flags"
+  if [[ -n "$expected_key" ]]; then printf '%s\n' "$expected_key" > "$cache_marker"; fi
   printf 'Built %s static library for %s.\n' "$PACKAGE" "$TARGET" > "$OUT/result.txt"
 else
   cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \
