@@ -33,3 +33,4 @@ DerivedData/
 /ios-test-results/
 /ios-device-output/
 __pycache__/
+ios-codex-probe/

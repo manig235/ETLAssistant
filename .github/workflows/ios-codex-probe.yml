@@ -1,0 +1,42 @@
+name: iOS Codex Runtime Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-codex-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-native-runtime:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Cache pinned Rust dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh') }}
+          restore-keys: ios-codex-170-ios-arm64-
+      - name: Compile the official in-process app server for iOS
+        run: bash .github/scripts/ios-codex-probe.sh
+      - name: Upload native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-codex-probe-${{ github.run_attempt }}
+          path: |
+            ios-codex-probe/*.log
+            ios-codex-probe/*.txt
+            ios-codex-probe/*.json
+          retention-days: 7
+          if-no-files-found: warn
