@@ -833,7 +833,8 @@ private fun DeadlineDialog(
                     style = t.caption1Regular, color = c.foregroundNeutralSecondary)
                 Spacer(Modifier.height(6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (m in offsets) WantedChip(text = offsetLabel(m) + "  ✕", onClick = { removeOffset(m) },
+                    // 시각순(이른 알림 먼저: 전날 20:00 → 2시간 전)
+                    for (m in offsets.sortedDescending()) WantedChip(text = offsetLabel(m) + "  ✕", onClick = { removeOffset(m) },
                         modifier = Modifier.semantics { contentDescription = "알림 ${offsetLabel(m)} 지우기" })
                     if (offsets.size < MyDeadlines.MAX_REMINDERS) {
                         for ((m, label) in listOf(10L to "+10분 전", 60L to "+1시간 전", 1440L to "+하루 전")) {
