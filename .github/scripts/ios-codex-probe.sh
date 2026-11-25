@@ -16,6 +16,10 @@ if [[ "${CODEX_PROBE_PLATFORM:-device}" == simulator ]]; then
   SDK=iphonesimulator
   if [[ "$(uname -m)" == arm64 ]]; then TARGET=aarch64-apple-ios-sim; else TARGET=x86_64-apple-ios; ARCH=x86_64; fi
 fi
+if [[ "${CODEX_PROBE_OPERATION:-check}" == code-mode-test ]]; then
+  SDK=macosx
+  TARGET="$(uname -m)-apple-darwin"
+fi
 
 mkdir -p "$OUT" "$SOURCE"
 exec > >(tee "$OUT/probe.log") 2>&1
@@ -55,7 +59,13 @@ PACKAGE=codex-app-server
 if [[ "${CODEX_PROBE_COMPONENT:-upstream}" == bridge ]]; then
   PACKAGE=youngmin-codex-bridge
 fi
-if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
+if [[ "${CODEX_PROBE_OPERATION:-check}" == code-mode-test ]]; then
+  export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=0
+  export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
+  cargo +"$TOOLCHAIN" test --locked -p youngmin-code-mode-check --profile dev-small \
+    2>&1 | tee "$OUT/cargo-code-mode-test.log"
+  printf 'Codex Code Mode session/delegate integration passed on %s.\n' "$TARGET" > "$OUT/result.txt"
+elif [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   test "$PACKAGE" == youngmin-codex-bridge
   # Keep iteration builds reasonably small without release LTO costs.
   export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL="${CODEX_NATIVE_OPT_LEVEL:-1}"

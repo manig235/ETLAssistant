@@ -212,7 +212,7 @@ impl Execution<'_> {
         Ok(value)
     }
     fn dispatch(&self, args: &[JsValue]) -> Result<JsValue, String> {
-        if self.cell.is_cancelled() {
+        if self.cell.is_cancelled() || self.cell.exited() {
             return Err("JavaScript execution cancelled".into());
         }
         let undefined = unsafe { JSValueMakeUndefined(self.context) };
@@ -299,6 +299,7 @@ impl Execution<'_> {
                 };
             }
             "yield" => self.cell.yield_now(),
+            "exit" => self.cell.request_exit(),
             "notify" => {
                 let message = self.string(get(1)?)?;
                 if message.len() > 64 * 1024 {
@@ -354,7 +355,9 @@ impl Execution<'_> {
         };
         let value = match result.and_then(|value| self.json(&value)) {
             Ok(value) => self.call(resolve, &[value]),
-            Err(error) => self.call(reject, &[self.value(&error)?]),
+            Err(error) => self
+                .value(&error)
+                .and_then(|value| self.call(reject, &[value])),
         };
         unsafe {
             JSValueUnprotect(self.context, resolve);
@@ -422,7 +425,9 @@ struct Watchdog<'a> {
 }
 unsafe extern "C" fn should_terminate(_: Context, data: *mut c_void) -> bool {
     let watchdog = unsafe { &*(data as *const Watchdog<'_>) };
-    watchdog.cell.is_cancelled() || watchdog.started.elapsed() >= Duration::from_secs(120)
+    watchdog.cell.is_cancelled()
+        || watchdog.cell.exited()
+        || watchdog.started.elapsed() >= Duration::from_secs(120)
 }
 
 impl Drop for Execution<'_> {
@@ -512,7 +517,7 @@ pub(super) fn run(
     );
     execution.evaluate(&bootstrap)?;
     loop {
-        if cell.is_cancelled() {
+        if cell.is_cancelled() || cell.exited() {
             return Ok(());
         }
         if watchdog.started.elapsed() > Duration::from_secs(120) {

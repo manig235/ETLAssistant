@@ -45,9 +45,9 @@
     load: key => { const value = native("load", String(key)); return value === null ? undefined : parse(value); },
     notify: value => native("notify", string(value)),
     yield_control: async () => native("yield"),
-    setTimeout: (callback, delay = 0) => native("timer", callback, Number(delay)),
-    clearTimeout: id => native("clearTimer", Number(id)),
-    exit: () => { throw exitSignal; }
+    setTimeout: (callback, delay = 0) => native("timer", callback, Math.max(0, Math.min(120000, Math.trunc(Number(delay) || 0)))),
+    clearTimeout: id => { if (Number.isFinite(Number(id)) && Number(id) >= 0) native("clearTimer", Math.trunc(Number(id))); },
+    exit: () => { native("exit"); throw exitSignal; }
   });
   // Promise failures are always observed, including exceptions before an await.
   return source => (async () => {

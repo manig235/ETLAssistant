@@ -7,8 +7,10 @@
 - 공식 `codex-app-server::in_process`를 호출하는 Rust 정적 라이브러리와 C 인터페이스를 작성했다. Swift와는 메모리 큐로 JSON-RPC 요청·이벤트를 주고받는다.
 - Codex가 제공하는 `account/login/start`의 브라우저 로그인을 사용하며, OAuth 콜백·토큰 갱신도 엔진이 처리한다. iOS용 native Keychain 백엔드를 활성화했고 파일 저장으로 대체하지 않는다.
 - Swift 채팅 화면에 답변 스트리밍·대화 이어가기·eTL 도구 호출·중단을 연결했다. eTL 쓰기 승인은 기존 실행기를 그대로 사용한다.
-- Swift 로직 테스트 744개가 통과했다. 여기에는 실제 계정 없이 검증하는 통신·도구 호출·대화 복원·중단 테스트가 포함된다.
-- **네이티브 iOS 컴파일·링크·실행 및 실제 SNU Edu 로그인은 추가 검증 중이다. 이 문서 자체는 로그인 성공을 보장하지 않는다.**
+- Swift 로직 테스트 745개가 통과했다. 여기에는 실제 계정 없이 검증하는 통신·도구 호출·대화 복원·중단 테스트가 포함된다.
+- build 23은 iOS arm64 컴파일·링크·패키징을 통과했고 사용자 기기에서 로그인 성공이 보고됐다. GPT-5.5만 남기던 필터로 모델 목록이 비는 문제가 확인됐다.
+- 시스템 JavaScriptCore로 비동기 도구 실행·오류·중단·격리 테스트 10개를 macOS와 iOS 시뮬레이터에서 통과했다. 이를 Codex에 연결한 build 25는 별도로 검증한다.
+- **실제 SNU Edu 계정으로 새 빌드의 모델 선택·답변·eTL 도구 호출까지 성공했는지는 사용자 기기에서 확인해야 한다.**
 
 기존 **iOS Device IPA** 워크플로는 SIWC 인증을 사용하는 앱을 만든다. 내장 Codex를 검증하는 동안 두 빌드를 구분하기 위해 새 워크플로를 사용한다.
 
@@ -18,8 +20,8 @@ Actions → **iOS Native Codex IPA** → **Run workflow**. 빠른 기기 테스�
 
 1. 빠른 빌드는 Rust 최적화와 이 작업 안의 중복 Swift 테스트를 생략한다. Swift 로직 검증은 별도 iOS CI에서 실행한다.
 2. Android와 같은 Codex `rust-v0.170.0`의 커밋 `29eb79e9866b3262a777fdf8195c1b9e63684c91`을 SHA-256 검증 후 받는다.
-3. Rust 1.95.0으로 iOS arm64용 정적 라이브러리를 빌드한다.
-4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 build 23 IPA를 만든다.
+3. JavaScriptCore 실행기와 Codex 세션·도구 delegate 연결 테스트가 통과하면, Rust 1.95.0으로 iOS arm64용 정적 라이브러리를 빌드한다.
+4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 build 25 IPA를 만든다.
 5. 성공하면 아티팩트의 `Youngmin-iPad-test.ipa` 한 파일을 Windows Sideloadly로 설치한다. 바깥쪽 ZIP으로 다시 묶지 않고 업로드한다. 설치 과정은 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)를 따른다.
 
 기기용 IPA 생성을 우선한다. 추가 네이티브 시뮬레이터 실행 검증은 별도로 진행할 수 있으며, 실제 SNU 로그인은 사용자 iPad에서 확인해야 한다.
@@ -28,7 +30,11 @@ Actions → **iOS Native Codex IPA** → **Run workflow**. 빠른 기기 테스�
 
 ## 현재 지원 범위
 
-내장 엔진은 별도 자식 프로세스·셸·PTY·code-mode host를 실행하지 않도록 설정한다. 모델 목록도 고정한 공식 엔진 카탈로그에서 별도 code-mode host를 요구하지 않는 모델만 보여 준다. 현재 카탈로그 기준 GPT-5.5가 해당한다. 최신 모델 전체를 지원하려면 추가 실행 환경이 필요하다.
+내장 엔진은 별도 자식 프로세스·셸·PTY·code-mode host를 실행하지 않도록 설정한다. Code Mode는 Apple의 시스템 JavaScriptCore를 사용하는 앱 내부 세션 provider에 연결한다. 셀마다 JavaScript context를 분리하고, 허용된 도구만 Codex가 제공한 delegate를 통해 호출하므로 eTL 쓰기 승인도 기존 경로를 따른다. 셀 사이의 `store`/`load`는 해당 Codex 세션 안에서만 공유한다. 중단·대기·비동기 도구 반환과 실행 시간 제한을 제공한다.
+
+GPT-5.5 고정값과 모델 화이트리스트를 제거하고, 공식 엔진이 계정에 대해 반환한 모델 목록과 기본 선택을 사용한다. GPT-5.6·6·6.1 계열을 목록에서 임의로 제외하지 않는다. 실제 제공 모델과 사용 가능량은 서버 계정 설정에 따른다.
+
+앱 내부 엔진은 시작할 때 자격 증명이나 외부 요청 없이 Code Mode 세션을 만들고, JavaScript에서 네이티브 도구를 호출해 `42`를 받는 자체 검사를 수행한다.
 
 기존 SIWC 토큰을 Codex 서버로 보내거나 로그인 client ID만 교체하지 않는다. 공식 Codex의 인증과 실제 엔진을 함께 사용한다. API 키 모드는 기존 Swift Responses 클라이언트를 사용한다.
 

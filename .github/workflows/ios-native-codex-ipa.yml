@@ -16,7 +16,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  javascript-runtime-tests:
+    uses: ./.github/workflows/ios-code-mode-probe.yml
+
   build-native-app:
+    needs: javascript-runtime-tests
     runs-on: macos-26-intel
     timeout-minutes: 90
     steps:
@@ -31,7 +35,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
+          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
           restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
       - name: Build the embedded official Codex library
         env:

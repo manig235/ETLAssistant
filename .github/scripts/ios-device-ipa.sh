@@ -17,8 +17,9 @@ if [[ "${YOUNGMIN_USE_NATIVE_CODEX:-0}" == 1 ]]; then
     'YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)'
     "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge $native_system_libs"
     'INFOPLIST_KEY_YoungminAuthEngine=codex-in-process'
+    'INFOPLIST_KEY_YoungminCodeModeRuntime=javascriptcore'
     'INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91'
-    'CURRENT_PROJECT_VERSION=24'
+    'CURRENT_PROJECT_VERSION=25'
   )
 fi
 xcodebuild build \

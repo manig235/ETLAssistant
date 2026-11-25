@@ -349,8 +349,14 @@ final class ChatController {
         do {
             let loaded: [ModelInfo]
             if auth.usesNativeCodex, let client = auth.codex {
-                loaded = ModelCatalog.parse(try await client.request("model/list"))
-                if loaded.isEmpty { throw CodexError("이 계정에서 사용할 수 있는 iOS 지원 모델을 찾지 못했어요") }
+                let result = try await client.request("model/list")
+                loaded = ModelCatalog.parse(result)
+                if loaded.isEmpty {
+                    let received = result["data"]?.array?.count ?? 0
+                    throw CodexError(received > 0
+                        ? "모델 목록을 받았지만 표시 정보를 읽지 못했어요"
+                        : "서버에서 이 계정의 모델 목록이 비어 돌아왔어요. 잠시 뒤 다시 불러와 주세요")
+                }
             } else {
                 loaded = try await ModelListClient.fetch(auth: auth.provider, transport: URLSessionTransport())
             }

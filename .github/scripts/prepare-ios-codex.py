@@ -85,10 +85,29 @@ if len(sys.argv) > 2 and sys.argv[2] == "upstream":
 
 bridge = workspace / "youngmin-ios-bridge"
 shutil.copytree(root / "ios/NativeCodex/bridge", bridge, dirs_exist_ok=True)
+shutil.copytree(root / "ios/NativeCodex/javascript", workspace / "youngmin-ios-javascript", dirs_exist_ok=True, ignore=shutil.ignore_patterns("target"))
+shutil.copytree(root / "ios/NativeCodex/code-mode-check", workspace / "youngmin-code-mode-check", dirs_exist_ok=True)
 
 assert '"youngmin-ios-bridge"' not in text
-text = text.replace("members = [", 'members = [\n    "youngmin-ios-bridge",', 1)
+text = text.replace("members = [", 'members = [\n    "youngmin-ios-bridge",\n    "youngmin-ios-javascript",\n    "youngmin-code-mode-check",', 1)
 manifest.write_text(text)
+
+# Keep the existing public start(args) API. Add an entry point through which an
+# embedder supplies its own in-process Code Mode session provider.
+in_process = workspace / "app-server/src/in_process.rs"
+in_process_text = in_process.read_text()
+start = "pub async fn start(mut args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {"
+assert in_process_text.count(start) == 1
+in_process_text = in_process_text.replace(start, '''pub async fn start(args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
+    start_with_code_mode(args, None).await
+}
+
+pub async fn start_with_code_mode(
+    mut args: InProcessStartArgs,
+    code_mode_session_provider: Option<Arc<dyn codex_code_mode::CodeModeSessionProvider>>,
+) -> IoResult<InProcessClientHandle> {''')
+assert in_process_text.count("                code_mode_session_provider: None,") == 1
+in_process.write_text(in_process_text.replace("                code_mode_session_provider: None,", "                code_mode_session_provider,"))
 
 # Codex enables native keyrings on desktop only. keyring 3.6.3 also has a native
 # iOS implementation; without this feature its fallback is an in-memory mock.
@@ -100,11 +119,16 @@ with keyring.open("a") as file:
 # identifiers from app-server; never re-resolve or upgrade upstream packages.
 packages = tomllib.loads(lock.read_text())["package"]
 server = next(p for p in packages if p["name"] == "codex-app-server")
-deps = tomllib.loads((bridge / "Cargo.toml").read_text())["dependencies"]
 identifiers = {d.split(" ")[0]: d for d in server["dependencies"]}
 identifiers["codex-app-server"] = "codex-app-server"
+identifiers["codex-code-mode-protocol"] = "codex-code-mode-protocol"
+identifiers["youngmin-javascript"] = "youngmin-javascript"
 with lock.open("a") as file:
-    file.write(f'\n[[package]]\nname = "youngmin-codex-bridge"\nversion = "{version}"\ndependencies = [\n')
-    for dependency in sorted(deps):
-        file.write(f' "{identifiers[dependency]}",\n')
-    file.write("]\n")
+    for folder in [bridge, workspace / "youngmin-ios-javascript", workspace / "youngmin-code-mode-check"]:
+        package = tomllib.loads((folder / "Cargo.toml").read_text())
+        local_version = package["package"]["version"]
+        if isinstance(local_version, dict): local_version = version
+        file.write(f'\n[[package]]\nname = "{package["package"]["name"]}"\nversion = "{local_version}"\ndependencies = [\n')
+        for dependency in sorted(package["dependencies"]):
+            file.write(f' "{identifiers[dependency]}",\n')
+        file.write("]\n")

@@ -1,5 +1,6 @@
 //! In-process JSON-RPC transport for the official Codex app-server.
 //! No RPC socket, helper executable, or token transfer through Swift.
+mod code_mode;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
@@ -194,8 +195,15 @@ async fn run(
         fatal(&events, &failed, "Codex 저장 공간을 만들지 못했어요");
         return;
     }
+    if let Err(error) = code_mode::self_test().await {
+        fatal(
+            &events,
+            &failed,
+            &format!("앱 내부 도구 실행기를 시작하지 못했어요: {error}"),
+        );
+        return;
+    }
     let mut overrides = vec![
-        ("model".into(), toml::Value::String("gpt-5.5".into())),
         (
             "cli_auth_credentials_store".into(),
             toml::Value::String("keyring".into()),
@@ -273,7 +281,8 @@ async fn run(
         },
         channel_capacity: 256,
     };
-    let client = in_process::start(args).await;
+    let client =
+        in_process::start_with_code_mode(args, Some(Arc::new(code_mode::JavaScriptProvider))).await;
     let Ok(mut client) = client else {
         fatal(&events, &failed, "Codex 초기화에 실패했어요");
         return;
@@ -295,12 +304,10 @@ async fn run(
                     Ok(JSONRPCMessage::Request(request)) => {
                         let sender = client.sender(); let tx = events.clone(); let health = failed.clone();
                         tokio::spawn(async move {
-                            let listing_models = request.method == "model/list";
                             let id = request.id;
                             let result = match serde_json::from_value::<ClientRequest>(value) {
                                 Ok(request) => match sender.request(request).await {
-                                    Ok(Ok(mut result)) => {
-                                        if listing_models { retain_direct_models(&mut result); }
+                                    Ok(Ok(result)) => {
                                         json!({"id":id,"result":result})
                                     },
                                     Ok(Err(error)) => json!({"id":id,"error":error}),
@@ -334,28 +341,4 @@ async fn run(
         }
     }
     let _ = client.shutdown().await;
-}
-
-fn retain_direct_models(result: &mut Value) {
-    // Use capabilities from the pinned engine's own catalog. Models requiring
-    // a separate JavaScript host are unavailable in this native mobile build.
-    let catalog: Value = serde_json::from_str(include_str!("../../models-manager/models.json"))
-        .expect("pinned model catalog");
-    let compatible: Vec<&str> = catalog["models"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|m| m["tool_mode"].as_str() != Some("code_mode_only"))
-        .filter_map(|m| m["slug"].as_str())
-        .collect();
-    if let Some(models) = result.get_mut("data").and_then(Value::as_array_mut) {
-        models.retain(|m| {
-            m["model"]
-                .as_str()
-                .is_some_and(|slug| compatible.contains(&slug))
-        });
-        for (index, model) in models.iter_mut().enumerate() {
-            model["isDefault"] = json!(index == 0);
-        }
-    }
 }

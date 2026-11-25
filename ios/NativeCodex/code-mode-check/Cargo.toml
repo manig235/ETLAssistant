@@ -1,0 +1,14 @@
+[package]
+name = "youngmin-code-mode-check"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+
+[dependencies]
+codex-code-mode-protocol = { workspace = true }
+codex-protocol = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
+uuid = { workspace = true, features = ["v4"] }
+youngmin-javascript = { path = "../youngmin-ios-javascript" }

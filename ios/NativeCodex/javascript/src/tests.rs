@@ -165,3 +165,34 @@ fn unawaited_tool_results_cannot_touch_a_closed_context() {
     std::thread::sleep(Duration::from_millis(60));
     assert!(host.cancelled.load(Ordering::Acquire));
 }
+
+#[test]
+fn preempted_observers_leave_output_for_the_next_wait() {
+    let (cell, _) = start("text('preserved');", Arc::default());
+    std::thread::sleep(Duration::from_millis(60));
+    let preempted = cell.observe(Duration::ZERO, &AtomicBool::new(true));
+    assert_eq!(preempted.status, Status::Running);
+    assert!(preempted.content.is_empty());
+    assert_eq!(output(&complete(&cell)), "preserved");
+}
+
+#[test]
+fn caught_exit_cannot_continue_output_or_run_forever() {
+    let (cell, _) = start(
+        "text('before'); try { exit(); } catch (_) {} try { text('after'); } catch (_) {} while(true) {}",
+        Arc::default(),
+    );
+    let result = complete(&cell);
+    assert_eq!(result.status, Status::Completed(None));
+    assert_eq!(output(&result), "before");
+}
+
+#[test]
+fn tools_not_in_the_allowlist_cannot_be_invoked() {
+    let (cell, host) = start(
+        "try { await tools.unknown({}); } catch (_) { text('blocked'); }",
+        Arc::default(),
+    );
+    assert_eq!(output(&complete(&cell)), "blocked");
+    assert_eq!(host.calls.load(Ordering::SeqCst), 0);
+}

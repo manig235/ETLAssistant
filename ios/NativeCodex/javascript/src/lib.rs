@@ -69,6 +69,7 @@ struct State {
 }
 pub struct Cell {
     cancelled: AtomicBool,
+    exited: AtomicBool,
     state: Mutex<State>,
     changed: Condvar,
     observer: Mutex<()>,
@@ -89,6 +90,7 @@ impl Cell {
         }
         let cell = Arc::new(Self {
             cancelled: AtomicBool::new(false),
+            exited: AtomicBool::new(false),
             state: Mutex::new(State {
                 status: Status::Running,
                 completed_at: None,
@@ -126,6 +128,12 @@ impl Cell {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
     }
+    fn exited(&self) -> bool {
+        self.exited.load(Ordering::Acquire)
+    }
+    fn request_exit(&self) {
+        self.exited.store(true, Ordering::Release);
+    }
     pub fn wake(&self) {
         self.changed.notify_all();
     }
@@ -145,6 +153,15 @@ impl Cell {
                 .wait_timeout(state, remaining.min(Duration::from_millis(25)))
                 .unwrap();
             state = result.0;
+        }
+        // An abandoned/preempted observer must not consume output that a
+        // subsequent wait still needs, even if completion raced preemption.
+        if preempt.load(Ordering::Acquire) {
+            return Observation {
+                status: Status::Running,
+                content: vec![],
+                buffered_for: Duration::ZERO,
+            };
         }
         state.yielded = false;
         state.bytes = 0;
@@ -176,6 +193,8 @@ impl Cell {
         let mut state = self.state.lock().unwrap();
         state.status = if self.is_cancelled() {
             Status::Terminated
+        } else if self.exited() {
+            Status::Completed(None)
         } else {
             Status::Completed(error)
         };

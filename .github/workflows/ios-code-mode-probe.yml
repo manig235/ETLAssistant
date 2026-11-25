@@ -2,6 +2,7 @@ name: iOS JavaScript Tool Probe
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -9,7 +10,7 @@ permissions:
 jobs:
   javascript-tool-probe:
     runs-on: macos-26-intel
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,7 +52,33 @@ jobs:
           cargo +1.95.0 test --locked --manifest-path ios/NativeCodex/javascript/Cargo.toml --target x86_64-apple-ios -- --test-threads=1 2>&1 | tee ios-javascript-probe/rust-ios.log
       - name: Upload probe logs
         if: always()
+        continue-on-error: true
+        timeout-minutes: 3
         uses: actions/upload-artifact@v7
         with:
           name: ios-javascript-tool-probe
           path: ios-javascript-probe/*.log
+
+  codex-code-mode-delegate:
+    needs: javascript-tool-probe
+    runs-on: macos-26-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test the real Codex session and tool delegate contract
+        env:
+          CODEX_PROBE_COMPONENT: bridge
+          CODEX_PROBE_OPERATION: code-mode-test
+        run: bash .github/scripts/ios-codex-probe.sh
+      - name: Upload Codex delegate diagnostics
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-code-mode-delegate-logs
+          path: |
+            ios-codex-probe/*.log
+            ios-codex-probe/*.txt
