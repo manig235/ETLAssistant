@@ -192,11 +192,7 @@ class CalendarAssistant(private val context: Context) {
         val location = str(args, "location")?.let(CalendarToolLogic::cleanLocation) ?: before.location
         val memo = str(args, "memo")?.let(CalendarToolLogic::cleanMemo) ?: before.description
         val allDayArg = if (args.has("all_day")) args.optBoolean("all_day") else null
-        val wh = when {
-            str(args, "start") != null -> CalendarToolLogic.parseWhen(str(args, "start"), str(args, "end") ?: keepLength(before, str(args, "start")!!, allDayArg), allDayArg)
-            str(args, "end") != null || allDayArg != null -> CalendarToolLogic.parseWhen(startText(before, allDayArg ?: before.allDay), str(args, "end"), allDayArg ?: before.allDay)
-            else -> CalendarToolLogic.When(before.allDay, before.dtStart, before.dtEnd)
-        }
+        val wh = CalendarToolLogic.updatedWhen(before, str(args, "start"), str(args, "end"), allDayArg)
         val v = ContentValues().apply {
             put(Events.TITLE, title)
             put(Events.DTSTART, wh.dtStart)
@@ -219,23 +215,6 @@ class CalendarAssistant(private val context: Context) {
         CalendarExport.notifyChanged()
         return JSONObject().put("ok", true).put("event_id", eventId).put("before", CalendarToolLogic.describe(before)).put("after", after)
     }
-
-    /** 시작만 옮길 때 원래 길이를 유지하는 end 문자열. */
-    private fun keepLength(b: CalendarToolLogic.Backup, newStart: String, allDay: Boolean?): String? {
-        if (allDay ?: b.allDay) {
-            val days = ((b.dtEnd - b.dtStart) / 86_400_000L - 1).coerceAtLeast(0)
-            return runCatching { java.time.LocalDate.parse(newStart.trim().take(10)).plusDays(days).toString() }.getOrNull()
-        }
-        if (b.allDay) return null
-        val m = Regex("^(\\d{4}-\\d{2}-\\d{2})[ T](\\d{1,2}):(\\d{2})").find(newStart.trim()) ?: return null
-        val s = runCatching { java.time.LocalDateTime.of(java.time.LocalDate.parse(m.groupValues[1]), java.time.LocalTime.of(m.groupValues[2].toInt(), m.groupValues[3].toInt())) }.getOrNull() ?: return null
-        val e = s.plusSeconds((b.dtEnd - b.dtStart) / 1000)
-        return "%s %02d:%02d".format(e.toLocalDate(), e.hour, e.minute)
-    }
-
-    private fun startText(b: CalendarToolLogic.Backup, allDay: Boolean): String =
-        if (b.allDay) Instant.ofEpochMilli(b.dtStart).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString()
-        else Instant.ofEpochMilli(b.dtStart).atZone(CalendarLogic.ZONE).let { z -> if (allDay) z.toLocalDate().toString() else "%s %02d:%02d".format(z.toLocalDate(), z.hour, z.minute) }
 
     private fun delete(s: CalendarReadSettings, args: JSONObject): JSONObject {
         val eventId = args.optLong("event_id", 0L).takeIf { it > 0 } ?: throw EtlException("event_id가 필요합니다")
