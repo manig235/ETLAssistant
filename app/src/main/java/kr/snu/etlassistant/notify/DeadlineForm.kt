@@ -132,4 +132,63 @@ object DeadlineForm {
     /** "첫 마감: 11/26(목) 23:59". 정할 수 없으면 null. */
     fun firstLabel(input: Input, now: Instant, keep: LocalDate? = null): String? =
         due(input, now, keep)?.let { "첫 마감: " + NoticeText.dateLabel(it) }
+    /**
+     * 편집 창의 직접 알림(2026-11-25, 보이는 그대로 저장). 알림은 "시작/마감 몇 분 전"([offsets])으로 들고 있다.
+     * - 손대지 않은 새 항목([touched] = false)은 [offsets]를 쓰지 않고, 시험이면 지금 고른 날짜·시작 시각의 시험 기본 알림
+     *   ([MyDeadlines.defaultExamReminders]: 전날 20:00, 시작 2시간 전, 지난 것 빼고)을, 마감이면 빈 목록을 보인다.
+     *   그래서 날짜·시각·종류를 바꾸면 기본 알림도 따라 바뀐다.
+     * - 칩을 하나라도 지우거나 더하면 그때 보이던 목록으로 굳힌다([touched] = true). 고치는 항목은 처음부터 굳힌 상태(저장된 알림).
+     * - 저장은 보이는 칩 그대로다. 빈 목록이면 알림 없음(몰래 기본값을 넣지 않는다).
+     */
+    data class Reminders(val offsets: List<Long> = emptyList(), val touched: Boolean = false)
+
+    /** 편집 창을 열 때: 고치는 항목이면 저장된 알림(굳힘), 새 항목(공지 초안 포함)이면 손대지 않은 상태. */
+    fun initialReminders(initial: MyDeadline?): Reminders =
+        if (initial == null) Reminders()
+        else Reminders(initial.reminders.map { java.time.Duration.between(it, initial.due).toMinutes() }.filter { it > 0 }.distinct().sorted(), touched = true)
+
+    /** 시험 기본 알림을 "시작 몇 분 전"으로. */
+    fun examDefaultOffsets(start: Instant, now: Instant): List<Long> =
+        MyDeadlines.defaultExamReminders(start, now).map { java.time.Duration.between(it, start).toMinutes() }.filter { it > 0 }.distinct().sorted()
+
+    /** 지금 보일 칩(= 저장할 알림). [due]를 아직 정할 수 없으면 손대지 않은 시험도 빈 목록. */
+    fun shownReminders(r: Reminders, exam: Boolean, due: Instant?, now: Instant): List<Long> = when {
+        r.touched -> r.offsets
+        exam && due != null -> examDefaultOffsets(due, now)
+        else -> emptyList()
+    }
+
+    /** 칩 지우기: 보이던 목록에서 빼고 굳힌다. */
+    fun removeReminder(r: Reminders, exam: Boolean, due: Instant?, now: Instant, m: Long): Reminders =
+        Reminders(shownReminders(r, exam, due, now) - m, touched = true)
+
+    /** 칩 더하기: 보이던 목록에 더하고 굳힌다(0분 이하·중복·[MyDeadlines.MAX_REMINDERS]개 넘김은 무시). */
+    fun addReminder(r: Reminders, exam: Boolean, due: Instant?, now: Instant, m: Long): Reminders {
+        val shown = shownReminders(r, exam, due, now)
+        val next = if (m <= 0 || m in shown || shown.size >= MyDeadlines.MAX_REMINDERS) shown else (shown + m).sorted()
+        return Reminders(next, touched = true)
+    }
+
+    /** 저장할 알림 시각: 보이는 칩 그대로. */
+    fun reminderInstants(r: Reminders, exam: Boolean, due: Instant, now: Instant): List<Instant> =
+        MyDeadlines.normalizeReminders(shownReminders(r, exam, due, now).map { due.minusSeconds(it * 60) })
+
+    /**
+     * 칩 글자. 같은 날이면 `08:00 · 2시간 전`, 전날이면 `전날 20:00`(“14시간 전”처럼 읽기 어려운 상대 시간 대신),
+     * 그보다 앞이면 `11/23 20:00 · 3일 전`. [due]를 모르면 `N분 전`.
+     */
+    fun reminderLabel(m: Long, due: Instant?): String {
+        val d = due ?: return "${m}분 전"
+        val at = d.minusSeconds(m * 60).atZone(ZONE)
+        val dueDate = d.atZone(ZONE).toLocalDate()
+        val hm = "%02d:%02d".format(at.hour, at.minute)
+        if (at.toLocalDate() == dueDate.minusDays(1)) return "전날 $hm"
+        val rel = when {
+            m % 1440 == 0L -> "${m / 1440}일 전"
+            m % 60 == 0L -> "${m / 60}시간 전"
+            m > 60 -> "${m / 60}시간 ${m % 60}분 전"
+            else -> "${m}분 전"
+        }
+        return if (at.toLocalDate() == dueDate) "$hm · $rel" else "${at.monthValue}/${at.dayOfMonth} $hm · $rel"
+    }
 }

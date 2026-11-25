@@ -730,11 +730,8 @@ private fun DeadlineDialog(
         form = form.copy(time = LocalTime.of(10, 0))
     }
     // 알림 시각은 "마감 몇 분 전"으로 들고 있다가 저장할 때 시각으로 바꾼다(마감을 옮기면 알림도 같이 따라간다).
-    var offsets by remember {
-        mutableStateOf(initial?.let { d -> d.reminders.map { java.time.Duration.between(it, d.due).toMinutes() }.filter { it > 0 } }.orEmpty().sorted())
-    }
-    /** 새 시험에서 알림을 손대지 않았으면 저장할 때 시험 기본 알림(전날 20:00, 2시간 전)을 넣는다. */
-    var remindersTouched by remember { mutableStateOf(initial != null) }
+    // 손대지 않은 새 시험은 기본 알림(전날 20:00, 2시간 전)을 지울 수 있는 칩으로 보이고, 저장은 보이는 칩 그대로다([DeadlineForm.Reminders]).
+    var reminderState by remember { mutableStateOf(DeadlineForm.initialReminders(initial)) }
 
     val exam = kind == MyKind.EXAM
     val keep = initial?.takeIf { !exam && it.repeat != null && DeadlineForm.samePattern(it, form, now) }?.due?.atZone(zone)?.toLocalDate()
@@ -744,18 +741,10 @@ private fun DeadlineDialog(
         MyRepeat(f, days, until.takeIf { endMode == DeadlineForm.EndMode.UNTIL }, count.takeIf { endMode == DeadlineForm.EndMode.COUNT })
     }
     fun seriesPreview(): MyDeadline? = dueOrNull?.let { MyDeadline(0, "x", it, repeat = repeatOf()) }
-    fun offsetLabel(m: Long): String {
-        val due = dueOrNull ?: return "${m}분 전"
-        val at = due.minusSeconds(m * 60).atZone(zone)
-        val hm = "%02d:%02d".format(at.hour, at.minute)
-        val rel = when {
-            m % 1440 == 0L -> "${m / 1440}일 전"
-            m % 60 == 0L -> "${m / 60}시간 전"
-            m > 60 -> "${m / 60}시간 ${m % 60}분 전"
-            else -> "${m}분 전"
-        }
-        return if (at.toLocalDate() == due.atZone(zone).toLocalDate()) "$hm · $rel" else "${at.monthValue}/${at.dayOfMonth} $hm · $rel"
-    }
+    fun offsetLabel(m: Long): String = DeadlineForm.reminderLabel(m, dueOrNull)
+    val offsets = DeadlineForm.shownReminders(reminderState, exam, dueOrNull, now)
+    fun removeOffset(m: Long) { reminderState = DeadlineForm.removeReminder(reminderState, exam, dueOrNull, now, m); error = null }
+    fun addOffset(m: Long) { reminderState = DeadlineForm.addReminder(reminderState, exam, dueOrNull, now, m); error = null }
     val canSave = exam || form.freq == null || dueOrNull != null
 
     AlertDialog(
@@ -840,16 +829,20 @@ private fun DeadlineDialog(
                 Spacer(Modifier.height(12.dp))
                 Text("알림 (선택)", style = t.body2Medium, color = c.foregroundNeutralPrimary)
                 Text(
-                    if (exam) (if (!remindersTouched && offsets.isEmpty()) "그대로 두면 전날 20:00과 시작 2시간 전에 알려요(응원 문구와 함께). " else "") + "정한 시각에 꼭 울려요(방해 금지 시간에도)."
+                    if (exam) (
+                        if (offsets.isEmpty()) "알림 없이 저장해요. 알림을 받으려면 아래에서 더하세요."
+                        else (if (!reminderState.touched) "기본 알림이에요. 필요 없으면 ✕로 빼세요. " else "") +
+                            "정한 시각에 꼭 울려요(방해 금지 시간에도). 시험 알림에는 응원 문구가 함께 와요."
+                    )
                     else "설정의 기본 마감 알림과 별개로, 정한 시각에 꼭 울려요(방해 금지 시간에도)." + (if (form.freq != null) " 반복 마감은 회차마다 울려요." else ""),
                     style = t.caption1Regular, color = c.foregroundNeutralSecondary)
                 Spacer(Modifier.height(6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (m in offsets) WantedChip(text = offsetLabel(m) + "  ✕", onClick = { offsets = offsets - m; remindersTouched = true; error = null },
+                    for (m in offsets) WantedChip(text = offsetLabel(m) + "  ✕", onClick = { removeOffset(m) },
                         modifier = Modifier.semantics { contentDescription = "알림 ${offsetLabel(m)} 지우기" })
                     if (offsets.size < MyDeadlines.MAX_REMINDERS) {
                         for ((m, label) in listOf(10L to "+10분 전", 60L to "+1시간 전", 1440L to "+하루 전")) {
-                            if (m !in offsets) WantedChip(text = label, onClick = { offsets = (offsets + m).sorted(); remindersTouched = true; error = null })
+                            if (m !in offsets) WantedChip(text = label, onClick = { addOffset(m) })
                         }
                         WantedChip(text = "+시각 고르기", onClick = {
                             val due = dueOrNull ?: return@WantedChip
@@ -857,10 +850,7 @@ private fun DeadlineDialog(
                                 val dueDate = due.atZone(zone).toLocalDate()
                                 var at = dueDate.atTime(picked).atZone(zone).toInstant()
                                 if (!at.isBefore(due)) at = at.minusSeconds(86400) // 마감보다 늦으면 전날 그 시각
-                                val m = java.time.Duration.between(at, due).toMinutes()
-                                if (m > 0 && m !in offsets) offsets = (offsets + m).sorted()
-                                remindersTouched = true
-                                error = null
+                                addOffset(java.time.Duration.between(at, due).toMinutes())
                             }
                         })
                     }
@@ -903,8 +893,8 @@ private fun DeadlineDialog(
                     val err = MyDeadlines.validate(titleText, memo, countWithoutThis)
                     if (err != null) { error = err; return@DialogButton }
                     val due = dueOrNull ?: run { error = "첫 마감을 정할 수 없어요"; return@DialogButton }
-                    val reminders = if (exam && !remindersTouched && offsets.isEmpty()) MyDeadlines.defaultExamReminders(due, Instant.now())
-                    else MyDeadlines.normalizeReminders(offsets.map { due.minusSeconds(it * 60) })
+                    // 보이는 칩 그대로 저장한다(빈 목록이면 알림 없음).
+                    val reminders = DeadlineForm.reminderInstants(reminderState, exam, due, now)
                     MyDeadlines.validateReminders(reminders, due)?.let { error = it; return@DialogButton }
                     val repeat = if (exam) null else repeatOf()
                     val repeating = repeat != null
