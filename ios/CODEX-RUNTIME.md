@@ -22,6 +22,8 @@ Actions → **iOS Native Codex IPA** → **Run workflow**.
 4. 앱 타깃에만 `YOUNGMIN_NATIVE_CODEX`를 활성화해 연결하고, 서명하지 않은 build 23 IPA를 만든다.
 5. 성공하면 `youngmin-native-codex-ipa-*` 아티팩트의 `Youngmin-unsigned.ipa`를 Windows Sideloadly로 설치한다. 설치 과정은 [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)를 따른다.
 
+병렬 시뮬레이터 작업은 내장 엔진으로 로그인 전 계정 상태와 모델 목록을 읽고, 샘플 화면을 탐색한다. 실제 사용자 토큰이나 SNU 계정은 CI에 전달하지 않는다.
+
 빌드에는 Apple 개발자 계정이나 사용자 ChatGPT 토큰이 필요 없다. 실제 로그인은 설치한 iPad의 공식 OpenAI 로그인 페이지에서 진행한다. 학교 워크스페이스 정책은 그대로 적용된다.
 
 ## 현재 지원 범위
@@ -39,3 +41,5 @@ Actions → **iOS Native Codex IPA** → **Run workflow**.
 참고: [공식 app-server 문서](https://learn.chatgpt.com/docs/app-server.md), [고정한 공식 소스](https://github.com/openai/codex/tree/29eb79e9866b3262a777fdf8195c1b9e63684c91/codex-rs/app-server/src/in_process.rs).
 
 MXC 의존성에는 데스크톱 전용 정책 로그 함수 참조 두 곳에 플랫폼 조건을 추가한다. iOS 실행 요청을 거부하는 기존 `ensure_host_supported` 검사는 유지한다. 같은 고정 커밋 소스를 검증해 사용하며, 샌드박스 실행을 허용하는 우회 경로는 추가하지 않는다.
+
+iOS에서 데스크톱 인증서 파일을 찾을 수 없으면 기존 잠금 파일의 Mozilla 인증서 목록을 사용한다. 명시적인 SSL_CERT_FILE/SSL_CERT_DIR 설정은 그대로 우선하며, 인증서 체인과 호스트 이름 검증을 수행한다.

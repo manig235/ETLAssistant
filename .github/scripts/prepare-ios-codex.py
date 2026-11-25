@@ -21,6 +21,37 @@ lock_text = "[[package]]".join(
     if "source = " not in block else block
     for block in blocks
 )
+# rustls-native-certs treats iOS as Unix and searches desktop certificate files.
+# Supply the already-locked Mozilla roots when that store is empty, preserving
+# explicit SSL_CERT_FILE/SSL_CERT_DIR overrides and normal chain/hostname checks.
+http_manifest = workspace / "http-client/Cargo.toml"
+with http_manifest.open("a") as file:
+    file.write('\n[target.\'cfg(target_os = "ios")\'.dependencies]\nwebpki-roots = "=1.0.10"\n')
+native_roots = workspace / "http-client/src/native_roots.rs"
+roots_text = native_roots.read_text()
+anchor = "    let _ = roots.add_parsable_certificates(certs);"
+assert roots_text.count(anchor) == 1
+native_roots.write_text(roots_text.replace(anchor, anchor + '''
+    #[cfg(target_os = "ios")]
+    if roots.is_empty()
+        && std::env::var_os("SSL_CERT_FILE").is_none()
+        && std::env::var_os("SSL_CERT_DIR").is_none()
+    {
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    }'''))
+blocks = lock_text.split("[[package]]")
+for index, block in enumerate(blocks):
+    if '\nname = "codex-http-client"\n' in block:
+        parsed = tomllib.loads("[[package]]" + block)["package"][0]
+        dependencies = sorted(parsed["dependencies"] + ["webpki-roots"])
+        start = block.index("dependencies = [\n")
+        end = block.index("\n]", start) + 2
+        new_dependencies = "dependencies = [\n" + "".join(f' "{dep}",\n' for dep in dependencies) + "]"
+        blocks[index] = block[:start] + new_dependencies + block[end:]
+        break
+else:
+    raise AssertionError("missing codex-http-client lock entry")
+lock_text = "[[package]]".join(blocks)
 mxc_revision = "b21120168d70befe12356411423266bfef168446"
 old_mxc = f'mxc-sdk = {{ git = "https://github.com/microsoft/mxc", rev = "{mxc_revision}" }}'
 assert old_mxc in text
