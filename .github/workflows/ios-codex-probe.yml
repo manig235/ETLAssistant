@@ -3,6 +3,13 @@ name: iOS Codex Runtime Probe
 on:
   workflow_dispatch:
     inputs:
+      component:
+        description: Official library or application bridge
+        type: choice
+        default: bridge
+        options:
+          - bridge
+          - upstream
       runner:
         description: Mac runner (Intel also cross-compiles native arm64 iOS)
         type: choice
@@ -27,16 +34,28 @@ jobs:
         with:
           persist-credentials: false
       - name: Cache pinned Rust dependencies
-        uses: actions/cache@v6
+        id: rust-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh') }}
+          key: ios-codex-170-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh', '.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
           restore-keys: ios-codex-170-${{ runner.arch }}-ios-arm64-
       - name: Compile the official in-process app server for iOS
+        env:
+          CODEX_PROBE_COMPONENT: ${{ inputs.component }}
         run: bash .github/scripts/ios-codex-probe.sh
+      - name: Save Rust dependencies even after a compile failure
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - name: Upload native build diagnostics
         if: always()
         uses: actions/upload-artifact@v7

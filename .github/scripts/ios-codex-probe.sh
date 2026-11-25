@@ -27,7 +27,12 @@ export IPHONEOS_DEPLOYMENT_TARGET=17.0
 export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 export CARGO_TERM_COLOR=never
 cd "$SOURCE/codex-rs"
-cargo +"$TOOLCHAIN" check --locked --lib -p codex-app-server --target "$TARGET" \
+PACKAGE=codex-app-server
+if [[ "${CODEX_PROBE_COMPONENT:-upstream}" == bridge ]]; then
+  python3 "$ROOT/.github/scripts/prepare-ios-codex.py" "$SOURCE"
+  PACKAGE=youngmin-codex-bridge
+fi
+cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \
   2>&1 | tee "$OUT/cargo-check.log"
 printf 'Official Codex app-server library passed cargo check for %s.\n' "$TARGET" > "$OUT/result.txt"
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
