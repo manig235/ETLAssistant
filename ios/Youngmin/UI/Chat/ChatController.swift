@@ -247,15 +247,22 @@ final class ChatController {
         let config = TurnConfig(model: modelId, effort: sanitized.effort, instructions: instructions,
                                 tools: toolbox.toolDefinitions, toolPackaging: toolbox.toolPackaging)
         let toolbox = self.toolbox
+        let usingNative = auth.usesNativeCodex
+        let nativeReferences = usingNative ? [] : history.filter { $0["type"]?.string == CodexEngine.threadMarker }
+        let apiHistory = history.filter { $0["type"]?.string != CodexEngine.threadMarker }
+        if !usingNative, !nativeReferences.isEmpty, apiHistory.isEmpty, hadHistory {
+            model.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 가요.")
+            sync()
+        }
         let execute: ToolExecutor = { call in await toolbox.run(name: call.name, arguments: call.arguments) }
         let stream: AsyncStream<ResponsesEvent>
-        if auth.usesNativeCodex, let client = auth.codex {
+        if usingNative, let client = auth.codex {
             if codexEngine == nil { codexEngine = CodexEngine(client: client) }
             stream = await codexEngine!.send(history: history, input: [ResponsesInput.userMessage(prompt, images: images)],
                                               config: config, cancellation: cancellation, tools: execute)
         } else {
         stream = await currentEngine().send(
-            history: history.filter { $0["type"]?.string != CodexEngine.threadMarker },
+            history: apiHistory,
             input: [ResponsesInput.userMessage(prompt, images: images)],
             config: config,
             cancellation: cancellation,
@@ -273,7 +280,7 @@ final class ChatController {
                 model.finishAssistant(itemId, text)
                 sync()
             case .turnEnded(let result):
-                threads.save(threadId, result.history)
+                threads.save(threadId, nativeReferences + result.history)
                 model.closeStreaming()
                 switch result.status {
                 case .interrupted:
@@ -317,6 +324,10 @@ final class ChatController {
                 if models.isEmpty { throw CodexError("이 계정에서 사용할 수 있는 iOS 지원 모델을 찾지 못했어요") }
             } else {
                 models = try await ModelListClient.fetch(auth: auth.provider, transport: URLSessionTransport())
+            }
+            if !models.isEmpty {
+                let availableChoice = ModelCatalog.sanitize(choice, models)
+                if availableChoice != choice { setChoice(availableChoice) }
             }
             // 예전 판에서 고른 모델도 이름을 기억해 둔다(다음 실행 때 칩에 바로 보이게).
             if let id = choice.model, let m = models.first(where: { $0.model == id }) { settings.modelName = m.displayName }

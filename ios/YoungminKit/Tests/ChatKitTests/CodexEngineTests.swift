@@ -44,6 +44,25 @@ private actor TurnTransport: CodexTransport {
 
 @Suite("Embedded Codex turns", .timeLimit(.minutes(1)))
 struct CodexEngineTests {
+    @Test func apiKeyTurnsAreImportedWhenReturningToNativeChat() async throws {
+        let transport = TurnTransport()
+        let client = CodexClient(transport: transport)
+        let engine = CodexEngine(client: client)
+        let history: [ChatJSON] = [
+            ["type": .string(CodexEngine.threadMarker), "thread_id": "native-thread"],
+            ResponsesInput.userMessage("API 키로 나눈 대화"),
+            ["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "이전 답변"]]],
+        ]
+        for await event in await engine.send(history: history, input: [ResponsesInput.userMessage("이어서")], config: TurnConfig(model: "gpt-5.5"), tools: { _ in ToolOutput(text: "") }) {
+            if case .turnEnded(let result) = event { #expect(result.history.count == 1) }
+        }
+        let requests = await transport.requests()
+        #expect(requests.contains { $0["method"]?.string == "thread/resume" })
+        let turn = requests.first { $0["method"]?.string == "turn/start" }
+        #expect(turn?["params"]?["input"]?[0]?["text"]?.string?.contains("API 키로 나눈 대화") == true)
+        await client.shutdown()
+    }
+
     @Test func streamAndResumeNativeConversation() async throws {
         let transport = TurnTransport()
         let client = CodexClient(transport: transport)

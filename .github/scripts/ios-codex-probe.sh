@@ -49,6 +49,7 @@ rustc +"$TOOLCHAIN" --version
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
 export SDKROOT="$(xcrun --sdk "$SDK" --show-sdk-path)"
 export CARGO_TERM_COLOR=never
+export CARGO_BUILD_JOBS=2
 cd "$SOURCE/codex-rs"
 PACKAGE=codex-app-server
 if [[ "${CODEX_PROBE_COMPONENT:-upstream}" == bridge ]]; then
@@ -58,6 +59,7 @@ if [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   test "$PACKAGE" == youngmin-codex-bridge
   # Keep iteration builds reasonably small without release LTO costs.
   export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=1
+  if [[ "$SDK" == iphonesimulator ]]; then export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=0; fi
   export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
   cargo +"$TOOLCHAIN" build --locked --lib -p "$PACKAGE" --target "$TARGET" --profile dev-small \
     2>&1 | tee "$OUT/cargo-build.log"

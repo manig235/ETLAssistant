@@ -71,10 +71,8 @@ public actor CodexEngine {
             threadID = id
             savedHistory = [["type": .string(Self.threadMarker), "thread_id": .string(id)]]
             var userInput = Self.userInput(input)
-            if existing == nil {
-                let context = Self.legacyContext(history)
-                if !context.isEmpty { userInput.insert(["type": "text", "text": .string(context), "text_elements": []], at: 0) }
-            }
+            let context = Self.legacyContext(history)
+            if !context.isEmpty { userInput.insert(["type": "text", "text": .string(context), "text_elements": []], at: 0) }
             try Task.checkCancellation()
             var params: ChatJSON = ["threadId": .string(id), "input": .array(userInput)]
             if let effort = config.effort { params = params.setting("effort", .string(effort)) }
