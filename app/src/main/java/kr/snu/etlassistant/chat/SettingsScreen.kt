@@ -997,7 +997,7 @@ private fun HyperLink(text: String, onClickLabel: String, enabled: Boolean = tru
 }
 
 /** 건의사항·오류 제보용 카카오톡 오픈채팅. */
-private const val FEEDBACK_URL = "https://open.kakao.com/o/gpg3G9Xi"
+private const val FEEDBACK_URL = "https://open.kakao.com/o/sR3ebBYi"
 
 @Composable
 private fun LinkRow(title: String, onClick: () -> Unit, desc: String? = null) {
