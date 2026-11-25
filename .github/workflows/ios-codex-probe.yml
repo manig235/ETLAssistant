@@ -41,8 +41,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh', '.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
-          restore-keys: ios-codex-170-${{ runner.arch }}-ios-arm64-
+          key: ios-codex-170-minimal-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh', '.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
+          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-ios-arm64-
       - name: Compile the official in-process app server for iOS
         env:
           CODEX_PROBE_COMPONENT: ${{ inputs.component }}

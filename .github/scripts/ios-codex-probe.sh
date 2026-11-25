@@ -20,6 +20,15 @@ curl --fail --location --retry 3 \
   -o "$OUT/codex.tar.gz"
 printf '%s  %s\n' "$ARCHIVE_SHA256" "$OUT/codex.tar.gz" | shasum -a 256 -c -
 tar -xzf "$OUT/codex.tar.gz" -C "$SOURCE" --strip-components=1
+V8_REVISION=90a65f887a0c0f048f3784afbcb320b373c8a2e0
+V8_SHA256=32bc3dac906adf19f98ea73f5882bccbdf68cd5e194135fb1b68b14f86178721
+curl --fail --location --retry 3 \
+  "https://api.github.com/repos/openai-oss-forks/rusty_v8/tarball/$V8_REVISION" \
+  -o "$OUT/v8.tar.gz"
+printf '%s  %s\n' "$V8_SHA256" "$OUT/v8.tar.gz" | shasum -a 256 -c -
+mkdir -p "$SOURCE/youngmin-vendor/rusty-v8"
+tar -xzf "$OUT/v8.tar.gz" -C "$SOURCE/youngmin-vendor/rusty-v8" --strip-components=1
+python3 "$ROOT/.github/scripts/prepare-ios-codex.py" "$SOURCE" "${CODEX_PROBE_COMPONENT:-upstream}"
 
 rustup toolchain install "$TOOLCHAIN" --profile minimal --target "$TARGET"
 rustc +"$TOOLCHAIN" --version
@@ -29,7 +38,6 @@ export CARGO_TERM_COLOR=never
 cd "$SOURCE/codex-rs"
 PACKAGE=codex-app-server
 if [[ "${CODEX_PROBE_COMPONENT:-upstream}" == bridge ]]; then
-  python3 "$ROOT/.github/scripts/prepare-ios-codex.py" "$SOURCE"
   PACKAGE=youngmin-codex-bridge
 fi
 cargo +"$TOOLCHAIN" check --locked --lib -p "$PACKAGE" --target "$TARGET" \
