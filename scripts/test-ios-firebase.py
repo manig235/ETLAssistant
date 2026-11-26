@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -240,6 +241,56 @@ class ExportVerificationTests(unittest.TestCase):
 
 
 class SigningCleanupTests(unittest.TestCase):
+    def test_command_error_reports_only_safe_operation_and_classification(self):
+        command = ["security", "import", "secret-marker-file", "-P", "secret-marker-password"]
+        result = subprocess.CompletedProcess(command, 1, b"secret-marker-key",
+                                             b"MAC verification failed secret-marker-private-output")
+        with mock.patch.object(distribution.subprocess, "run", return_value=result):
+            with self.assertRaises(RuntimeError) as error:
+                distribution.run(command, capture=True)
+        message = str(error.exception)
+        self.assertIn("security import", message)
+        self.assertIn("PKCS12_PASSWORD_OR_FORMAT_REJECTED", message)
+        self.assertNotIn("secret-marker", message)
+
+    def test_signing_preflight_needs_no_native_build_and_cleans_up_import_failure(self):
+        for fail_import in (False, True):
+            with self.subTest(fail_import=fail_import), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                data = profiles()
+                commands = []
+
+                def fake_run(args, **kwargs):
+                    args = [str(a) for a in args]
+                    commands.append(args)
+                    if args[:2] == ["security", "import"] and fail_import:
+                        raise RuntimeError("security import failed")
+                    if args[:2] == ["security", "find-identity"]:
+                        return (f'1) {IDENTITY} "Apple Distribution: Synthetic"\n').encode()
+                    if args[:2] == ["security", "find-certificate"]:
+                        return b"synthetic-pem"
+                    if args[0] == "openssl":
+                        return CERT
+                    return b""
+
+                def fake_profile(path):
+                    return next(data[b] for b, secret, _ in distribution.TARGETS if path.name.startswith(secret))
+
+                with mock.patch.multiple(distribution, ROOT=root, OUTPUT=root / "output"), \
+                        mock.patch.object(distribution, "run", side_effect=fake_run), \
+                        mock.patch.object(distribution, "read_profile", side_effect=fake_profile), \
+                        mock.patch.object(distribution.subprocess, "run") as cleanup:
+                    if fail_import:
+                        with self.assertRaisesRegex(RuntimeError, "security import"):
+                            distribution.build(dict(settings(), RUNNER_TEMP=str(root)), verify_only=True)
+                    else:
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            distribution.build(dict(settings(), RUNNER_TEMP=str(root)), verify_only=True)
+                self.assertFalse((root / "output").exists())
+                self.assertFalse(list(root.glob("youngmin-signing-*")))
+                self.assertFalse(any(command[0] == "xcodebuild" for command in commands))
+                self.assertEqual(len(cleanup.call_args_list), 2)
+
     def test_failed_archive_restores_keychains_and_removes_profiles_and_licenses(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

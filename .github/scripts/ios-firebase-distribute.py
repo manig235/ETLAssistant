@@ -79,7 +79,24 @@ def run(args, *, data=None, capture=False, env=None):
                             stdout=subprocess.PIPE if capture else None,
                             stderr=subprocess.PIPE if capture else None)
     if result.returncode:
-        raise RuntimeError(f"{Path(args[0]).name} failed (exit {result.returncode})")
+        command = Path(args[0]).name
+        reason = ""
+        if command == "security":
+            # Only fixed operation names and classifications may reach logs.
+            # Neither argv nor raw keychain output is safe to echo.
+            allowed = {"list-keychains", "create-keychain", "set-keychain-settings", "unlock-keychain",
+                       "import", "set-key-partition-list", "find-identity", "find-certificate", "cms"}
+            if len(args) > 1 and args[1] in allowed:
+                command += " " + args[1]
+            diagnostic = (result.stderr or b"").lower()
+            for marker, label in ((b"mac verification failed", "PKCS12_PASSWORD_OR_FORMAT_REJECTED"),
+                                  (b"user interaction is not allowed", "USER_INTERACTION_REQUIRED"),
+                                  (b"specified item could not be found", "KEYCHAIN_ITEM_NOT_FOUND"),
+                                  (b"password you entered is not correct", "KEYCHAIN_PASSWORD_REJECTED")):
+                if marker in diagnostic:
+                    reason = ": " + label
+                    break
+        raise RuntimeError(f"{command} failed (exit {result.returncode}){reason}")
     return result.stdout if capture else None
 
 
@@ -171,22 +188,23 @@ def verify_export(ipa, temp, team, certificate):
     return info
 
 
-def build(env):
+def build(env, *, verify_only=False):
     check_config(env)
     team = env["IOS_TEAM_ID"]
-    generated = ROOT / "ios/NativeCodex/Generated"
-    if not (generated / "iphoneos/arm64/libyoungmin_codex_bridge.a").is_file():
-        raise ValueError("Build the native Codex bridge first")
-    if not (generated / "Codex-LICENSE.txt").is_file():
-        raise ValueError("Native Codex license is missing")
-    # Match ios-device-ipa.sh: Rust reports the frameworks required by this build.
-    native_system_libs = (generated / "iphoneos/arm64/native-static-libs.txt").read_text().strip()
-    if not native_system_libs:
-        raise ValueError("Native Codex system library flags are missing")
-    OUTPUT.mkdir(exist_ok=True)
-    # A fresh output directory prevents a failed rebuild from publishing an old IPA.
-    if any(OUTPUT.iterdir()):
-        raise ValueError("ios-distribution-output must be empty before building")
+    if not verify_only:
+        generated = ROOT / "ios/NativeCodex/Generated"
+        if not (generated / "iphoneos/arm64/libyoungmin_codex_bridge.a").is_file():
+            raise ValueError("Build the native Codex bridge first")
+        if not (generated / "Codex-LICENSE.txt").is_file():
+            raise ValueError("Native Codex license is missing")
+        # Match ios-device-ipa.sh: Rust reports the frameworks required by this build.
+        native_system_libs = (generated / "iphoneos/arm64/native-static-libs.txt").read_text().strip()
+        if not native_system_libs:
+            raise ValueError("Native Codex system library flags are missing")
+        OUTPUT.mkdir(exist_ok=True)
+        # A fresh output directory prevents a failed rebuild from publishing an old IPA.
+        if any(OUTPUT.iterdir()):
+            raise ValueError("ios-distribution-output must be empty before building")
     with tempfile.TemporaryDirectory(prefix="youngmin-signing-", dir=env.get("RUNNER_TEMP")) as directory:
         temp = Path(directory)
         keychain = temp / "distribution.keychain-db"
@@ -220,6 +238,9 @@ def build(env):
                 private_file(path, decode_secret(env[secret], secret))
                 profiles[bundle], profile_files[bundle] = read_profile(path), path
             validate_profile_set(profiles, team, certificate)
+            if verify_only:
+                print("Validated the distribution identity and all three Ad Hoc profiles.")
+                return
             for bundle, profile in profiles.items():
                 # Support both current Xcode and the legacy lookup directory.
                 for folder in (Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
@@ -323,15 +344,15 @@ def main():
     # GitHub cancellation must still run the temporary keychain/profile cleanup.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "build", "publish"))
+    parser.add_argument("command", choices=("check", "check-signing", "build", "publish"))
     parser.add_argument("--publish", action="store_true", help="Also check Firebase settings")
     args = parser.parse_args()
     try:
         if args.command == "check":
             check_config(os.environ, args.publish or os.environ.get("PUBLISH_TO_FIREBASE") == "true")
             print("Required distribution settings are present.")
-        elif args.command == "build":
-            build(os.environ)
+        elif args.command in ("check-signing", "build"):
+            build(os.environ, verify_only=args.command == "check-signing")
         else:
             publish(os.environ)
     except (ValueError, RuntimeError, OSError, KeyError, plistlib.InvalidFileException) as error:
