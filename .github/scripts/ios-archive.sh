@@ -210,16 +210,33 @@ setup_signing() {
 if [[ "$signing" == 0 && "$dry_run" == 1 ]]; then make_dry_run_identity; fi
 if [[ "$signing" == 1 || "$dry_run" == 1 ]]; then setup_signing; fi
 
-check_profiles() { # project settings... : each YOUNGMIN_PROFILE_<target> must reach only that target
-  local check_project="$1" setting target expected value
+write_signing_config() { # file [extra settings...]
+  # Command-line settings do not expand nested macros; xcconfig files do. Each
+  # target picks YOUNGMIN_PROFILE_<target>; package targets resolve to empty.
+  local file="$1" setting
   shift
-  for setting in "$@"; do
-    [[ "$setting" == YOUNGMIN_PROFILE_*=* ]] || continue
-    target="${setting%%=*}" target="${target#YOUNGMIN_PROFILE_}" expected="${setting#*=}"
+  {
+    echo "CODE_SIGN_STYLE = Manual"
+    echo "DEVELOPMENT_TEAM = $IOS_TEAM_ID"
+    echo "CODE_SIGN_IDENTITY = $identity_name"
+    echo 'PROVISIONING_PROFILE_SPECIFIER = $(YOUNGMIN_PROFILE_$(TARGET_NAME))'
+    echo "OTHER_CODE_SIGN_FLAGS = --keychain $keychain"
+    # App-only builds ship without the App Group, so the app's App ID needs no capability.
+    if [[ "$mode" == app-only ]]; then echo "CODE_SIGN_ENTITLEMENTS ="; fi
+    for setting in "${profile_args[@]}" "$@"; do echo "${setting%%=*} = ${setting#*=}"; done
+  } > "$file"
+}
+
+check_profiles() { # project xcconfig: each YOUNGMIN_PROFILE_<target> must reach that target
+  local check_project="$1" config="$2" line target expected value
+  while IFS= read -r line; do
+    [[ "$line" == YOUNGMIN_PROFILE_* ]] || continue
+    target="${line%% = *}" expected="${line#* = }"
+    target="${target#YOUNGMIN_PROFILE_}"
     value="$(xcodebuild -showBuildSettings -project "$check_project" -target "$target" -configuration Release \
-      -sdk iphoneos "$@" 2>/dev/null | sed -n 's/^ *PROVISIONING_PROFILE_SPECIFIER = //p' | head -n 1)"
+      -sdk iphoneos -xcconfig "$config" 2>/dev/null | sed -n 's/^ *PROVISIONING_PROFILE_SPECIFIER = //p' | head -n 1)"
     [[ "$value" == "$expected" ]] || { echo "Provisioning profile for $target resolves to '$value', expected '$expected'" >&2; exit 1; }
-  done
+  done < "$config"
   echo "PASS: per-target provisioning profiles resolve correctly ($(basename "$check_project"))"
 }
 
@@ -234,19 +251,16 @@ common=(-project "$project" -scheme Youngmin -configuration Release -destination
         -derivedDataPath "$work/derived" "CURRENT_PROJECT_VERSION=$build")
 signing_args=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS=)
 if [[ "$signing" == 1 || "$dry_run" == 1 ]]; then
-  planned=(CODE_SIGN_STYLE=Manual "DEVELOPMENT_TEAM=$IOS_TEAM_ID" "CODE_SIGN_IDENTITY=$identity_name"
-           'PROVISIONING_PROFILE_SPECIFIER=$(YOUNGMIN_PROFILE_$(TARGET_NAME))' "${profile_args[@]}"
-           "OTHER_CODE_SIGN_FLAGS=--keychain $keychain")
-  # App-only builds ship without the App Group, so the app's App ID needs no capability.
-  if [[ "$mode" == app-only ]]; then planned+=(CODE_SIGN_ENTITLEMENTS=); fi
-  check_profiles "$project" "${planned[@]}"
+  write_signing_config "$out/signing.xcconfig"
+  check_profiles "$project" "$out/signing.xcconfig"
   if [[ "$dry_run" == 1 && "$mode" == app-only ]]; then
     # Also prove the per-target expansion for the full (extension) layout.
-    check_profiles ios/Youngmin.xcodeproj "${planned[@]}" \
+    write_signing_config "$work/signing-full.xcconfig" \
       YOUNGMIN_PROFILE_YoungminWidgets=00000000-0000-0000-0000-00000000WIDG \
       YOUNGMIN_PROFILE_YoungminShare=00000000-0000-0000-0000-00000000SHAR
+    check_profiles ios/Youngmin.xcodeproj "$work/signing-full.xcconfig"
   fi
-  if [[ "$signing" == 1 ]]; then signing_args=("${planned[@]}"); fi
+  if [[ "$signing" == 1 ]]; then signing_args=(-xcconfig "$out/signing.xcconfig"); fi
 fi
 
 archive="$out/Youngmin.xcarchive"
