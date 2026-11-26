@@ -82,7 +82,7 @@ gh variable set ASC_APP_ID --repo manig235/ETLAssistant --body '앱의 숫자 Ap
 ## 5. 설정 후 확인할 순서
 
 1. 이 브랜치의 PR을 main에 반영해 **iOS TestFlight** 수동 워크플로를 기본 브랜치에서 사용할 수 있게 한다. 반영 전에는 `Run workflow`가 표시되지 않을 수 있다.
-2. **Actions → iOS TestFlight → Run workflow**에서 제출할 브랜치를 고르고 **upload는 끈다**. 이 실행은 P12 검사 → 프로파일·서명 검사 → 네이티브 빌드 → Swift Release 테스트 → App Store Connect용 IPA 서명·검증 순서다. 첫 실행에는 `ASC_*` 없이도 빌드를 확인할 수 있다.
+2. **Actions → iOS TestFlight → Run workflow**에서 제출할 브랜치를 고르고 **upload는 끈다**. 이 실행은 필수 설정·P12 검사 → 프로파일·서명 검사 → 네이티브 빌드 → Swift Release 테스트 → App Store Connect용 IPA 서명·검증 순서다. 필수 설정이 빠지면 Mac을 실행하기 전에 빠진 이름을 알려준다. 첫 실행에는 `ASC_*` 없이도 빌드를 확인할 수 있다.
 3. 빌드 검사 성공 후 **upload를 켜고** 실행한다. App Store Connect용 IPA는 Ad Hoc IPA처럼 직접 기기에 설치하지 않는다.
 4. Apple의 빌드 처리가 끝나면 App Store Connect의 내부 테스트 그룹에 빌드를 배정해 본인 기기에 설치한다.
 5. [심사 메모](TESTFLIGHT_REVIEW_NOTES.txt)의 FakeETL·ChatGPT 로그인·과제 조회·자료 요약·일정 승인/취소를 실제 설치본에서 확인한다.

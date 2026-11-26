@@ -45,6 +45,22 @@ jobs:
         run: python3 -I scripts/test-ios-firebase.py
       - name: Check runtime sources for the removed private API
         run: python3 -I .github/scripts/check-ios-private-apis.py
+      - name: Check required TestFlight settings before allocating a Mac
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          UPLOAD_TO_APP_STORE_CONNECT: ${{ inputs.upload }}
+          IOS_TESTFLIGHT_BUILD_OFFSET: ${{ vars.IOS_TESTFLIGHT_BUILD_OFFSET }}
+          IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_APPSTORE_APP_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_APP_PROFILE_BASE64 }}
+          IOS_APPSTORE_WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_WIDGETS_PROFILE_BASE64 }}
+          IOS_APPSTORE_SHARE_PROFILE_BASE64: ${{ secrets.IOS_APPSTORE_SHARE_PROFILE_BASE64 }}
+          ASC_APP_ID: ${{ vars.ASC_APP_ID }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: python3 -I .github/scripts/ios-firebase-distribute.py check --distribution app-store
       - name: Verify P12 password before allocating a Mac
         if: github.event_name == 'workflow_dispatch'
         env:

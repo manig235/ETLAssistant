@@ -12,9 +12,10 @@ Apple 계정에서 해야 하는 작업은 [TestFlight 최초 설정](TESTFLIGHT
 
 확인한 항목:
 
-- `9026668`에서 배포 스크립트 테스트 **32개 통과**. 실제 OpenSSL 3으로 생성한 현대·구형 PKCS#12의 정상 암호 검증, 잘못된 암호 거부, 임시 호환 사본의 인증서 동일성을 포함한다. 제거 대상 JavaScriptCore 비공개 API 소스 검사와 `git diff --check`도 통과했다.
+- `872db80`의 통합 코드에서 배포 스크립트 테스트 **32개 통과**. 실제 OpenSSL 3으로 생성한 현대·구형 PKCS#12의 정상 암호 검증, 잘못된 암호 거부, 임시 호환 사본의 인증서 동일성을 포함한다. 제거 대상 JavaScriptCore 비공개 API 소스 검사와 `git diff --check`도 통과했다.
 - [수정 브랜치 TestFlight CI](https://github.com/manig235/ETLAssistant/actions/runs/45777028138)는 `distribution-checks`가 성공했다. `push` 실행이므로 `build-and-upload`는 **skipped**다. 서명된 제출용 빌드 생성이나 Apple 업로드 성공을 뜻하지 않는다.
-- [실제 저장소 Secret을 사용한 검사](https://github.com/manig235/ETLAssistant/actions/runs/45777028459)에서 OpenSSL의 **P12 MAC·비밀번호 검사가 통과**했다. macOS keychain 가져오기·프로파일 검증·Release 빌드는 다음 작업의 결과를 확인한다. 이 실행의 `publish=false`는 테스터에게 배포하지 않는다.
+- [실제 저장소 Secret을 사용한 검사 작업](https://github.com/manig235/ETLAssistant/actions/runs/45777028459/job/139763061611)에서 OpenSSL의 **P12 MAC·비밀번호 검사가 통과**했다. 이 실행의 후속 Mac 빌드는 중복 실행을 피하기 위해 대기 중 취소했다.
+- [현재 main의 실제 Mac 실행](https://github.com/manig235/ETLAssistant/actions/runs/45776970857)에서도 P12 검사와 **인증서 keychain 가져오기·Ad Hoc 프로파일 세 개 검증이 통과**했다. Release 전체 빌드는 진행 중이며 이 통과 결과에 포함되지 않는다. 기존 배포 인증서를 재발급할 필요는 없다.
 - 공통 기반 `34b4f49`의 [iOS 검사](https://github.com/manig235/ETLAssistant/actions/runs/45771251265)는 Swift 로직·시뮬레이터 검사 모두 성공했다. 실제 ChatGPT 계정 로그인이나 현재 App Store 서명 빌드를 검증한 결과는 아니다.
 - [이전 Release archive 실행](https://github.com/manig235/ETLAssistant/actions/runs/45732010508)은 성공 기록이 있다. 다른 커밋의 실행이며 해당 실행에서 인증·채팅 통합 테스트 단계는 skipped이므로 현재 제출 준비 완료의 근거로 삼지 않는다.
 - 로컬 Apple 서명 폴더의 프로파일 세 개는 등록 기기가 포함된 **Ad Hoc** 프로파일이다.
@@ -23,7 +24,7 @@ Apple 계정에서 해야 하는 작업은 [TestFlight 최초 설정](TESTFLIGHT
 
 1. **App Store Connect용 프로파일 세 개**를 생성하고 `IOS_APPSTORE_APP_PROFILE_BASE64`, `IOS_APPSTORE_WIDGETS_PROFILE_BASE64`, `IOS_APPSTORE_SHARE_PROFILE_BASE64`를 GitHub Secrets에 등록한다. 조회 시점에는 모두 없었다.
 2. **Apple 업로드 인증 설정**을 등록한다. Secret `ASC_KEY_P8`, Variables `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_APP_ID`가 조회 시점에는 모두 없었다. 배포용 p12 및 비밀번호와 `IOS_TEAM_ID`는 등록돼 있다.
-3. **macOS 서명 사전 검사 결과를 확인한다.** 비밀번호 수정 후 P12 검사는 통과했다. main의 안전한 진단·임시 호환 사본 처리를 TestFlight 브랜치에 통합했고, OpenSSL 3이 구형 암호화 형식을 읽는 재시도도 추가했다. TestFlight도 같은 인증서를 사용하지만 App Store Connect 프로파일 세 개에 대한 실제 macOS 서명 검사는 해당 파일 등록 후 확인해야 한다.
+3. **App Store Connect용 macOS 서명 검사를 통과시킨다.** 비밀번호 수정 후 P12와 기존 Ad Hoc 프로파일의 실제 Mac 사전 검사는 통과했다. main의 안전한 진단·임시 호환 사본·구형 PKCS#12 처리를 TestFlight 브랜치에 통합했다. TestFlight도 같은 인증서를 사용하지만 App Store Connect 프로파일 세 개에 대한 실제 Mac 서명 검사는 해당 파일 등록 후 확인해야 한다.
 4. **업로드할 Release 빌드로 실기기 경로를 확인한다.** FakeETL 진입 → ChatGPT 로그인 → 과제 조회 → 자료 요약 → 일정 승인·취소를 확인한다. 이 작업 환경에는 Xcode와 Swift가 없어 여기서 실기기 검증을 대신하지 못했다.
 5. **TestFlight 빌드 생성·업로드 및 App Store Connect 입력을 완료한다.** 먼저 upload=false로 서명·검증하고, 성공한 소스로 upload=true를 실행한다. Apple 측 빌드 처리 완료, 연락처·피드백 이메일·개인정보 URL·심사 메모·테스트할 내용을 확인해 외부 그룹의 심사에 제출한다. App Store Connect의 현재 앱 레코드·연락처·빌드 상태는 이 점검에서 직접 조회하지 못했다.
 
