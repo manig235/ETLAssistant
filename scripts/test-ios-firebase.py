@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise distribution rejection paths and credential cleanup without Apple/Google access."""
+"""Exercise Ad Hoc and App Store Connect rejection paths and credential cleanup without Apple/Google access."""
 
 import base64
 import contextlib
@@ -25,11 +25,11 @@ CERT = b"synthetic-certificate"
 IDENTITY = hashlib.sha1(CERT).hexdigest().upper()
 
 
-def profiles():
+def profiles(kind="ad-hoc"):
     result = {}
-    for i, (bundle, _, _) in enumerate(distribution.TARGETS):
+    for i, (bundle, _, _) in enumerate(distribution.targets(kind)):
         result[bundle] = {
-            "UUID": f"00000000-0000-0000-0000-{i:012d}", "Name": "Youngmin AdHoc " + str(i),
+            "UUID": f"00000000-0000-0000-0000-{i:012d}", "Name": "Youngmin " + kind + " " + str(i),
             "TeamIdentifier": [TEAM], "ApplicationIdentifierPrefix": [TEAM],
             "ExpirationDate": dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(days=30),
             "ProvisionedDevices": ["SYNTHETIC-DEVICE-A", "SYNTHETIC-DEVICE-B"],
@@ -39,14 +39,26 @@ def profiles():
                              "get-task-allow": False,
                              "com.apple.security.application-groups": [distribution.APP_GROUP]},
         }
+        if kind == "app-store":
+            del result[bundle]["ProvisionedDevices"]
+            result[bundle]["Entitlements"]["beta-reports-active"] = True
     return result
 
 
-def settings():
+def settings(kind="ad-hoc"):
     env = {key: base64.b64encode(b"synthetic-file").decode()
-           for key in ("IOS_DISTRIBUTION_P12_BASE64",) + tuple(t[1] for t in distribution.TARGETS)}
+           for key in ("IOS_DISTRIBUTION_P12_BASE64",) + tuple(t[1] for t in distribution.targets(kind))}
     env.update(IOS_TEAM_ID=TEAM, IOS_DISTRIBUTION_P12_PASSWORD="secret-marker-password")
     return env
+
+
+SYNTHETIC_P8 = "-----BEGIN PRIVATE KEY-----\nsecret-marker-p8\n-----END PRIVATE KEY-----\n"
+
+
+def asc_settings():
+    return {"ASC_KEY_ID": "ABC123DEF4", "ASC_ISSUER_ID": "01234567-89ab-cdef-0123-456789abcdef",
+            "ASC_APP_ID": "6740000000", "ASC_KEY_P8": SYNTHETIC_P8,
+            "WHAT_TO_TEST": "가상 eTL 로그인\n```injected``` $(do-not-execute)"}
 
 
 def firebase_settings():
@@ -197,59 +209,249 @@ class PublishTests(unittest.TestCase):
 
 
 class ExportVerificationTests(unittest.TestCase):
+    SCENARIOS = ("valid", "missing-share", "debug-signature", "wrong-version", "wrong-engine",
+                 "wrong-javascript-runtime", "wrong-revision", "wrong-build", "missing-encryption-key",
+                 "missing-privacy-manifest", "changed-privacy-manifest", "private-api", "wrong-profile-kind")
+
     def test_export_requires_both_extensions_and_distribution_entitlements(self):
-        for scenario in ("valid", "missing-share", "debug-signature", "wrong-version", "wrong-engine", "wrong-javascript-runtime"):
-            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                data = profiles()
-                app = root / "verified-ipa/Payload/Youngmin.app"
-                bundles = [app, app / "PlugIns/YoungminWidgets.appex", app / "PlugIns/YoungminShare.appex"]
-                profile_for_path = {}
-                for (bundle_id, _, _), bundle in zip(distribution.TARGETS, bundles):
-                    if scenario == "missing-share" and bundle_id.endswith(".share"):
-                        continue
-                    bundle.mkdir(parents=True)
-                    info = {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": "0.3.3",
-                            "CFBundleVersion": "1.1", "YoungminAuthEngine": "codex-in-process",
-                            "YoungminCodeModeRuntime": "quickjs"}
-                    if scenario == "wrong-version" and bundle_id.endswith(".widgets"):
-                        info["CFBundleVersion"] = "2.1"
-                    if scenario == "wrong-engine":
-                        info["YoungminAuthEngine"] = "stub"
-                    if scenario == "wrong-javascript-runtime":
-                        info["YoungminCodeModeRuntime"] = "javascriptcore"
-                    (bundle / "Info.plist").write_bytes(plistlib.dumps(info))
-                    profile_for_path[bundle] = data[bundle_id]
+        for kind in distribution.DISTRIBUTIONS:
+            for scenario in self.SCENARIOS:
+                with self.subTest(kind=kind, scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                    self.verify_scenario(kind, scenario, Path(directory))
 
-                def fake_run(args, **kwargs):
-                    if args[0] == "codesign" and "-d" in args:
-                        entitlements = copy.deepcopy(profile_for_path[args[-1]]["Entitlements"])
-                        if scenario == "debug-signature":
-                            entitlements["get-task-allow"] = True
-                        return plistlib.dumps(entitlements)
-                    return b""
+    def verify_scenario(self, kind, scenario, root):
+        data = profiles("app-store" if (kind == "ad-hoc") == (scenario == "wrong-profile-kind") else "ad-hoc")
+        app = root / "verified-ipa/Payload/Youngmin.app"
+        bundles = [app, app / "PlugIns/YoungminWidgets.appex", app / "PlugIns/YoungminShare.appex"]
+        profile_for_path = {}
+        for (bundle_id, _, _), bundle in zip(distribution.BUNDLES, bundles):
+            if scenario == "missing-share" and bundle_id.endswith(".share"):
+                continue
+            bundle.mkdir(parents=True)
+            info = {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": "0.3.3",
+                    "CFBundleVersion": "1001.1", "YoungminAuthEngine": "codex-in-process",
+                    "YoungminCodeModeRuntime": "quickjs",
+                    "YoungminCodexSourceRevision": distribution.CODEX_REVISION,
+                    "ITSAppUsesNonExemptEncryption": False}
+            if scenario == "wrong-version" and bundle_id.endswith(".widgets"):
+                info["CFBundleVersion"] = "2.1"
+            if scenario == "wrong-engine":
+                info["YoungminAuthEngine"] = "stub"
+            if scenario == "wrong-javascript-runtime":
+                info["YoungminCodeModeRuntime"] = "javascriptcore"
+            if scenario == "wrong-revision":
+                info["YoungminCodexSourceRevision"] = "0" * 40
+            if scenario == "missing-encryption-key":
+                del info["ITSAppUsesNonExemptEncryption"]
+            (bundle / "Info.plist").write_bytes(plistlib.dumps(info))
+            profile_for_path[bundle] = data[bundle_id]
+        for relative, source in distribution.PRIVACY_MANIFESTS.items():
+            shipped = app / relative / "PrivacyInfo.xcprivacy"
+            if scenario == "missing-privacy-manifest" and relative.endswith("Widgets.appex"):
+                continue
+            if shipped.parent.is_dir():
+                manifest = plistlib.loads((distribution.ROOT / source).read_bytes())
+                if scenario == "changed-privacy-manifest" and relative == ".":
+                    manifest["NSPrivacyTracking"] = True
+                # Xcode may store the manifest in binary form; the comparison is by content.
+                shipped.write_bytes(plistlib.dumps(manifest, fmt=plistlib.FMT_BINARY))
+        calls = []
 
-                with mock.patch.object(distribution, "run", side_effect=fake_run), \
-                        mock.patch.object(distribution, "read_profile", side_effect=lambda p: profile_for_path[p.parent]):
-                    if scenario == "valid":
-                        info = distribution.verify_export(root / "synthetic.ipa", root, TEAM, CERT)
-                        self.assertEqual(info["CFBundleVersion"], "1.1")
-                    else:
-                        with self.assertRaises(ValueError):
-                            distribution.verify_export(root / "synthetic.ipa", root, TEAM, CERT)
+        def fake_run(args, **kwargs):
+            calls.append([str(a) for a in args])
+            if args[0] == "codesign" and "-d" in args:
+                entitlements = copy.deepcopy(profile_for_path[args[-1]]["Entitlements"])
+                if scenario == "debug-signature":
+                    entitlements["get-task-allow"] = True
+                return plistlib.dumps(entitlements)
+            if str(args[-2]).endswith("check-ios-private-apis.py") and scenario == "private-api":
+                raise RuntimeError("python3 failed (exit 1)")
+            return b""
+
+        with mock.patch.object(distribution, "run", side_effect=fake_run), \
+                mock.patch.object(distribution, "read_profile", side_effect=lambda p: profile_for_path[p.parent]):
+            build = "9.9" if scenario == "wrong-build" else "1001.1"
+            if scenario == "valid":
+                info = distribution.verify_export(root / "synthetic.ipa", root, TEAM, CERT, kind, build)
+                self.assertEqual(info["CFBundleVersion"], "1001.1")
+                self.assertIn(str(app / "Youngmin"), [c[-1] for c in calls])
+                self.assertTrue(any(c[-2].endswith("check-ios-private-apis.py") for c in calls))
+            else:
+                with self.assertRaises((ValueError, RuntimeError)):
+                    distribution.verify_export(root / "synthetic.ipa", root, TEAM, CERT, kind, build)
+
+
+class AppStoreConnectTests(unittest.TestCase):
+    def test_app_store_profiles_and_export_options(self):
+        data = profiles("app-store")
+        distribution.validate_profile_set(data, TEAM, CERT, "app-store")
+        options = plistlib.loads(plistlib.dumps(distribution.export_options(TEAM, IDENTITY, data, "app-store")))
+        self.assertEqual(options["method"], "app-store-connect")
+        self.assertEqual(options["destination"], "export")
+        self.assertTrue(options["uploadSymbols"])
+        self.assertFalse(options["manageAppVersionAndBuildNumber"])
+        self.assertEqual(set(options["provisioningProfiles"]), set(data))
+
+    def test_rejects_ad_hoc_development_and_enterprise_profiles_for_app_store(self):
+        for change in ("ad-hoc", "debug", "enterprise"):
+            with self.subTest(change=change):
+                data = profiles("app-store")
+                widgets = data[distribution.BUNDLES[1][0]]
+                if change == "ad-hoc":
+                    widgets["ProvisionedDevices"] = ["SYNTHETIC-DEVICE-A"]
+                elif change == "debug":
+                    widgets["Entitlements"]["get-task-allow"] = True
+                else:
+                    widgets["ProvisionsAllDevices"] = True
+                with self.assertRaisesRegex(ValueError, "App Store Connect"):
+                    distribution.validate_profile_set(data, TEAM, CERT, "app-store")
+
+    def test_app_store_uses_its_own_profile_secrets(self):
+        self.assertEqual([t[1] for t in distribution.targets("app-store")],
+                         ["IOS_APPSTORE_APP_PROFILE_BASE64", "IOS_APPSTORE_WIDGETS_PROFILE_BASE64",
+                          "IOS_APPSTORE_SHARE_PROFILE_BASE64"])
+        self.assertEqual([t[2] for t in distribution.targets("app-store")], [t[2] for t in distribution.TARGETS])
+        distribution.check_config(settings("app-store"), kind="app-store")
+        with self.assertRaisesRegex(ValueError, "IOS_APPSTORE_APP_PROFILE_BASE64"):
+            distribution.check_config(settings("ad-hoc"), kind="app-store")
+
+    def test_build_only_does_not_need_app_store_connect_key(self):
+        distribution.check_config(settings("app-store"), kind="app-store")
+        with self.assertRaisesRegex(ValueError, "ASC_KEY_ID"):
+            distribution.check_config(settings("app-store"), kind="app-store", upload=True)
+        distribution.check_config(dict(settings("app-store"), **asc_settings()), kind="app-store", upload=True)
+
+    def test_rejects_bad_app_store_connect_settings_without_echoing_them(self):
+        for key, value in (("ASC_KEY_ID", "secret-marker"), ("ASC_ISSUER_ID", "secret-marker"),
+                           ("ASC_APP_ID", "kr.snu.etlassistant.ios"), ("ASC_KEY_P8", "secret-marker-not-pem")):
+            with self.subTest(key=key):
+                env = dict(asc_settings(), **{key: value})
+                with self.assertRaisesRegex(ValueError, key) as error:
+                    distribution.asc_config(env)
+                self.assertNotIn("secret-marker", str(error.exception))
+
+    def test_build_numbers_increase_above_the_project_and_survive_reruns(self):
+        project = distribution.project_build_number()
+        self.assertGreaterEqual(project, 1)
+        env = {"GITHUB_RUN_NUMBER": "7", "GITHUB_RUN_ATTEMPT": "2"}
+        self.assertEqual(distribution.build_number(env, "ad-hoc"), "7.2")
+        self.assertEqual(distribution.build_number(env, "app-store"), "1007.2")
+        self.assertEqual(distribution.build_number(dict(env, IOS_TESTFLIGHT_BUILD_OFFSET="5000"), "app-store"),
+                         "5007.2")
+        for offset in ("-1", "abc", "0"):
+            with self.subTest(offset=offset), self.assertRaisesRegex(ValueError, "IOS_TESTFLIGHT_BUILD_OFFSET"):
+                distribution.build_number(dict(env, IOS_TESTFLIGHT_BUILD_OFFSET=offset), "app-store")
+        with self.assertRaisesRegex(ValueError, "build number"):
+            distribution.build_number({"GITHUB_RUN_NUMBER": "1;rm"}, "app-store")
+
+    def test_app_info_plist_declares_exempt_encryption(self):
+        info = plistlib.loads((distribution.ROOT / "ios/Youngmin/Info.plist").read_bytes())
+        self.assertIs(info["ITSAppUsesNonExemptEncryption"], False)
+
+
+class UploadTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for patch in (mock.patch.object(distribution, "OUTPUT", self.root / "output"),
+                      mock.patch.object(Path, "home", return_value=self.root / "home")):
+            patch.start()
+            self.addCleanup(patch.stop)
+        (self.root / "output").mkdir()
+        self.ipa = self.root / "output/Youngmin-AppStore.ipa"
+        self.ipa.write_bytes(b"synthetic-app-store-ipa")
+        self.metadata = {"configuration": "Release", "distribution": "app-store", "version": "0.3.3",
+                         "build": "1007.1", "commit": "synthetic-commit", "bundle_id": distribution.APP_BUNDLE,
+                         "sha256": hashlib.sha256(self.ipa.read_bytes()).hexdigest()}
+        self.write_metadata()
+        self.env = dict(asc_settings(), GITHUB_STEP_SUMMARY=str(self.root / "summary.md"))
+        self.key = self.root / "home/.appstoreconnect/private_keys/AuthKey_ABC123DEF4.p8"
+
+    def write_metadata(self):
+        (self.root / "output/build.json").write_text(json.dumps(self.metadata))
+
+    def test_no_upload_of_modified_ad_hoc_or_debug_ipa(self):
+        for change in ("tamper", "ad-hoc", "debug"):
+            with self.subTest(change=change), mock.patch.object(distribution, "run") as run:
+                self.ipa.write_bytes(b"tampered" if change == "tamper" else b"synthetic-app-store-ipa")
+                metadata = dict(self.metadata)
+                if change == "ad-hoc":
+                    metadata["distribution"] = "ad-hoc"
+                if change == "debug":
+                    metadata["configuration"] = "Debug"
+                (self.root / "output/build.json").write_text(json.dumps(metadata))
+                with self.assertRaisesRegex(ValueError, "verified Release App Store"):
+                    distribution.upload(self.env)
+                run.assert_not_called()
+                self.assertFalse(self.key.exists())
+
+    def test_upload_uses_api_key_file_and_removes_it(self):
+        seen = []
+
+        def fake_run(args, **kwargs):
+            args = [str(a) for a in args]
+            seen.append(args)
+            self.assertEqual(self.key.read_text().strip(), SYNTHETIC_P8.strip())
+            self.assertEqual(self.key.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(self.key.parent.stat().st_mode & 0o777, 0o700)
+            self.assertNotIn("ASC_KEY_P8", kwargs["env"])
+            self.assertFalse(any("secret-marker" in a for a in args))
+            return None
+
+        output = io.StringIO()
+        with mock.patch.object(distribution, "run", side_effect=fake_run), contextlib.redirect_stdout(output):
+            distribution.upload(self.env)
+        args = seen[0]
+        self.assertEqual(args[:3], ["xcrun", "altool", "--upload-package"])
+        for flag, value in (("--apiKey", "ABC123DEF4"), ("--apiIssuer", self.env["ASC_ISSUER_ID"]),
+                            ("--apple-id", "6740000000"), ("--bundle-id", distribution.APP_BUNDLE),
+                            ("--bundle-version", "1007.1"), ("--bundle-short-version-string", "0.3.3"),
+                            ("-t", "ios")):
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertFalse(self.key.exists())
+        summary = Path(self.env["GITHUB_STEP_SUMMARY"]).read_text()
+        self.assertIn("1007.1", summary)
+        self.assertIn("가상 eTL 로그인", summary)
+        self.assertEqual(summary.count("```"), 2)
+        self.assertNotIn("secret-marker", summary + output.getvalue())
+
+    def test_upload_failure_also_removes_key(self):
+        def fail(args, **kwargs):
+            self.assertTrue(self.key.exists())
+            raise RuntimeError("xcrun failed (exit 1)")
+
+        with mock.patch.object(distribution, "run", side_effect=fail), self.assertRaises(RuntimeError):
+            distribution.upload(self.env)
+        self.assertFalse(self.key.exists())
+
+    def test_refuses_to_overwrite_a_preinstalled_key(self):
+        self.key.parent.mkdir(parents=True)
+        self.key.write_text("someone else's key")
+        with mock.patch.object(distribution, "run") as run, self.assertRaisesRegex(ValueError, "fresh runner"):
+            distribution.upload(self.env)
+        run.assert_not_called()
+        self.assertEqual(self.key.read_text(), "someone else's key")
 
 
 class SigningCleanupTests(unittest.TestCase):
     def test_failed_archive_restores_keychains_and_removes_profiles_and_licenses(self):
+        for kind in distribution.DISTRIBUTIONS:
+            with self.subTest(kind=kind):
+                self.failed_archive(kind)
+
+    def failed_archive(self, kind):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "ios/Youngmin.xcodeproj").mkdir(parents=True)
+            (root / "ios/Youngmin.xcodeproj/project.pbxproj").write_text("CURRENT_PROJECT_VERSION = 22;\n")
             generated = root / "ios/NativeCodex/Generated"
             (generated / "iphoneos/arm64").mkdir(parents=True)
             (generated / "iphoneos/arm64/libyoungmin_codex_bridge.a").write_bytes(b"synthetic")
             (generated / "iphoneos/arm64/native-static-libs.txt").write_text("-framework SyntheticNativeFramework -liconv\n")
             (generated / "Codex-LICENSE.txt").write_text("Synthetic license")
             (root / "ios/Youngmin").mkdir()
-            data = profiles()
+            data = profiles(kind)
             commands = []
 
             def fake_run(args, **kwargs):
@@ -268,22 +470,24 @@ class SigningCleanupTests(unittest.TestCase):
                     self.assertIn("CODE_SIGN_STYLE=Manual", args)
                     self.assertIn("YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -framework SyntheticNativeFramework -liconv", args)
                     self.assertIn("INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs", args)
-                    for bundle, _, variable in distribution.TARGETS:
+                    self.assertIn("CURRENT_PROJECT_VERSION=" + ("1.1" if kind == "ad-hoc" else "1001.1"), args)
+                    for bundle, _, variable in distribution.targets(kind):
                         self.assertIn(variable + "=" + data[bundle]["Name"], args)
                     raise RuntimeError("xcodebuild failed")
                 return b""
 
             def fake_profile(path):
-                return next(data[b] for b, secret, _ in distribution.TARGETS if path.name.startswith(secret))
+                return next(data[b] for b, secret, _ in distribution.targets(kind)
+                            if path.name == secret + ".mobileprovision")
 
-            env = dict(settings(), RUNNER_TEMP=str(root))
+            env = dict(settings(kind), RUNNER_TEMP=str(root))
             with mock.patch.multiple(distribution, ROOT=root, OUTPUT=root / "output"), \
                     mock.patch.object(Path, "home", return_value=root / "home"), \
                     mock.patch.object(distribution, "run", side_effect=fake_run), \
                     mock.patch.object(distribution, "read_profile", side_effect=fake_profile), \
                     mock.patch.object(distribution.subprocess, "run") as cleanup:
                 with self.assertRaisesRegex(RuntimeError, "xcodebuild"):
-                    distribution.build(env)
+                    distribution.build(env, kind)
             self.assertFalse(list(root.rglob("*.mobileprovision")))
             self.assertFalse(list(root.glob("youngmin-signing-*")))
             self.assertFalse((root / "ios/Youngmin/NativeCodexLicenses").exists())
