@@ -10,6 +10,13 @@ on:
         options:
           - bridge
           - upstream
+      operation:
+        description: Compile check for iOS, or bridge unit tests on the macOS host
+        type: choice
+        default: check
+        options:
+          - check
+          - bridge-test
       runner:
         description: Mac runner (Intel also cross-compiles native arm64 iOS)
         type: choice
@@ -22,13 +29,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-codex-probe-${{ inputs.component }}-${{ github.ref }}
+  group: ios-codex-probe-${{ inputs.component }}-${{ inputs.operation }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   check-native-runtime:
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 40
+    timeout-minutes: ${{ inputs.operation == 'bridge-test' && 150 || 40 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,11 +48,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh', '.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
-          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-ios-arm64-
+          key: ios-codex-170-minimal-${{ runner.arch }}-${{ inputs.operation == 'bridge-test' && 'host-test' || 'ios-arm64' }}-${{ hashFiles('.github/scripts/ios-codex-probe.sh', '.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
+          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-${{ inputs.operation == 'bridge-test' && 'host-test' || 'ios-arm64' }}-
       - name: Compile the official in-process app server for iOS
         env:
           CODEX_PROBE_COMPONENT: ${{ inputs.component }}
+          CODEX_PROBE_OPERATION: ${{ inputs.operation }}
         run: bash .github/scripts/ios-codex-probe.sh
       - name: Upload native build diagnostics
         if: always()

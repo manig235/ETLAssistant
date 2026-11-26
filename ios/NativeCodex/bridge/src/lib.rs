@@ -1,6 +1,7 @@
 //! In-process JSON-RPC transport for the official Codex app-server.
 //! No RPC socket, helper executable, or token transfer through Swift.
 mod code_mode;
+mod telemetry;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
@@ -225,6 +226,7 @@ async fn run(
     ] {
         overrides.push((format!("features.{key}"), toml::Value::Boolean(false)));
     }
+    overrides.extend(telemetry::overrides());
     let loaders = codex_config::LoaderOverrides::default();
     let policy = EmbeddedNetworkPolicy::load(&loaders).await;
     let config = ConfigBuilder::default()
@@ -299,8 +301,12 @@ async fn run(
         tokio::select! {
             value = commands.recv() => {
                 let Some(value) = value else { break; };
+                let value = telemetry::strip_request_overrides(value);
                 let decoded = serde_json::from_value::<JSONRPCMessage>(value.clone());
                 match decoded {
+                    Ok(JSONRPCMessage::Request(request)) if telemetry::is_blocked(&request.method) => {
+                        publish(&events, &failed, json!({"id":request.id,"error":{"code":-32601,"message":"이 앱은 Codex 진단 정보를 보내지 않아요"}}));
+                    }
                     Ok(JSONRPCMessage::Request(request)) => {
                         let sender = client.sender(); let tx = events.clone(); let health = failed.clone();
                         tokio::spawn(async move {

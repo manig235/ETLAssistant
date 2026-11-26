@@ -16,7 +16,7 @@ if [[ "${CODEX_PROBE_PLATFORM:-device}" == simulator ]]; then
   SDK=iphonesimulator
   if [[ "$(uname -m)" == arm64 ]]; then TARGET=aarch64-apple-ios-sim; else TARGET=x86_64-apple-ios; ARCH=x86_64; fi
 fi
-if [[ "${CODEX_PROBE_OPERATION:-check}" == code-mode-test ]]; then
+if [[ "${CODEX_PROBE_OPERATION:-check}" == code-mode-test || "${CODEX_PROBE_OPERATION:-check}" == bridge-test ]]; then
   SDK=macosx
   TARGET="$(uname -m)-apple-darwin"
 fi
@@ -65,6 +65,14 @@ if [[ "${CODEX_PROBE_OPERATION:-check}" == code-mode-test ]]; then
   cargo +"$TOOLCHAIN" test --locked -p youngmin-code-mode-check --profile dev-small \
     2>&1 | tee "$OUT/cargo-code-mode-test.log"
   printf 'Codex Code Mode session/delegate integration passed on %s.\n' "$TARGET" > "$OUT/result.txt"
+elif [[ "${CODEX_PROBE_OPERATION:-check}" == bridge-test ]]; then
+  test "$PACKAGE" == youngmin-codex-bridge
+  # Host unit tests for the bridge: effective telemetry config and request screening.
+  export CARGO_PROFILE_DEV_SMALL_OPT_LEVEL=0
+  export CARGO_PROFILE_DEV_SMALL_CODEGEN_UNITS=64
+  cargo +"$TOOLCHAIN" test --locked -p "$PACKAGE" --lib --profile dev-small \
+    2>&1 | tee "$OUT/cargo-bridge-test.log"
+  printf 'Bridge unit tests passed on %s.\n' "$TARGET" > "$OUT/result.txt"
 elif [[ "${CODEX_PROBE_OPERATION:-check}" == build ]]; then
   test "$PACKAGE" == youngmin-codex-bridge
   # Keep iteration builds reasonably small without release LTO costs.
