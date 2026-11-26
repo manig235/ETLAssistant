@@ -28,21 +28,11 @@ concurrency:
 jobs:
   check-native-runtime:
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Cache pinned Rust dependencies
-        id: rust-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-ios-arm64-${{ hashFiles('.github/scripts/ios-codex-probe.sh', '.github/scripts/prepare-ios-codex.py', 'ios/NativeCodex/bridge/**') }}
-          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-ios-arm64-
       - name: Compile the official in-process app server for iOS
         env:
           CODEX_PROBE_COMPONENT: ${{ inputs.component }}
@@ -58,12 +48,3 @@ jobs:
             ios-codex-probe/*.json
           retention-days: 7
           if-no-files-found: warn
-      - name: Save Rust dependencies even after a compile failure
-        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
