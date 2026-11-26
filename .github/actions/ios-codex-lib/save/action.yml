@@ -1,0 +1,41 @@
+name: Save embedded Codex library
+description: >-
+  After a compile, save the verified library under its exact key (only when the
+  caller passed the runtime proof) and the Cargo tree under the shared build key.
+inputs:
+  key:
+    description: Exact library key from the restore action
+    required: true
+  build-key:
+    description: Shared compilation cache key from the restore action
+    required: true
+  build-hit:
+    description: Restore action's build-hit output
+    required: true
+  compiled:
+    description: "'true' when the build step completed successfully"
+    required: true
+  publish-library:
+    description: "'true' when the library passed the same runtime proof required for its IPA"
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Save the finished native library
+      if: inputs.compiled == 'true' && inputs.publish-library == 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ios-codex-lib
+        key: ${{ inputs.key }}
+    - name: Save the shared Rust compilation cache
+      # The exact library cache is what later builds use. The large tree only
+      # speeds up the next compile, so an unfinished build is kept under a
+      # unique partial key (restored by prefix, never treated as complete).
+      if: inputs.build-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ios-codex-probe/source/codex-rs/target
+        key: ${{ inputs.compiled == 'true' && inputs.build-key || format('{0}-partial-{1}-{2}', inputs.build-key, github.run_id, github.run_attempt) }}

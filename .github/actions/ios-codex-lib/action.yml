@@ -1,0 +1,57 @@
+name: Embedded Codex library
+description: >-
+  Restore the finished iOS Codex static library by its exact key and install it
+  for Xcode. On a miss, restore the shared Cargo compilation cache so the caller
+  can compile with `ios-codex-lib.py build`.
+inputs:
+  profile:
+    description: Native build flags (fast or release)
+    required: true
+  lookup-only:
+    description: Only report whether the exact library exists
+    default: 'false'
+outputs:
+  key:
+    description: Exact library cache key
+    value: ${{ steps.keys.outputs.key }}
+  hit:
+    description: "'true' when the exact library exists (and, unless lookup-only, was verified and installed)"
+    value: ${{ steps.library.outputs.cache-hit == 'true' }}
+  build-key:
+    description: Shared Cargo compilation cache key for these inputs
+    value: ${{ steps.keys.outputs.build-key }}
+  build-hit:
+    description: "'true' when the compilation cache was restored by its exact key"
+    value: ${{ steps.compilation.outputs.cache-hit == 'true' }}
+runs:
+  using: composite
+  steps:
+    - name: Compute the exact native library key
+      id: keys
+      shell: bash
+      run: python3 .github/scripts/ios-codex-lib.py key --profile '${{ inputs.profile }}'
+    - name: Restore the finished native library
+      id: library
+      uses: actions/cache/restore@v6
+      with:
+        path: ios-codex-lib
+        # Exact key only: no restore-keys, so another build can never be installed.
+        key: ${{ steps.keys.outputs.key }}
+        lookup-only: ${{ inputs.lookup-only }}
+    - name: Verify and install the cached native library
+      if: inputs.lookup-only != 'true' && steps.library.outputs.cache-hit == 'true'
+      shell: bash
+      run: python3 .github/scripts/ios-codex-lib.py install --profile '${{ inputs.profile }}' --key '${{ steps.keys.outputs.key }}'
+    - name: Restore the shared Rust compilation cache
+      id: compilation
+      if: inputs.lookup-only != 'true' && steps.library.outputs.cache-hit != 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ios-codex-probe/source/codex-rs/target
+        key: ${{ steps.keys.outputs.build-key }}
+        restore-keys: |
+          ${{ steps.keys.outputs.build-prefix }}
+          ${{ steps.keys.outputs.legacy-build-prefix }}

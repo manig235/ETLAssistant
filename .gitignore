@@ -34,6 +34,7 @@ DerivedData/
 /ios-device-output/
 __pycache__/
 ios-codex-probe/
+/ios-codex-lib/
 ios/NativeCodex/Generated/
 ios/NativeCodex/javascript/target/
 
