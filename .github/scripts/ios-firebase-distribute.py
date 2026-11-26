@@ -248,9 +248,11 @@ def verify_export(ipa, temp, team, certificate):
     if set(profiles) != {t[0] for t in TARGETS}:
         raise ValueError("Export must contain the app, widget and share extension")
     validate_profile_set(profiles, team, certificate)
-    if (len(versions) != 1 or info.get("YoungminAuthEngine") != "codex-in-process"
-            or info.get("YoungminCodeModeRuntime") != "quickjs"):
-        raise ValueError("Exported versions or native Codex engine metadata do not match")
+    if len(versions) != 1:
+        raise ValueError("Exported app and extension versions do not match")
+    for key, expected in (("YoungminAuthEngine", "codex-in-process"), ("YoungminCodeModeRuntime", "quickjs")):
+        if info.get(key) != expected:
+            raise ValueError("Exported app metadata " + key + " is missing or does not match " + expected)
     return info
 
 

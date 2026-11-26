@@ -487,6 +487,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Youngmin/Info.plist;
+				INFOPLIST_KEY_YoungminAuthEngine = "swift-direct";
+				INFOPLIST_KEY_YoungminCodeModeRuntime = "none";
+				INFOPLIST_KEY_YoungminCodexSourceRevision = "";
 				INFOPLIST_KEY_CFBundleDisplayName = "영민이";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "캘린더 연동을 켜면 마감 일정을 캘린더에 넣고, 고른 캘린더의 일정을 내 일정에 보여 줘요.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "채팅에 사진을 첨부할 때 사용해요.";
@@ -525,6 +528,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Youngmin/Info.plist;
+				INFOPLIST_KEY_YoungminAuthEngine = "swift-direct";
+				INFOPLIST_KEY_YoungminCodeModeRuntime = "none";
+				INFOPLIST_KEY_YoungminCodexSourceRevision = "";
 				INFOPLIST_KEY_CFBundleDisplayName = "영민이";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "캘린더 연동을 켜면 마감 일정을 캘린더에 넣고, 고른 캘린더의 일정을 내 일정에 보여 줘요.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "채팅에 사진을 첨부할 때 사용해요.";

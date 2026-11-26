@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>YoungminAuthEngine</key>
+	<string>$(INFOPLIST_KEY_YoungminAuthEngine)</string>
+	<key>YoungminCodeModeRuntime</key>
+	<string>$(INFOPLIST_KEY_YoungminCodeModeRuntime)</string>
+	<key>YoungminCodexSourceRevision</key>
+	<string>$(INFOPLIST_KEY_YoungminCodexSourceRevision)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>kr.snu.etlassistant.ios.check</string>

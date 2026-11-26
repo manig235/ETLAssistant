@@ -398,6 +398,14 @@ class SigningCleanupTests(unittest.TestCase):
                     self.assertIn("CODE_SIGN_STYLE=Manual", args)
                     self.assertIn("YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -framework SyntheticNativeFramework -liconv", args)
                     self.assertIn("INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs", args)
+                    # Exercise the real plist template against the archive settings.
+                    # A custom INFOPLIST_KEY setting alone does not create a plist key.
+                    template = plistlib.loads((ROOT / "ios/Youngmin/Info.plist").read_bytes())
+                    build_settings = dict(arg.split("=", 1) for arg in args if "=" in arg)
+                    for key, expected in (("YoungminAuthEngine", "codex-in-process"),
+                                          ("YoungminCodeModeRuntime", "quickjs"),
+                                          ("YoungminCodexSourceRevision", "29eb79e9866b3262a777fdf8195c1b9e63684c91")):
+                        self.assertEqual(build_settings[template[key][2:-1]], expected)
                     for bundle, _, variable in distribution.TARGETS:
                         self.assertIn(variable + "=" + data[bundle]["Name"], args)
                     raise RuntimeError("xcodebuild failed")
