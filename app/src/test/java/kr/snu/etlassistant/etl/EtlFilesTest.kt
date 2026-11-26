@@ -58,6 +58,10 @@ class EtlFilesTest {
         assertTrue(EtlFiles.isPrivateRead(ws, EtlFiles.resolveInside(ws, "etl-files/syllabus/../syllabus/${pdf.name}")))
         // 이전 빌드가 etl-files/ 바로 아래에 둔 계획서 첨부
         assertTrue(EtlFiles.isPrivateRead(ws, File(ws, "etl-files/syllabus-old.pdf").apply { writeText("x") }))
+        // 공개 기출 자료(study_fetch)도 비서만 읽는다
+        val study = File(ws, "etl-files/${EtlFiles.STUDY_DIR}").apply { mkdirs() }
+        assertTrue(EtlFiles.isPrivateRead(ws, File(study, "ocw-0123456789-quiz.pdf").apply { writeText("x") }))
+        assertFalse(EtlFiles.isPrivateRead(ws, File(ws, "etl-files/studyX.pdf").apply { writeText("x") }))
         // 일반 eTL 파일, 사용자 첨부, 이름만 비슷한 하위 폴더는 미리보기 대상
         assertFalse(EtlFiles.isPrivateRead(ws, File(ws, "etl-files/123-syllabus.pdf").apply { writeText("x") }))
         val up = File(ws, "etl-files/uploads").apply { mkdirs() }

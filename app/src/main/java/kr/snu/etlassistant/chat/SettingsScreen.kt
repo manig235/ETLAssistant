@@ -111,6 +111,8 @@ class SettingsState {
     var apiKeyMasked by mutableStateOf<String?>(null)
     var useApiKey by mutableStateOf(false)
     var casualTone by mutableStateOf(false)
+    /** 공개 기출 자료 찾기(MIT OCW 등, 기본 켬). */
+    var studyLookup by mutableStateOf(true)
     var hasEtlToken by mutableStateOf(false)
 
     var notify by mutableStateOf(NotifySettings())
@@ -167,6 +169,7 @@ class SettingsActions(
     val openTimetable: () -> Unit = {},
     val openMyDeadlines: () -> Unit = {},
     val setCasualTone: (Boolean) -> Unit = {},
+    val setStudyLookup: (Boolean) -> Unit = {},
     val setUpdateAlerts: (Boolean) -> Unit = {},
     val checkUpdate: () -> Unit = {},
     val openUpdate: () -> Unit = {},
@@ -856,6 +859,8 @@ private fun ToneSection(s: SettingsState, a: SettingsActions) {
     Section("대화") {
         SettingsCard {
             SwitchRow("반말로 대화", "영민이가 친구처럼 반말로 답해요", s.casualTone, onChange = a.setCasualTone)
+            SwitchRow("공개 기출 자료 찾기", "시험 자료를 만들 때 MIT OpenCourseWare의 공개 기출·연습 문제를 찾아 함께 써요", s.studyLookup, onChange = a.setStudyLookup)
+            Caption("찾을 주제(검색어)만 MIT로 가요. eTL 정보·파일·개인 정보는 보내지 않아요.")
         }
     }
 }

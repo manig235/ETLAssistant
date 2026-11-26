@@ -127,6 +127,10 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
                 AppSettings.casualTone = v
                 state.casualTone = v
             },
+            setStudyLookup = { v ->
+                kr.snu.etlassistant.study.StudySettings(this).enabled = v
+                state.studyLookup = v
+            },
             setUpdateAlerts = { v ->
                 updateStore.enabled = v
                 state.updateAlerts = v
@@ -270,6 +274,7 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         state.apiKeyMasked = if (has) apiKeys.load()?.let { SettingsLogic.maskKey(it) } else null
         state.useApiKey = AppSettings.authMode == AppSettings.AUTH_API_KEY
         state.casualTone = AppSettings.casualTone
+        state.studyLookup = kr.snu.etlassistant.study.StudySettings(this).enabled
         state.hasEtlToken = EtlService.tokens(this).hasToken()
     }
 

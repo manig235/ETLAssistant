@@ -16,6 +16,11 @@ object EtlFiles {
      * 채팅에 쪽 미리보기나 파일 카드를 띄우지 않는다([isPrivateRead]).
      */
     const val SYLLABUS_DIR = "syllabus"
+    /**
+     * 공개 기출 자료(MIT OCW 등, `study_fetch`)를 두는 하위 폴더. 강의계획서 첨부처럼 비서가 시험 자료를 만들려고만 읽으므로
+     * 채팅에 쪽 미리보기나 파일 카드를 띄우지 않는다([isPrivateRead]).
+     */
+    const val STUDY_DIR = "study"
     const val MAX_RENDER_PAGES = 6
     const val DEFAULT_TEXT_CHARS = 20_000
     const val MAX_TEXT_CHARS = 60_000
@@ -118,7 +123,7 @@ object EtlFiles {
     }
 
     /**
-     * 비서만 읽고 사용자에게는 보여 주지 않는 파일인가(강의계획서 첨부). `etl-files/syllabus/` 아래이거나,
+     * 비서만 읽고 사용자에게는 보여 주지 않는 파일인가(강의계획서 첨부, 공개 기출 자료). `etl-files/syllabus/`·`etl-files/study/` 아래이거나,
      * 이전 빌드가 `etl-files/` 바로 아래에 둔 `syllabus-…` 파일. 이 폴더에는 앱 코드만 쓰고 비서(read-only 샌드박스)는
      * 파일을 옮기거나 복사할 수 없으므로, 경로를 바꿔 미리보기를 띄우는 우회는 없다.
      */
@@ -126,6 +131,7 @@ object EtlFiles {
         val root = File(workspace, DIR).canonicalFile
         val c = f.canonicalFile
         return c.path.startsWith(File(root, SYLLABUS_DIR).path + File.separator) ||
+            c.path.startsWith(File(root, STUDY_DIR).path + File.separator) ||
             (c.parentFile == root && c.name.startsWith("syllabus-"))
     }
 

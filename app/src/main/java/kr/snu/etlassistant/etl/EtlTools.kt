@@ -161,11 +161,13 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 required = listOf("path"))))
         // 폰 안 쓰기: 비서가 쓴 마크다운을 PDF로(pdf/MakePdfTool.kt)
         .put(kr.snu.etlassistant.pdf.MakePdfTool.spec(untrusted))
+        // 시험 자료 만들기용 공개 기출 자료(허용 목록 사이트, 읽기 전용, study/StudyTools.kt)
+        .also { a -> kr.snu.etlassistant.study.StudyTools.specs().forEach { a.put(it) } }
 
     override fun call(name: String, args: JSONObject): ToolResult {
         val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", WorkspaceImage.NAME, "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable", "etl_syllabus",
             "my_deadline_add", "my_deadline_update", "my_deadline_delete", "timetable_change_add", "timetable_change_delete",
-            kr.snu.etlassistant.pdf.MakePdfTool.NAME)
+            kr.snu.etlassistant.pdf.MakePdfTool.NAME) + kr.snu.etlassistant.study.StudyTools.NAMES
         if (name !in known && name !in calendar.names) throw UnknownToolException(name)
         if (name == WorkspaceImage.NAME) return WorkspaceImage.view(workspace, args.optString("path", ""))
         val secrets = listOfNotNull(tokenStore.load())
@@ -198,6 +200,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "timetable_change_add" -> timetableChangeAdd(args)
                 "timetable_change_delete" -> timetableChangeDelete(args)
                 kr.snu.etlassistant.pdf.MakePdfTool.NAME -> kr.snu.etlassistant.pdf.MakePdfTool(context, workspace).call(args)
+                in kr.snu.etlassistant.study.StudyTools.NAMES -> kr.snu.etlassistant.study.StudyTools(context, workspace).call(name, args)
                 "etl_boards" -> board().boards(id(args, "course_id"))
                 "etl_board_posts" -> board().posts(id(args, "course_id"), id(args, "board_id"), args.optInt("page", 1), args.optString("keyword", ""))
                 "etl_board_post" -> board().post(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"))
@@ -229,6 +232,9 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             "etl_board_posts" -> "board=${args.optLong("board_id")} page=${args.optInt("page", 1)}"
             "etl_board_post" -> "board=${args.optLong("board_id")} post=${args.optLong("post_id")}"
             "etl_timetable" -> if (args.optBoolean("week", false)) "week" else args.optString("date", "today")
+            // 공개 자료 검색어·주소(과목 주제, 공개 사이트 경로). 쿼리 문자열은 남기지 않는다.
+            "study_search" -> if (args.has("course_id")) "course=${args.optLong("course_id")}" else args.optString("query", "").take(80)
+            "study_fetch" -> args.optString("url", "").substringBefore('?').take(160)
             "calendar_events" -> args.optString("range", "today")
             else -> ""
         }
