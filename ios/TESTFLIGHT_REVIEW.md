@@ -2,7 +2,7 @@
 
 상태: **준비 중, 제출하지 않음**. 이 문서는 현재 코드를 읽어 작성한 초안이다.
 실제 Release IPA 설치, ChatGPT 로그인, 전체 심사 경로 검증은 아직 완료되지 않았다.
-현재 Ad Hoc/Firebase 빌드는 App Store Connect에 업로드하지 않는다.
+App Store Connect 업로드는 별도 **iOS TestFlight** 워크플로가 담당하며 아직 실제로 올리지 않았다.
 
 ## 현재 제공하는 가상 eTL
 
@@ -29,7 +29,7 @@
 3. 가상 모드에서 제한한 캘린더·위젯 및 실제 학교 로그인 기능을 심사자가 확인할 방법을 준비한다.
 4. 학교 계정을 제공하기 어려운 사유를 설명하고, 내장 데모를 계정 대신 사용하려면 Apple과 사전 협의한다.
    아직 Apple의 사전 승인이나 심사 승인을 받았다고 표시하지 않는다.
-5. Ad Hoc 프로파일과 별도로 App Store Connect용 서명·export·업로드 경로를 준비한다.
+5. App Store Connect용 프로파일·API 키를 등록하고 **iOS TestFlight** 워크플로로 업로드한다([배포 안내](DISTRIBUTION.md#testflight-업로드-워크플로)). 경로는 준비됐지만 실제 서명·업로드는 미검증이다.
 6. App Store Connect의 TestFlight 테스트 정보, 연락처, 개인정보·수출 규정 입력과 실제 빌드를 일치시킨다.
 
 Apple은 심사에 필요한 전체 접근을 요구한다. 지침 2.1(a)는 법적·보안상 데모 계정을 제공하기 어려운 경우
