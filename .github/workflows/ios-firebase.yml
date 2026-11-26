@@ -73,6 +73,9 @@ jobs:
         env:
           CODEX_PROBE_COMPONENT: bridge
           CODEX_PROBE_OPERATION: build
+          # Reuse only a completed library with the exact source key and build flags.
+          CODEX_REUSE_COMPILED_LIBRARY: 'true'
+          CODEX_NATIVE_CACHE_KEY: ${{ steps.native-cache.outputs.cache-primary-key }}-o1-debug0-noassert-nooverflow
           # Reuse the proven dev-small compilation profile, without dev assertions.
           CARGO_PROFILE_DEV_SMALL_DEBUG: '0'
           CARGO_PROFILE_DEV_SMALL_DEBUG_ASSERTIONS: 'false'
