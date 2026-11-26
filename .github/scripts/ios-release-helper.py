@@ -111,6 +111,9 @@ def config_check(_args=None):
     pbxproj = (IOS / "Youngmin.xcodeproj/project.pbxproj").read_text()
     require("baseConfigurationReference = D10000000000000000000002 /* NativeCodex.xcconfig */;" in pbxproj,
             "The app Release configuration no longer uses NativeCodex.xcconfig")
+    for target in ("Youngmin", *EXTENSIONS):
+        require(f'PROVISIONING_PROFILE_SPECIFIER = "$(YOUNGMIN_PROFILE_{target})";' in pbxproj,
+                f"{target} Release no longer reads its profile from YOUNGMIN_PROFILE_{target}")
     require("CURRENT_PROJECT_VERSION =" not in pbxproj and "MARKETING_VERSION =" not in pbxproj,
             "Versions must live only in ios/Config/Youngmin.xcconfig")
     print(f"PASS: committed Release config embeds Codex {revision[:12]}; version {project['MARKETING_VERSION']} ({project['CURRENT_PROJECT_VERSION']})")

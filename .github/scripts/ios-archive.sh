@@ -211,15 +211,14 @@ if [[ "$signing" == 0 && "$dry_run" == 1 ]]; then make_dry_run_identity; fi
 if [[ "$signing" == 1 || "$dry_run" == 1 ]]; then setup_signing; fi
 
 write_signing_config() { # file [extra settings...]
-  # Command-line settings do not expand nested macros; xcconfig files do. Each
-  # target picks YOUNGMIN_PROFILE_<target>; package targets resolve to empty.
+  # Each app/extension Release config reads PROVISIONING_PROFILE_SPECIFIER from
+  # YOUNGMIN_PROFILE_<target> (empty by default); package targets never do.
   local file="$1" setting
   shift
   {
     echo "CODE_SIGN_STYLE = Manual"
     echo "DEVELOPMENT_TEAM = $IOS_TEAM_ID"
     echo "CODE_SIGN_IDENTITY = $identity_name"
-    echo 'PROVISIONING_PROFILE_SPECIFIER = $(YOUNGMIN_PROFILE_$(TARGET_NAME))'
     echo "OTHER_CODE_SIGN_FLAGS = --keychain $keychain"
     # App-only builds ship without the App Group, so the app's App ID needs no capability.
     if [[ "$mode" == app-only ]]; then echo "CODE_SIGN_ENTITLEMENTS ="; fi

@@ -548,6 +548,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = kr.snu.etlassistant.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(YOUNGMIN_PROFILE_Youngmin)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -605,6 +606,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = kr.snu.etlassistant.ios.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(YOUNGMIN_PROFILE_YoungminWidgets)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -659,6 +661,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = kr.snu.etlassistant.ios.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(YOUNGMIN_PROFILE_YoungminShare)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
