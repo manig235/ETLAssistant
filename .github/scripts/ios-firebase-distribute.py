@@ -114,6 +114,18 @@ def private_file(path, data):
         stream.write(data)
 
 
+def run_pkcs12(args, **kwargs):
+    # OpenSSL 3 needs its legacy provider for older RC2 PKCS12 envelopes.
+    # Retry only an unsupported-algorithm error; retain normal MAC validation.
+    command = ["openssl", "pkcs12", *args]
+    try:
+        return run(command, **kwargs)
+    except RuntimeError as error:
+        if "PKCS12_UNSUPPORTED_ENCRYPTION" not in str(error):
+            raise
+        return run([*command, "-legacy"], **kwargs)
+
+
 def verify_p12_password(env):
     require(("IOS_DISTRIBUTION_P12_BASE64", "IOS_DISTRIBUTION_P12_PASSWORD"), env)
     with tempfile.TemporaryDirectory(prefix="youngmin-p12-check-", dir=env.get("RUNNER_TEMP")) as directory:
@@ -121,8 +133,8 @@ def verify_p12_password(env):
         private_file(source, decode_secret(env["IOS_DISTRIBUTION_P12_BASE64"], "IOS_DISTRIBUTION_P12_BASE64"))
         child_env = dict(os.environ, YOUNGMIN_P12_VERIFY_PASSWORD=env["IOS_DISTRIBUTION_P12_PASSWORD"])
         try:
-            run(["openssl", "pkcs12", "-in", source, "-passin", "env:YOUNGMIN_P12_VERIFY_PASSWORD", "-noout"],
-                capture=True, env=child_env)
+            run_pkcs12(["-in", source, "-passin", "env:YOUNGMIN_P12_VERIFY_PASSWORD", "-noout"],
+                       capture=True, env=child_env)
         except RuntimeError as error:
             classification = next((label for label in ("PKCS12_PASSWORD_REJECTED", "PKCS12_UNSUPPORTED_ENCRYPTION")
                                    if label in str(error)), "PKCS12_INVALID_INPUT")
@@ -137,9 +149,9 @@ def compatible_p12(source, temp, password):
     child_env = dict(os.environ, YOUNGMIN_P12_INPUT_PASSWORD=password,
                      YOUNGMIN_P12_WORK_PASSWORD=working_password)
     try:
-        encrypted_pem = run(["openssl", "pkcs12", "-in", source,
-                             "-passin", "env:YOUNGMIN_P12_INPUT_PASSWORD", "-aes256",
-                             "-passout", "env:YOUNGMIN_P12_WORK_PASSWORD"], capture=True, env=child_env)
+        encrypted_pem = run_pkcs12(["-in", source,
+                                    "-passin", "env:YOUNGMIN_P12_INPUT_PASSWORD", "-aes256",
+                                    "-passout", "env:YOUNGMIN_P12_WORK_PASSWORD"], capture=True, env=child_env)
     except RuntimeError:
         raise ValueError("OpenSSL could not decrypt the P12; verify the original file and "
                          "IOS_DISTRIBUTION_P12_PASSWORD") from None

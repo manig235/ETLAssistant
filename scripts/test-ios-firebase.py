@@ -241,6 +241,22 @@ class ExportVerificationTests(unittest.TestCase):
 
 
 class P12CompatibilityTests(unittest.TestCase):
+    def test_legacy_retry_is_limited_to_unsupported_encryption_and_keeps_mac_checking(self):
+        command = ["-in", "synthetic.p12", "-passin", "env:SYNTHETIC_PASSWORD", "-noout"]
+        for classification in ("PKCS12_UNSUPPORTED_ENCRYPTION", "PKCS12_PASSWORD_REJECTED"):
+            with self.subTest(classification=classification), \
+                    mock.patch.object(distribution, "run", side_effect=[RuntimeError(classification), b"verified"]) as run:
+                if classification == "PKCS12_UNSUPPORTED_ENCRYPTION":
+                    self.assertEqual(distribution.run_pkcs12(command, capture=True), b"verified")
+                    self.assertEqual(run.call_count, 2)
+                    self.assertNotIn("-legacy", run.call_args_list[0].args[0])
+                    self.assertIn("-legacy", run.call_args_list[1].args[0])
+                else:
+                    with self.assertRaisesRegex(RuntimeError, classification):
+                        distribution.run_pkcs12(command, capture=True)
+                    self.assertEqual(run.call_count, 1)
+                self.assertTrue(all("-nomacver" not in call.args[0] for call in run.call_args_list))
+
     def test_password_verification_hides_errors_and_removes_temporary_file(self):
         for failure in (None, "PKCS12_PASSWORD_REJECTED secret-marker-output"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
