@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -434,7 +436,197 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(self.key.read_text(), "someone else's key")
 
 
+class P12CompatibilityTests(unittest.TestCase):
+    def test_legacy_retry_is_limited_to_unsupported_encryption(self):
+        args = ["-in", "synthetic.p12", "-passin", "env:SYNTHETIC_PASSWORD", "-noout"]
+        for reason in ("PKCS12_UNSUPPORTED_ENCRYPTION", "PKCS12_PASSWORD_REJECTED", "other failure"):
+            with self.subTest(reason=reason), mock.patch.object(
+                    distribution, "run", side_effect=[RuntimeError(reason), b"verified"]) as run:
+                if reason == "PKCS12_UNSUPPORTED_ENCRYPTION":
+                    self.assertEqual(distribution.read_p12(args, env={}), b"verified")
+                    self.assertEqual(run.call_count, 2)
+                    self.assertEqual(run.call_args.args[0], ["openssl", "pkcs12", *args, "-legacy"])
+                else:
+                    with self.assertRaisesRegex(RuntimeError, reason):
+                        distribution.read_p12(args, env={})
+                    self.assertEqual(run.call_count, 1)
+                for call in run.call_args_list:
+                    self.assertNotIn("-nomacver", call.args[0])
+
+    def test_password_verification_hides_errors_and_removes_temporary_file(self):
+        for failure in (None, "PKCS12_PASSWORD_REJECTED secret-marker-output"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                env = dict(settings(), RUNNER_TEMP=str(root))
+                def fake_run(args, **kwargs):
+                    self.assertIn("-noout", args)
+                    self.assertNotIn(env["IOS_DISTRIBUTION_P12_PASSWORD"], args)
+                    if failure:
+                        raise RuntimeError(failure)
+                    return b""
+                with mock.patch.object(distribution, "run", side_effect=fake_run):
+                    if failure:
+                        with self.assertRaisesRegex(ValueError, "PKCS12_PASSWORD_REJECTED") as error:
+                            distribution.verify_p12_password(env)
+                        self.assertNotIn("secret-marker", str(error.exception))
+                    else:
+                        distribution.verify_p12_password(env)
+                self.assertEqual(list(root.iterdir()), [])
+
+    def test_conversion_keeps_plaintext_key_off_disk_and_out_of_arguments_and_logs(self):
+        plaintext = b"secret-marker-plaintext-private-key"
+        original_password = "secret-marker-original-password"
+        captured = []
+        def fake_run(args, **kwargs):
+            captured.append((args, kwargs))
+            if "-export" in args:
+                protected = Path(args[args.index("-in") + 1])
+                self.assertEqual(protected.read_bytes(), b"synthetic-encrypted-pem")
+                self.assertEqual(protected.stat().st_mode & 0o777, 0o600)
+                return b"synthetic-encrypted-p12"
+            return b"synthetic-encrypted-pem"
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(distribution, "run", side_effect=fake_run):
+            root = Path(directory)
+            source = root / "original.p12"
+            source.write_bytes(b"synthetic-original")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                compatible, temporary_password = distribution.compatible_p12(source, root, original_password)
+            self.assertEqual(source.read_bytes(), b"synthetic-original")
+            self.assertEqual(compatible.read_bytes(), b"synthetic-encrypted-p12")
+            self.assertEqual(compatible.stat().st_mode & 0o777, 0o600)
+            self.assertNotEqual(temporary_password, original_password)
+            self.assertTrue(all(plaintext not in file.read_bytes() for file in root.iterdir()))
+            self.assertNotIn("secret-marker", output.getvalue())
+        self.assertTrue(all(original_password not in args and temporary_password not in args for args, _ in captured))
+        self.assertNotIn("-nomacver", captured[0][0])
+        self.assertNotIn("-nodes", captured[0][0])
+        self.assertIn("-aes256", captured[0][0])
+        self.assertEqual(captured[1][0].count("PBE-SHA1-3DES"), 2)
+
+    def test_rejected_input_does_not_write_a_compatible_file_or_print_subprocess_data(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(distribution, "run", side_effect=RuntimeError("secret-marker-output")):
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, "IOS_DISTRIBUTION_P12_PASSWORD") as error:
+                distribution.compatible_p12(root / "original.p12", root, "secret-marker-password")
+            self.assertNotIn("secret-marker", str(error.exception))
+            self.assertEqual(list(root.iterdir()), [])
+
+
+@unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for PKCS12 integration tests")
+class RealP12Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        version = subprocess.run(["openssl", "version"], check=True, capture_output=True).stdout
+        if not version.startswith(b"OpenSSL 3."):
+            raise unittest.SkipTest("Legacy provider integration tests require OpenSSL 3")
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temp.cleanup)
+        cls.root = Path(cls.temp.name)
+        cls.password = "synthetic-fixture-password"
+        cls.env = dict(os.environ, YOUNGMIN_FIXTURE_PASSWORD=cls.password)
+        key, cert = cls.root / "key.pem", cls.root / "cert.pem"
+
+        def generate(args):
+            subprocess.run(["openssl", *map(str, args)], check=True, capture_output=True, env=cls.env)
+
+        generate(["req", "-new", "-x509", "-newkey", "rsa:2048", "-keyout", key,
+                  "-out", cert, "-days", "1", "-subj", "/CN=Youngmin-P12-Test",
+                  "-passout", "env:YOUNGMIN_FIXTURE_PASSWORD"])
+        cls.certificate = distribution.run(["openssl", "x509", "-in", cert, "-outform", "DER"], capture=True)
+        for kind in ("modern", "legacy"):
+            args = ["pkcs12", "-export", "-inkey", key, "-in", cert,
+                    "-passin", "env:YOUNGMIN_FIXTURE_PASSWORD", "-passout", "env:YOUNGMIN_FIXTURE_PASSWORD",
+                    "-out", cls.root / (kind + ".p12")]
+            if kind == "legacy":
+                args += ["-legacy", "-certpbe", "PBE-SHA1-RC2-40"]
+            generate(args)
+
+    def test_modern_and_legacy_inputs_verify_and_convert_without_changing_identity(self):
+        for kind in ("modern", "legacy"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                source = self.root / (kind + ".p12")
+                original = source.read_bytes()
+                env = {"IOS_DISTRIBUTION_P12_BASE64": base64.b64encode(original).decode(),
+                       "IOS_DISTRIBUTION_P12_PASSWORD": self.password, "RUNNER_TEMP": directory}
+                distribution.verify_p12_password(env)
+                self.assertEqual(list(Path(directory).iterdir()), [])
+                compatible, password = distribution.compatible_p12(source, Path(directory), self.password)
+                converted = dict(os.environ, YOUNGMIN_FIXTURE_PASSWORD=password)
+                pem = distribution.read_p12(["-in", compatible, "-passin", "env:YOUNGMIN_FIXTURE_PASSWORD",
+                                             "-clcerts", "-nokeys"], env=converted)
+                der = distribution.run(["openssl", "x509", "-outform", "DER"], data=pem, capture=True)
+                self.assertEqual(der, self.certificate)
+                self.assertEqual(source.read_bytes(), original)
+                self.assertEqual(compatible.stat().st_mode & 0o777, 0o600)
+                self.assertEqual([p.name for p in Path(directory).iterdir()], ["keychain-compatible.p12"])
+
+    def test_wrong_password_is_rejected_for_modern_and_legacy_inputs(self):
+        for kind in ("modern", "legacy"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                env = {"IOS_DISTRIBUTION_P12_BASE64": base64.b64encode((self.root / (kind + ".p12")).read_bytes()).decode(),
+                       "IOS_DISTRIBUTION_P12_PASSWORD": "synthetic-wrong-password", "RUNNER_TEMP": directory}
+                with self.assertRaisesRegex(ValueError, "PKCS12_PASSWORD_REJECTED") as error:
+                    distribution.verify_p12_password(env)
+                self.assertNotIn("synthetic-wrong-password", str(error.exception))
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
+
 class SigningCleanupTests(unittest.TestCase):
+    def test_command_error_reports_only_safe_operation_and_classification(self):
+        command = ["security", "import", "secret-marker-file", "-P", "secret-marker-password"]
+        result = subprocess.CompletedProcess(command, 1, b"secret-marker-key",
+                                             b"MAC verification failed secret-marker-private-output")
+        with mock.patch.object(distribution.subprocess, "run", return_value=result):
+            with self.assertRaises(RuntimeError) as error:
+                distribution.run(command, capture=True)
+        message = str(error.exception)
+        self.assertIn("security import", message)
+        self.assertIn("PKCS12_PASSWORD_OR_FORMAT_REJECTED", message)
+        self.assertNotIn("secret-marker", message)
+
+    def test_signing_preflight_needs_no_native_build_and_cleans_up_import_failure(self):
+        for kind, fail_import in ((kind, fail) for kind in distribution.DISTRIBUTIONS for fail in (False, True)):
+            with self.subTest(kind=kind, fail_import=fail_import), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "ios/Youngmin.xcodeproj").mkdir(parents=True)
+                (root / "ios/Youngmin.xcodeproj/project.pbxproj").write_text("CURRENT_PROJECT_VERSION = 22;\n")
+                data = profiles(kind)
+                commands = []
+
+                def fake_run(args, **kwargs):
+                    args = [str(a) for a in args]
+                    commands.append(args)
+                    if args[:2] == ["security", "import"] and fail_import:
+                        raise RuntimeError("security import failed")
+                    if args[:2] == ["security", "find-identity"]:
+                        return (f'1) {IDENTITY} "Apple Distribution: Synthetic"\n').encode()
+                    if args[:2] == ["security", "find-certificate"]:
+                        return b"synthetic-pem"
+                    if args[0] == "openssl":
+                        return CERT
+                    return b""
+
+                def fake_profile(path):
+                    return next(data[b] for b, secret, _ in distribution.targets(kind) if path.name.startswith(secret))
+
+                with mock.patch.multiple(distribution, ROOT=root, OUTPUT=root / "output"), \
+                        mock.patch.object(distribution, "run", side_effect=fake_run), \
+                        mock.patch.object(distribution, "read_profile", side_effect=fake_profile), \
+                        mock.patch.object(distribution.subprocess, "run") as cleanup:
+                    if fail_import:
+                        with self.assertRaisesRegex(RuntimeError, "security import"):
+                            distribution.build(dict(settings(kind), RUNNER_TEMP=str(root)), kind, verify_only=True)
+                    else:
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            distribution.build(dict(settings(kind), RUNNER_TEMP=str(root)), kind, verify_only=True)
+                self.assertFalse((root / "output").exists())
+                self.assertFalse(list(root.glob("youngmin-signing-*")))
+                self.assertFalse(any(command[0] == "xcodebuild" for command in commands))
+                self.assertEqual(len(cleanup.call_args_list), 2)
+
     def test_failed_archive_restores_keychains_and_removes_profiles_and_licenses(self):
         for kind in distribution.DISTRIBUTIONS:
             with self.subTest(kind=kind):

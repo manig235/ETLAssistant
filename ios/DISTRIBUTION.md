@@ -111,6 +111,11 @@ Apple 계정 비밀번호나 2단계 인증 코드는 CI에 등록하지 않는�
    이 모드에는 Firebase 설정이 없어도 된다. Apple 서명 설정과 세 프로파일은 필요하다.
 3. native Codex 빌드 → Swift Release 단위 테스트 → Release archive → 수동 Ad Hoc export 순서로 실행한다.
    빠진 설정은 시간이 오래 걸리는 컴파일 전에 항목명만 출력하고 실패한다.
+   같은 사전 검사에서 임시 keychain으로 p12 가져오기와 세 프로파일의 인증서·기기 목록도 검증한 뒤 정리한다.
+   인증서 명령 실패는 안전한 명령 이름과 오류 분류만 남기며 비밀번호·명령 인자·원본 출력을 기록하지 않는다.
+   macOS가 p12 MAC 형식을 거부하면 OpenSSL로 원본 MAC·비밀번호를 확인한 뒤 임시 호환 사본을 시도한다.
+   중간 PEM과 호환 p12는 모두 임의 비밀번호로 암호화하고 평문 키를 파일·로그에 남기지 않는다.
+   임시 사본은 작업 종료 시 정리하며 원본 p12와 GitHub Secret은 바꾸지 않는다.
 4. Artifacts의 `youngmin-adhoc-<run>-<attempt>`를 받아 `Youngmin-AdHoc.ipa`를 확인한다.
 5. 배포할 때 **publish를 켜고** 변경 사항을 입력해 실행한다. 지정한 Firebase 그룹으로 전달되며
    실행 Summary에 테스터 설치 링크가 표시된다. push·PR로는 서명 빌드나 배포가 실행되지 않는다.

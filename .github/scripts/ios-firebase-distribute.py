@@ -151,7 +151,32 @@ def run(args, *, data=None, capture=False, env=None):
                             stdout=subprocess.PIPE if capture else None,
                             stderr=subprocess.PIPE if capture else None)
     if result.returncode:
-        raise RuntimeError(f"{Path(args[0]).name} failed (exit {result.returncode})")
+        command = Path(args[0]).name
+        reason = ""
+        if command == "security":
+            # Only fixed operation names and classifications may reach logs.
+            # Neither argv nor raw keychain output is safe to echo.
+            allowed = {"list-keychains", "create-keychain", "set-keychain-settings", "unlock-keychain",
+                       "import", "set-key-partition-list", "find-identity", "find-certificate", "cms"}
+            if len(args) > 1 and args[1] in allowed:
+                command += " " + args[1]
+            diagnostic = (result.stderr or b"").lower()
+            for marker, label in ((b"mac verification failed", "PKCS12_PASSWORD_OR_FORMAT_REJECTED"),
+                                  (b"user interaction is not allowed", "USER_INTERACTION_REQUIRED"),
+                                  (b"specified item could not be found", "KEYCHAIN_ITEM_NOT_FOUND"),
+                                  (b"password you entered is not correct", "KEYCHAIN_PASSWORD_REJECTED")):
+                if marker in diagnostic:
+                    reason = ": " + label
+                    break
+        elif command == "openssl":
+            if len(args) > 1 and args[1] in {"pkcs12", "x509"}:
+                command += " " + args[1]
+            diagnostic = (result.stderr or b"").lower()
+            if b"mac verify error" in diagnostic or b"mac verification failed" in diagnostic:
+                reason = ": PKCS12_PASSWORD_REJECTED"
+            elif b"unsupported" in diagnostic or b"unknown pbe algorithm" in diagnostic:
+                reason = ": PKCS12_UNSUPPORTED_ENCRYPTION"
+        raise RuntimeError(f"{command} failed (exit {result.returncode}){reason}")
     return result.stdout if capture else None
 
 
@@ -159,6 +184,63 @@ def private_file(path, data):
     with path.open("xb") as stream:
         path.chmod(0o600)
         stream.write(data)
+
+
+def read_p12(args, *, env):
+    # OpenSSL 3 keeps older PKCS#12 ciphers (for example RC2-40-CBC) in
+    # its legacy provider. Retry only that error, keeping MAC verification on.
+    command = ["openssl", "pkcs12", *args]
+    try:
+        return run(command, capture=True, env=env)
+    except RuntimeError as error:
+        if "PKCS12_UNSUPPORTED_ENCRYPTION" not in str(error):
+            raise
+        return run(command + ["-legacy"], capture=True, env=env)
+
+
+def verify_p12_password(env):
+    require(("IOS_DISTRIBUTION_P12_BASE64", "IOS_DISTRIBUTION_P12_PASSWORD"), env)
+    with tempfile.TemporaryDirectory(prefix="youngmin-p12-check-", dir=env.get("RUNNER_TEMP")) as directory:
+        source = Path(directory) / "distribution.p12"
+        private_file(source, decode_secret(env["IOS_DISTRIBUTION_P12_BASE64"], "IOS_DISTRIBUTION_P12_BASE64"))
+        child_env = dict(os.environ, YOUNGMIN_P12_VERIFY_PASSWORD=env["IOS_DISTRIBUTION_P12_PASSWORD"])
+        try:
+            read_p12(["-in", source, "-passin", "env:YOUNGMIN_P12_VERIFY_PASSWORD", "-noout"], env=child_env)
+        except RuntimeError as error:
+            classification = next((label for label in ("PKCS12_PASSWORD_REJECTED", "PKCS12_UNSUPPORTED_ENCRYPTION")
+                                   if label in str(error)), "PKCS12_INVALID_INPUT")
+            raise ValueError("P12 verification failed: " + classification
+                             + "; verify the original P12 and IOS_DISTRIBUTION_P12_PASSWORD") from None
+
+
+def compatible_p12(source, temp, password):
+    # Verify the original MAC/password; never use -nomacver. Only encrypted
+    # PEM/P12 leaves OpenSSL, and no password appears in subprocess arguments.
+    working_password = secrets.token_urlsafe(32)
+    child_env = dict(os.environ, YOUNGMIN_P12_INPUT_PASSWORD=password,
+                     YOUNGMIN_P12_WORK_PASSWORD=working_password)
+    try:
+        encrypted_pem = read_p12(["-in", source,
+                                  "-passin", "env:YOUNGMIN_P12_INPUT_PASSWORD", "-aes256",
+                                  "-passout", "env:YOUNGMIN_P12_WORK_PASSWORD"], env=child_env)
+    except RuntimeError:
+        raise ValueError("OpenSSL could not decrypt the P12; verify the original file and "
+                         "IOS_DISTRIBUTION_P12_PASSWORD") from None
+    protected_pem = temp / "keychain-import-encrypted.pem"
+    private_file(protected_pem, encrypted_pem)
+    temporary_password = secrets.token_urlsafe(32)
+    child_env.pop("YOUNGMIN_P12_INPUT_PASSWORD")
+    child_env["YOUNGMIN_P12_OUTPUT_PASSWORD"] = temporary_password
+    try:
+        encrypted = run(["openssl", "pkcs12", "-export", "-in", protected_pem,
+                         "-passin", "env:YOUNGMIN_P12_WORK_PASSWORD", "-keypbe", "PBE-SHA1-3DES",
+                         "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1",
+                         "-passout", "env:YOUNGMIN_P12_OUTPUT_PASSWORD"], capture=True, env=child_env)
+    finally:
+        protected_pem.unlink(missing_ok=True)
+    path = temp / "keychain-compatible.p12"
+    private_file(path, encrypted)
+    return path, temporary_password
 
 
 def read_profile(path):
@@ -268,25 +350,26 @@ def verify_export(ipa, temp, team, certificate, kind="ad-hoc", build=None):
     return info
 
 
-def build(env, kind="ad-hoc"):
+def build(env, kind="ad-hoc", *, verify_only=False):
     check_config(env, kind=kind)
     distribution = DISTRIBUTIONS[kind]
     kind_targets = targets(kind)
     number = build_number(env, kind)
     team = env["IOS_TEAM_ID"]
-    generated = ROOT / "ios/NativeCodex/Generated"
-    if not (generated / "iphoneos/arm64/libyoungmin_codex_bridge.a").is_file():
-        raise ValueError("Build the native Codex bridge first")
-    if not (generated / "Codex-LICENSE.txt").is_file():
-        raise ValueError("Native Codex license is missing")
-    # Match ios-device-ipa.sh: Rust reports the frameworks required by this build.
-    native_system_libs = (generated / "iphoneos/arm64/native-static-libs.txt").read_text().strip()
-    if not native_system_libs:
-        raise ValueError("Native Codex system library flags are missing")
-    OUTPUT.mkdir(exist_ok=True)
-    # A fresh output directory prevents a failed rebuild from publishing an old IPA.
-    if any(OUTPUT.iterdir()):
-        raise ValueError("ios-distribution-output must be empty before building")
+    if not verify_only:
+        generated = ROOT / "ios/NativeCodex/Generated"
+        if not (generated / "iphoneos/arm64/libyoungmin_codex_bridge.a").is_file():
+            raise ValueError("Build the native Codex bridge first")
+        if not (generated / "Codex-LICENSE.txt").is_file():
+            raise ValueError("Native Codex license is missing")
+        # Match ios-device-ipa.sh: Rust reports the frameworks required by this build.
+        native_system_libs = (generated / "iphoneos/arm64/native-static-libs.txt").read_text().strip()
+        if not native_system_libs:
+            raise ValueError("Native Codex system library flags are missing")
+        OUTPUT.mkdir(exist_ok=True)
+        # A fresh output directory prevents a failed rebuild from publishing an old IPA.
+        if any(OUTPUT.iterdir()):
+            raise ValueError("ios-distribution-output must be empty before building")
     with tempfile.TemporaryDirectory(prefix="youngmin-signing-", dir=env.get("RUNNER_TEMP")) as directory:
         temp = Path(directory)
         keychain = temp / "distribution.keychain-db"
@@ -301,8 +384,16 @@ def build(env, kind="ad-hoc"):
             run(["security", "create-keychain", "-p", password, keychain], capture=True)
             run(["security", "set-keychain-settings", "-lut", "21600", keychain], capture=True)
             run(["security", "unlock-keychain", "-p", password, keychain], capture=True)
-            run(["security", "import", p12, "-P", env["IOS_DISTRIBUTION_P12_PASSWORD"], "-k", keychain,
-                 "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"], capture=True)
+            try:
+                run(["security", "import", p12, "-P", env["IOS_DISTRIBUTION_P12_PASSWORD"], "-k", keychain,
+                     "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"], capture=True)
+            except RuntimeError as error:
+                if "PKCS12_PASSWORD_OR_FORMAT_REJECTED" not in str(error):
+                    raise
+                compatible, compatible_password = compatible_p12(p12, temp, env["IOS_DISTRIBUTION_P12_PASSWORD"])
+                run(["security", "import", compatible, "-P", compatible_password, "-k", keychain,
+                     "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"], capture=True)
+                print("Imported the verified P12 through a temporary keychain-compatible wrapper.")
             run(["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:",
                  "-s", "-k", password, keychain], capture=True)
             identities = run(["security", "find-identity", "-v", "-p", "codesigning", keychain], capture=True).decode()
@@ -320,6 +411,9 @@ def build(env, kind="ad-hoc"):
                 private_file(path, decode_secret(env[secret], secret))
                 profiles[bundle], profile_files[bundle] = read_profile(path), path
             validate_profile_set(profiles, team, certificate, kind)
+            if verify_only:
+                print("Validated the distribution identity and all three " + distribution["label"] + " profiles.")
+                return
             for bundle, profile in profiles.items():
                 # Support both current Xcode and the legacy lookup directory.
                 for folder in (Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
@@ -457,7 +551,7 @@ def main():
     # GitHub cancellation must still run the temporary keychain/profile cleanup.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "build", "publish", "upload"))
+    parser.add_argument("command", choices=("check", "check-p12", "check-signing", "build", "publish", "upload"))
     parser.add_argument("--distribution", choices=tuple(DISTRIBUTIONS), default="ad-hoc",
                         help="Ad Hoc (Firebase) or App Store Connect (TestFlight) signing")
     parser.add_argument("--publish", action="store_true", help="Also check Firebase settings")
@@ -475,8 +569,11 @@ def main():
                          upload=kind == "app-store" and (
                              args.upload or os.environ.get("UPLOAD_TO_APP_STORE_CONNECT") == "true"))
             print("Required distribution settings are present.")
-        elif args.command == "build":
-            build(os.environ, kind)
+        elif args.command == "check-p12":
+            verify_p12_password(os.environ)
+            print("Verified the P12 MAC and password with OpenSSL.")
+        elif args.command in ("check-signing", "build"):
+            build(os.environ, kind, verify_only=args.command == "check-signing")
         elif args.command == "upload":
             upload(os.environ)
         else:
