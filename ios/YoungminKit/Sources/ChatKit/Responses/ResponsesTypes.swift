@@ -337,5 +337,7 @@ public enum ResponsesEvent: Sendable {
     case toolFinished(ToolCall)
     /// 모델 호출 한 번이 끝남.
     case roundCompleted(responseId: String?, usage: ResponsesUsage?)
+    /// 채팅에 남길 안내 한 줄(`ChatModel.addNotice`).
+    case notice(String)
     case turnEnded(TurnResult)
 }

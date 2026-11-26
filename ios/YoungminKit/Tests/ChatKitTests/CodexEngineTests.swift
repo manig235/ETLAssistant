@@ -7,10 +7,12 @@ private actor TurnTransport: CodexTransport {
     nonisolated let messages: AsyncStream<ChatJSON>
     private let output: AsyncStream<ChatJSON>.Continuation
     private let scenario: Scenario
+    /// JSON-RPC error returned for thread/resume (the real engine failed this way without its state DB).
+    private let resumeError: ChatJSON?
     private var sent: [ChatJSON] = []
-    init(_ scenario: Scenario = .text) {
+    init(_ scenario: Scenario = .text, resumeError: ChatJSON? = nil) {
         let (stream, output) = AsyncStream<ChatJSON>.makeStream()
-        self.messages = stream; self.output = output; self.scenario = scenario
+        self.messages = stream; self.output = output; self.scenario = scenario; self.resumeError = resumeError
     }
     func start() async throws {}
     func stop() async { output.finish() }
@@ -19,6 +21,7 @@ private actor TurnTransport: CodexTransport {
         sent.append(m)
         let id = m["id"] ?? .null
         switch m["method"]?.string {
+        case "thread/resume" where resumeError != nil: output.yield(["id": id, "error": resumeError!])
         case "thread/start", "thread/resume": output.yield(["id": id, "result": ["thread": ["id": "native-thread"]]])
         case "turn/start":
             output.yield(["id": id, "result": ["turn": ["id": "turn-1"]]])
@@ -77,6 +80,43 @@ struct CodexEngineTests {
         for await _ in await engine.send(history: history, input: [ResponsesInput.userMessage("이어서")], config: TurnConfig(model: "gpt-5.5"), tools: { _ in ToolOutput(text: "") }) {}
         let requests = await transport.requests()
         #expect(requests.contains { $0["method"]?.string == "thread/resume" })
+        await client.shutdown()
+    }
+
+    @Test func rejectedResumeContinuesInANewThreadOnce() async throws {
+        let transport = TurnTransport(resumeError: ["code": -32600, "message": "thread history is unavailable"])
+        let client = CodexClient(transport: transport)
+        let engine = CodexEngine(client: client)
+        let old = "019a0000-0000-7000-8000-000000000001"
+        var notices: [String] = []
+        var result: TurnResult?
+        for await event in await engine.send(history: [["type": .string(CodexEngine.threadMarker), "thread_id": .string(old)]],
+                                             input: [ResponsesInput.userMessage("두 번째 질문")], config: TurnConfig(model: "gpt-5.5"), tools: { _ in ToolOutput(text: "") }) {
+            if case .notice(let text) = event { notices.append(text) }
+            if case .turnEnded(let r) = event { result = r }
+        }
+        #expect(result?.status == .completed)
+        #expect(notices == [CodexEngine.contextLost])
+        // The next message resumes the new thread; the old ID is kept for conversation deletion.
+        #expect(result?.history.compactMap { $0["thread_id"]?.string } == ["native-thread", old])
+        let methods = (await transport.requests()).compactMap { $0["method"]?.string }
+        #expect(methods.prefix(3) == ["thread/resume", "thread/start", "turn/start"])
+        await client.shutdown()
+    }
+
+    @Test func closedEngineDuringResumeKeepsTheThread() async throws {
+        let transport = TurnTransport(resumeError: ["code": -32000, "message": "Codex 연결이 종료됐어요"])
+        let client = CodexClient(transport: transport)
+        let engine = CodexEngine(client: client)
+        let marker: ChatJSON = ["type": .string(CodexEngine.threadMarker), "thread_id": "native-thread"]
+        var result: TurnResult?
+        for await event in await engine.send(history: [marker], input: [ResponsesInput.userMessage("이어서")], config: TurnConfig(model: "gpt-5.5"), tools: { _ in ToolOutput(text: "") }) {
+            if case .notice = event { Issue.record("A closed connection must not replace the thread") }
+            if case .turnEnded(let r) = event { result = r }
+        }
+        if case .some(.failed) = result?.status {} else { Issue.record("Expected a failed turn") }
+        #expect(result?.history.first?["thread_id"]?.string == "native-thread")
+        #expect(!(await transport.requests()).contains { $0["method"]?.string == "thread/start" })
         await client.shutdown()
     }
 

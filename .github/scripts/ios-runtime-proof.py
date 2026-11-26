@@ -47,7 +47,7 @@ if run_id:
     while True:
         jobs = api(f"actions/runs/{run_id}/jobs?per_page=100")["jobs"]
         successful = []
-        for name in ["javascript-tool-probe", "codex-code-mode-delegate"]:
+        for name in ["javascript-tool-probe", "codex-code-mode-delegate", "codex-thread-resume"]:
             matching = [job for job in jobs if job["name"].split(" / ")[-1] == name]
             if len(matching) > 1:
                 raise SystemExit(f"Ambiguous execution proof: {name}")
@@ -56,11 +56,11 @@ if run_id:
             successful.append(len(matching) == 1 and matching[0]["conclusion"] == "success")
         if all(successful):
             verified = True
-            print(f"Verified macOS/iOS interpreter and actual Codex delegate tests from run {run_id}.")
+            print(f"Verified macOS/iOS interpreter, Codex delegate and thread resume tests from run {run_id}.")
             break
         run = api(f"actions/runs/{run_id}")
         if run["status"] == "completed":
-            raise SystemExit("Completed proof run does not contain both successful execution-test jobs")
+            raise SystemExit("Completed proof run does not contain all successful execution-test jobs")
         if time.monotonic() < deadline:
             print(f"Waiting for execution proof {run_id}; IPA upload remains blocked.", flush=True)
             time.sleep(15)

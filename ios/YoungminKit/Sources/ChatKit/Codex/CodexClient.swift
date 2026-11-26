@@ -10,7 +10,10 @@ public protocol CodexTransport: Sendable {
 
 public struct CodexError: Error, Sendable, Equatable {
     public let message: String
-    public init(_ message: String) { self.message = message }
+    /// JSON-RPC error code when the engine answered with an error; nil for local
+    /// failures such as a timeout or a closed connection.
+    public let code: Int?
+    public init(_ message: String, code: Int? = nil) { self.message = message; self.code = code }
 }
 
 /// JSON-RPC request routing shared by authentication, model selection and chat.
@@ -90,7 +93,7 @@ public actor CodexClient {
         if let id = message["id"]?.string, message["method"] == nil, let continuation = pending.removeValue(forKey: id) {
             deadlines.removeValue(forKey: id)?.cancel()
             if let error = message["error"] {
-                continuation.resume(throwing: CodexError(error["message"]?.string ?? "Codex 요청에 실패했어요"))
+                continuation.resume(throwing: CodexError(error["message"]?.string ?? "Codex 요청에 실패했어요", code: error["code"]?.int))
             } else { continuation.resume(returning: message["result"] ?? .null) }
             return
         }

@@ -1,6 +1,8 @@
 //! In-process JSON-RPC transport for the official Codex app-server.
 //! No RPC socket, helper executable, or token transfer through Swift.
 mod code_mode;
+#[cfg(test)]
+mod resume_tests;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
@@ -11,10 +13,10 @@ use codex_app_server::in_process::{
     self, EmbeddedNetworkPolicy, InProcessServerEvent, InProcessStartArgs,
 };
 use codex_app_server_protocol::{
-    ClientInfo, ClientNotification, ClientRequest, InitializeCapabilities, InitializeParams,
-    JSONRPCMessage,
+    ClientInfo, ClientNotification, ClientRequest, ConfigWarningNotification,
+    InitializeCapabilities, InitializeParams, JSONRPCMessage,
 };
-use codex_core::config::ConfigBuilder;
+use codex_core::config::{Config, ConfigBuilder};
 use serde_json::{Value, json};
 use tokio::sync::mpsc as async_mpsc;
 
@@ -181,6 +183,38 @@ pub extern "C" fn ym_codex_stop(id: u64) {
     }
 }
 
+/// Mirrors upstream app-server startup: a corrupt database (or a file blocking
+/// its folder) is moved to `db-backups` under CODEX_HOME once, then rebuilt from
+/// the rollout files. Returns whether such a recovery happened.
+async fn open_state_db(config: &Config) -> anyhow::Result<(in_process::StateDbHandle, bool)> {
+    let (result, backups) = codex_state::collect_runtime_db_backups(async {
+        let mut attempted = std::collections::HashSet::new();
+        loop {
+            let error = match codex_rollout::state_db::try_init(config).await {
+                Ok(state_db) => return Ok(state_db),
+                Err(error) => error,
+            };
+            let path = codex_state::runtime_db_path_for_corruption_error(&error)
+                .unwrap_or_else(|| config.sqlite_config().state_db_path());
+            let blocked = path
+                .parent()
+                .and_then(|folder| std::fs::metadata(folder).ok())
+                .is_some_and(|metadata| metadata.is_file());
+            if !codex_state::is_sqlite_corruption_error(&error) && !blocked {
+                return Err(error);
+            }
+            if !attempted.insert(path.clone()) {
+                return Err(error);
+            }
+            codex_state::backup_runtime_db_for_fresh_start(&path)
+                .await
+                .map_err(|backup| anyhow::anyhow!("{backup}; original error: {error}"))?;
+        }
+    })
+    .await;
+    Ok((result?, !backups.is_empty()))
+}
+
 async fn run(
     home: PathBuf,
     workspace: PathBuf,
@@ -239,6 +273,30 @@ async fn run(
         return;
     };
     policy.activate(&mut config);
+    // The standalone app-server opens this database before serving. Without it,
+    // thread/resume (every message after the first) fails on paginated history.
+    let mut config_warnings = vec![];
+    let state_db = match open_state_db(&config).await {
+        Ok((state_db, recovered)) => {
+            if recovered {
+                config_warnings.push(ConfigWarningNotification {
+                    summary: "Codex rebuilt its local database".into(),
+                    details: None,
+                    path: None,
+                    range: None,
+                });
+            }
+            state_db
+        }
+        Err(_) => {
+            fatal(
+                &events,
+                &failed,
+                "대화 기록 저장소를 열지 못했어요. 앱을 다시 열어 주세요",
+            );
+            return;
+        }
+    };
     let paths = std::env::current_exe()
         .ok()
         .and_then(|p| codex_exec_server::ExecServerRuntimeOptions::new(p, None).ok());
@@ -262,10 +320,11 @@ async fn run(
         embedded_network_policy: policy,
         thread_config_loader: Arc::new(codex_config::NoopThreadConfigLoader),
         feedback: codex_feedback::CodexFeedback::new(),
+        // No diagnostic log persistence; analytics and feedback stay off.
         log_db: None,
-        state_db: None,
+        state_db: Some(state_db),
         environment_manager: Arc::new(environment),
-        config_warnings: vec![],
+        config_warnings,
         session_source: codex_protocol::protocol::SessionSource::Exec,
         enable_codex_api_key_env: false,
         initialize: InitializeParams {

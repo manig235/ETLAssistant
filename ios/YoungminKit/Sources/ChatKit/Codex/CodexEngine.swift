@@ -54,10 +54,20 @@ public actor CodexEngine {
         }
         do {
             try Task.checkCancellation()
-            let result: ChatJSON
+            var resumed: ChatJSON?
             let existing = history.first { $0["type"]?.string == Self.threadMarker }?["thread_id"]?.string
             if let existing {
-                result = try await client.request("thread/resume", ["threadId": .string(existing), "model": .string(config.model), "developerInstructions": .string(config.instructions ?? ""), "excludeTurns": true])
+                do {
+                    resumed = try await client.request("thread/resume", ["threadId": .string(existing), "model": .string(config.model), "developerInstructions": .string(config.instructions ?? ""), "excludeTurns": true])
+                } catch let error as CodexError where Self.rejectsThread(error) {
+                    // The saved ID would fail on every later message too. Continue in a new
+                    // thread; timeouts and closed connections still fail and keep the ID.
+                    output.yield(.notice(Self.contextLost))
+                }
+            }
+            let result: ChatJSON
+            if let resumed {
+                result = resumed
             } else {
                 let definitions: [ChatJSON] = config.tools.map {
                     ["type": "function", "name": .string($0.name), "description": .string($0.description), "inputSchema": $0.parameters]
@@ -69,7 +79,10 @@ public actor CodexEngine {
             }
             guard let id = result["thread"]?["id"]?.string else { throw CodexError("Codex 대화를 만들지 못했어요") }
             threadID = id
-            savedHistory = [["type": .string(Self.threadMarker), "thread_id": .string(id)]]
+            // Keep a replaced thread's ID after the current one so deleting the
+            // conversation still removes its stored engine history.
+            let replaced = history.filter { $0["type"]?.string == Self.threadMarker && $0["thread_id"]?.string != id }
+            savedHistory = [["type": .string(Self.threadMarker), "thread_id": .string(id)]] + replaced
             var userInput = Self.userInput(input)
             let context = Self.legacyContext(history)
             if !context.isEmpty { userInput.insert(["type": "text", "text": .string(context), "text_elements": []], at: 0) }
@@ -149,6 +162,16 @@ public actor CodexEngine {
                 end(.failed(ResponsesError(.stream, message: message)))
             }
         }
+    }
+
+    static let contextLost = "이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 가요."
+    /// Code the bridge uses when its engine connection has closed (not a rejection).
+    static let bridgeClosedCode = -32000
+
+    /// The engine answered thread/resume with an error about this thread itself.
+    static func rejectsThread(_ error: CodexError) -> Bool {
+        guard let code = error.code else { return false }
+        return code != bridgeClosedCode
     }
 
     static func userInput(_ messages: [ChatJSON]) -> [ChatJSON] {

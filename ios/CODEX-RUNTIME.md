@@ -13,6 +13,14 @@
 - build 25에서 SNU Edu 계정으로 실제 iPad 채팅 성공이 사용자에게 확인됐다. eTL 전체 도구와 장기 백그라운드 동작까지 검증됐다는 뜻은 아니다.
 - build 26부터 실행기를 내장 QuickJS로 교체한다. Apple 비공개 시간 제한 함수를 제거했고, 로컬 Linux에서 실행·취소·메모리 제한을 포함한 16개 테스트가 통과했다. macOS·iOS·Codex 연결과 기기용 빌드는 CI에서 별도로 확인한다.
 
+### 두 번째 메시지부터 실패하던 문제 (2026-11-26)
+
+- 증상: 대화의 첫 메시지는 되는데 같은 대화의 다음 메시지(추천 질문에 답한 뒤 포함)가 모두 실패했다.
+- 원인: 브리지가 `InProcessStartArgs`에 `state_db: None`을 넘겼다. 두 번째 메시지부터 앱은 `thread/resume`을 부르는데, 고정 버전의 대화 기록은 페이지 방식이라 상태 DB 없이 기록을 읽지 못해 오류가 났다(`excludeTurns: true`여도 내부 조회는 일어난다). 앱은 같은 스레드 ID로 계속 재개를 시도해 매번 실패했다. Android의 독립 `codex app-server`는 시작할 때 DB를 직접 연다.
+- 수정: 브리지가 공식 app-server와 같이 `codex_rollout::state_db::try_init`으로 CODEX_HOME 아래 상태 DB를 열어 넘긴다. 손상된 DB는 공식 서버처럼 CODEX_HOME의 `db-backups`로 옮기고 rollout 파일에서 다시 만든다. 그래도 열지 못하면 DB 없이 돌지 않고 "대화 기록 저장소를 열지 못했어요" 오류로 멈춘다. 진단 로그 DB 기록(`log_db`)은 재개에 필요하지 않아 계속 끈다.
+- 앱: 엔진이 `thread/resume`을 오류 코드로 거절하면 새 스레드로 이어 가고 "이전 대화의 맥락은 이어지지 않아요" 안내를 한 번 남긴다. 시간 초과·연결 종료는 그대로 실패하고 ID를 유지한다. 교체된 스레드 ID는 대화 기록에 함께 남겨 대화를 지울 때 엔진 기록도 지운다.
+- 검증: Actions → **iOS JavaScript Tool Probe**의 `codex-thread-resume` 작업이 macOS에서 실제 브리지를 C 인터페이스로 띄우고, 로컬 가짜 모델로 첫 턴 → 같은 실행 안 `thread/resume` → 둘째 턴 → 브리지 재시작 뒤 `thread/resume` → 셋째 턴(앞 대화가 요청에 포함되는지 확인) → `thread/delete`를 돈다(`bridge/src/resume_tests.rs`). 계정·외부 네트워크가 필요 없다. 이 작업은 IPA 빌드 전 실행 검증에도 포함된다. 실제 iPad에서의 확인은 따로 해야 한다.
+
 기존 **iOS Device IPA** 워크플로는 SIWC 인증을 사용하는 앱을 만든다. 내장 Codex를 검증하는 동안 두 빌드를 구분하기 위해 새 워크플로를 사용한다.
 
 ## 네이티브 설치용 IPA

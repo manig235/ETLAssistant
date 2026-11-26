@@ -15,7 +15,7 @@ SCRIPT = ROOT / '.github/scripts/ios-runtime-proof.py'
 class ProofTests(unittest.TestCase):
     def execute(self, state, conclusions, allow=False, changed=False, wait=0):
         run = {'workflow_id': 1, 'event': 'workflow_dispatch', 'head_repository': {'full_name': 'owner/repo'}, 'head_sha': 'a' * 40, 'status': state}
-        jobs = {'jobs': [{'name': name, 'conclusion': conclusion} for name, conclusion in zip(['javascript-tool-probe', 'codex-code-mode-delegate'], conclusions)]}
+        jobs = {'jobs': [{'name': name, 'conclusion': conclusion} for name, conclusion in zip(['javascript-tool-probe', 'codex-code-mode-delegate', 'codex-thread-resume'], conclusions)]}
         def output(args, **kwargs):
             if args[:3] == ('git', 'show', 'a' * 40 + ':.github/scripts/ios-codex-probe.sh'):
                 return (ROOT / '.github/scripts/ios-codex-probe.sh').read_text()
@@ -36,17 +36,19 @@ class ProofTests(unittest.TestCase):
                 finally: os.chdir(old)
             return result.read_text()
     def test_pending_can_only_start_compilation(self):
-        self.assertIn('pending=true', self.execute('in_progress', ['success', None], allow=True))
+        self.assertIn('pending=true', self.execute('in_progress', ['success', 'success', None], allow=True))
     def test_pending_cannot_publish(self):
-        with self.assertRaises(SystemExit): self.execute('in_progress', ['success', None])
+        with self.assertRaises(SystemExit): self.execute('in_progress', ['success', 'success', None])
     def test_failed_proof_cannot_compile_or_publish(self):
         for allow in [False, True]:
-            with self.assertRaises(SystemExit): self.execute('completed', ['success', 'failure'], allow=allow)
-    def test_both_successful_jobs_verify(self):
-        self.assertIn('verified=true', self.execute('completed', ['success', 'success']))
+            with self.assertRaises(SystemExit): self.execute('completed', ['success', 'success', 'failure'], allow=allow)
+    def test_all_successful_jobs_verify(self):
+        self.assertIn('verified=true', self.execute('completed', ['success', 'success', 'success']))
     def test_different_runtime_cannot_reuse_proof(self):
-        with self.assertRaises(subprocess.CalledProcessError): self.execute('in_progress', ['success', None], allow=True, changed=True)
-    def test_finished_run_without_both_jobs_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError): self.execute('in_progress', ['success', 'success', None], allow=True, changed=True)
+    def test_finished_run_without_all_jobs_fails(self):
         with self.assertRaises(SystemExit): self.execute('completed', ['success'], allow=True)
+    def test_run_without_resume_job_fails(self):
+        with self.assertRaises(SystemExit): self.execute('completed', ['success', 'success'], allow=True)
 
 if __name__ == '__main__': unittest.main()

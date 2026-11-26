@@ -82,3 +82,47 @@ jobs:
           path: |
             ios-codex-probe/*.log
             ios-codex-probe/*.txt
+
+  codex-thread-resume:
+    # Independent of the JavaScript jobs, so it runs in parallel with them.
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Restore host Rust build
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ios-codex-170-bridge-test-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**') }}
+          restore-keys: ios-codex-170-bridge-test-${{ runner.arch }}-
+      - name: Resume a thread through the real embedded bridge
+        env:
+          CODEX_PROBE_COMPONENT: bridge
+          CODEX_PROBE_OPERATION: bridge-test
+        run: bash .github/scripts/ios-codex-probe.sh
+      - name: Upload thread resume diagnostics
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-codex-thread-resume-logs
+          path: |
+            ios-codex-probe/*.log
+            ios-codex-probe/*.txt
+      - name: Save host Rust build
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ios-codex-probe/source/codex-rs/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}

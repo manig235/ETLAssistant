@@ -288,6 +288,9 @@ final class ChatController {
             case .textDone(let itemId, let text):
                 model.finishAssistant(itemId, text)
                 sync()
+            case .notice(let text):
+                model.addNotice(text)
+                sync()
             case .turnEnded(let result):
                 threads.save(threadId, nativeReferences + result.history)
                 model.closeStreaming()
@@ -443,9 +446,10 @@ final class ChatController {
         guard let removed = chats.delete(id) else { return }
         if id == chatId { openChat(chats.newId()) }
         if let t = removed.threadId, ThreadPurge.isThreadId(t) {
-            if let nativeID = threads.load(t).first(where: { $0["type"]?.string == CodexEngine.threadMarker })?["thread_id"]?.string,
-               ThreadPurge.isThreadId(nativeID) {
-                settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.union([nativeID])
+            let nativeIDs = threads.load(t).filter { $0["type"]?.string == CodexEngine.threadMarker }
+                .compactMap { $0["thread_id"]?.string }.filter(ThreadPurge.isThreadId)
+            if !nativeIDs.isEmpty {
+                settings.pendingNativeThreadDeletes = settings.pendingNativeThreadDeletes.union(nativeIDs)
                 Task { await purgeNativeThreads() }
             }
             if !threads.delete(t) { settings.pendingThreadDeletes = settings.pendingThreadDeletes.union([t]) }
