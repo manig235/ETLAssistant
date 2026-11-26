@@ -15,6 +15,9 @@ on:
     paths:
       - '.github/workflows/ios-firebase.yml'
       - '.github/scripts/ios-firebase-distribute.py'
+      - '.github/scripts/ios-codex-lib.py'
+      - '.github/scripts/test-ios-codex-lib.py'
+      - '.github/actions/ios-codex-lib/**'
       - 'scripts/test-ios-firebase.py'
       - 'ios/Youngmin.xcodeproj/project.pbxproj'
 
@@ -35,10 +38,51 @@ jobs:
           persist-credentials: false
       - name: Test distribution validation without credentials
         run: python3 scripts/test-ios-firebase.py
+      - name: Test native library cache verification
+        run: python3 .github/scripts/test-ios-codex-lib.py
+
+  native-lib:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26-intel
+    timeout-minutes: 5
+    outputs:
+      compiled: ${{ steps.lookup.outputs.hit }}
+    env:
+      PUBLISH_TO_FIREBASE: ${{ inputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check settings before testing or compiling native dependencies
+        env:
+          IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_APP_PROFILE_BASE64: ${{ secrets.IOS_APP_PROFILE_BASE64 }}
+          IOS_WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_WIDGETS_PROFILE_BASE64 }}
+          IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_GROUPS: ${{ vars.FIREBASE_GROUPS }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: python3 .github/scripts/ios-firebase-distribute.py check
+      - name: Check whether this exact engine was already tested and built
+        id: lookup
+        continue-on-error: true
+        uses: ./.github/actions/ios-codex-lib
+        with:
+          profile: release
+          lookup-only: 'true'
+
+  # Same gate as iOS Native Codex IPA: a new engine is built only after its
+  # interpreter and Codex delegate tests pass; a cached one already passed them.
+  javascript-runtime-tests:
+    needs: native-lib
+    if: needs.native-lib.outputs.compiled != 'true'
+    uses: ./.github/workflows/ios-code-mode-probe.yml
 
   build-and-distribute:
-    if: github.event_name == 'workflow_dispatch'
-    needs: distribution-checks
+    needs: [distribution-checks, native-lib, javascript-runtime-tests]
+    if: ${{ always() && !cancelled() && github.event_name == 'workflow_dispatch' && needs.distribution-checks.result == 'success' && needs.native-lib.result == 'success' && (needs.javascript-runtime-tests.result == 'success' || needs.javascript-runtime-tests.result == 'skipped') }}
     runs-on: macos-26-intel
     timeout-minutes: 120
     env:
@@ -59,37 +103,26 @@ jobs:
           FIREBASE_GROUPS: ${{ vars.FIREBASE_GROUPS }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: python3 .github/scripts/ios-firebase-distribute.py check
-      - name: Restore native Rust dependencies
-        id: native-cache
-        uses: actions/cache/restore@v6
+      - name: Restore the exact native library or the shared compilation cache
+        id: native-lib
+        uses: ./.github/actions/ios-codex-lib
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-distribution-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
-          restore-keys: ios-codex-170-distribution-${{ runner.arch }}-
+          # Shared with the optimized iOS Native Codex IPA: opt-level 1, no debug
+          # info, no debug assertions or overflow checks (dev-small profile).
+          profile: release
       - name: Build the embedded official Codex library
-        env:
-          CODEX_PROBE_COMPONENT: bridge
-          CODEX_PROBE_OPERATION: build
-          # Reuse only a completed library with the exact source key and build flags.
-          CODEX_REUSE_COMPILED_LIBRARY: 'true'
-          CODEX_NATIVE_CACHE_KEY: ${{ steps.native-cache.outputs.cache-primary-key }}-o1-debug0-noassert-nooverflow
-          # Reuse the proven dev-small compilation profile, without dev assertions.
-          CARGO_PROFILE_DEV_SMALL_DEBUG: '0'
-          CARGO_PROFILE_DEV_SMALL_DEBUG_ASSERTIONS: 'false'
-          CARGO_PROFILE_DEV_SMALL_OVERFLOW_CHECKS: 'false'
-        run: bash .github/scripts/ios-codex-probe.sh
-      - name: Save native compilation cache
-        if: steps.native-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        id: native-engine
+        if: steps.native-lib.outputs.hit != 'true'
+        run: python3 .github/scripts/ios-codex-lib.py build --profile release --key '${{ steps.native-lib.outputs.key }}'
+      - name: Save native library and compilation caches
+        if: always() && steps.native-lib.outcome == 'success' && steps.native-lib.outputs.hit != 'true'
+        uses: ./.github/actions/ios-codex-lib/save
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-distribution-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+          key: ${{ steps.native-lib.outputs.key }}
+          build-key: ${{ steps.native-lib.outputs.build-key }}
+          build-hit: ${{ steps.native-lib.outputs.build-hit }}
+          compiled: ${{ steps.native-engine.outcome == 'success' }}
+          publish-library: ${{ needs.javascript-runtime-tests.result == 'success' }}
       - name: Test Swift logic in Release configuration
         run: swift test --package-path ios/YoungminKit -c release
       - name: Archive, sign and verify Release Ad Hoc IPA
