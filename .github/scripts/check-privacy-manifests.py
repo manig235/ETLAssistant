@@ -20,7 +20,6 @@ import argparse
 import json
 from pathlib import Path
 import plistlib
-import re
 import shutil
 import struct
 import subprocess
@@ -68,8 +67,31 @@ AMBIGUOUS_SELECTORS = {
     "modificationDate": "NSPrivacyAccessedAPICategoryFileTimestamp",
 }
 
-DATA_TYPE = re.compile(r"^NSPrivacyCollectedDataType[A-Za-z]+$")
-PURPOSE = re.compile(r"^NSPrivacyCollectedDataTypePurpose[A-Za-z]+$")
+# https://developer.apple.com/documentation/bundleresources/describing-data-use-in-privacy-manifests
+DATA_TYPES = {"NSPrivacyCollectedDataType" + name for name in (
+    "Name", "EmailAddress", "PhoneNumber", "PhysicalAddress", "OtherUserContactInfo",
+    "Health", "Fitness",
+    "PaymentInfo", "CreditInfo", "OtherFinancialInfo",
+    "PreciseLocation", "CoarseLocation",
+    "SensitiveInfo",
+    "Contacts",
+    "EmailsOrTextMessages", "PhotosorVideos", "AudioData", "GameplayContent", "CustomerSupport",
+    "OtherUserContent",
+    "BrowsingHistory",
+    "SearchHistory",
+    "UserID", "DeviceID",
+    "PurchaseHistory",
+    "ProductInteraction", "AdvertisingData", "OtherUsageData",
+    "CrashData", "PerformanceData", "OtherDiagnosticData",
+    "EnvironmentScanning", "Hands", "Head",
+    "OtherDataTypes",
+)}
+PURPOSES = {"NSPrivacyCollectedDataTypePurpose" + name for name in (
+    "ThirdPartyAdvertising", "DeveloperAdvertising", "Analytics", "ProductPersonalization",
+    "AppFunctionality", "Other",
+)}
+ENTRY_KEYS = {"NSPrivacyCollectedDataType", "NSPrivacyCollectedDataTypeLinked",
+              "NSPrivacyCollectedDataTypeTracking", "NSPrivacyCollectedDataTypePurposes"}
 
 
 class CheckError(Exception):
@@ -97,20 +119,12 @@ def load_manifest(path):
     unknown = set(data) - allowed
     if unknown:
         raise CheckError(f"{path}: unknown keys {sorted(unknown)}")
-    if data.get("NSPrivacyTracking", False) is not False:
-        raise CheckError(f"{path}: NSPrivacyTracking must be false or absent")
-    if data.get("NSPrivacyTrackingDomains", []) != []:
-        raise CheckError(f"{path}: NSPrivacyTrackingDomains must be empty")
-    for entry in data.get("NSPrivacyCollectedDataTypes", []):
-        if not isinstance(entry, dict) or not DATA_TYPE.match(str(entry.get("NSPrivacyCollectedDataType", ""))):
-            raise CheckError(f"{path}: invalid collected data type entry {entry!r}")
-        if not isinstance(entry.get("NSPrivacyCollectedDataTypeLinked"), bool):
-            raise CheckError(f"{path}: {entry['NSPrivacyCollectedDataType']} needs a boolean Linked value")
-        if entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
-            raise CheckError(f"{path}: {entry['NSPrivacyCollectedDataType']} must not be used for tracking")
-        purposes = entry.get("NSPrivacyCollectedDataTypePurposes")
-        if not purposes or not all(PURPOSE.match(str(p)) for p in purposes):
-            raise CheckError(f"{path}: {entry['NSPrivacyCollectedDataType']} needs valid purposes")
+    # Explicit values: the app does no cross-app tracking and contacts no tracking domains.
+    if data.get("NSPrivacyTracking") is not False:
+        raise CheckError(f"{path}: NSPrivacyTracking must be present and false")
+    if data.get("NSPrivacyTrackingDomains") != []:
+        raise CheckError(f"{path}: NSPrivacyTrackingDomains must be present and empty")
+    collected_data_types(path, data)
     declared = {}
     for entry in data.get("NSPrivacyAccessedAPITypes", []):
         category = entry.get("NSPrivacyAccessedAPIType") if isinstance(entry, dict) else None
@@ -126,6 +140,49 @@ def load_manifest(path):
             raise CheckError(f"{path}: reasons {sorted(invalid)} are not valid for {category}")
         declared[category] = sorted(reasons)
     return declared
+
+
+def collected_data_types(path, data):
+    """Validate NSPrivacyCollectedDataTypes; return {type: (linked, tracking, purposes)}."""
+    entries = data.get("NSPrivacyCollectedDataTypes")
+    if not isinstance(entries, list):
+        raise CheckError(f"{path}: NSPrivacyCollectedDataTypes must be present (an array, empty if nothing is collected)")
+    result = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise CheckError(f"{path}: collected data entry must be a dictionary, got {entry!r}")
+        kind = entry.get("NSPrivacyCollectedDataType")
+        if kind not in DATA_TYPES:
+            raise CheckError(f"{path}: unknown collected data type {kind!r}")
+        if kind in result:
+            raise CheckError(f"{path}: {kind} declared twice")
+        missing = ENTRY_KEYS - set(entry)
+        if missing:
+            raise CheckError(f"{path}: {kind} is missing {sorted(missing)}")
+        unknown = set(entry) - ENTRY_KEYS
+        if unknown:
+            raise CheckError(f"{path}: {kind} has unknown keys {sorted(unknown)}")
+        linked = entry["NSPrivacyCollectedDataTypeLinked"]
+        tracking = entry["NSPrivacyCollectedDataTypeTracking"]
+        if not isinstance(linked, bool) or not isinstance(tracking, bool):
+            raise CheckError(f"{path}: {kind} Linked and Tracking must be booleans")
+        if tracking:
+            raise CheckError(f"{path}: {kind} must not be used for tracking")
+        purposes = entry["NSPrivacyCollectedDataTypePurposes"]
+        if not isinstance(purposes, list) or not purposes:
+            raise CheckError(f"{path}: {kind} needs at least one purpose")
+        invalid = [p for p in purposes if p not in PURPOSES]
+        if invalid:
+            raise CheckError(f"{path}: {kind} has unknown purposes {invalid}")
+        if len(set(purposes)) != len(purposes):
+            raise CheckError(f"{path}: {kind} lists a purpose twice")
+        result[kind] = (linked, tracking, sorted(purposes))
+    return result
+
+
+def read_plist(path):
+    with path.open("rb") as stream:
+        return plistlib.load(stream)
 
 
 # --- Mach-O reading -------------------------------------------------------
@@ -266,7 +323,9 @@ def main():
                 raise CheckError(f"no {MANIFEST} under {args.source}")
             for path in manifests:
                 declared = load_manifest(path)
+                collected = sorted(collected_data_types(path, read_plist(path)))
                 print(f"ok  {path}: {json.dumps(declared, sort_keys=True)}")
+                print(f"    collected: {', '.join(c.removeprefix('NSPrivacyCollectedDataType') for c in collected) or '(none)'}")
         for app in args.app:
             bundles = [app] + sorted((app / "PlugIns").glob("*.appex"))
             names = {b.name for b in bundles}
