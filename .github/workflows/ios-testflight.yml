@@ -20,12 +20,6 @@ on:
       - 'ios/Youngmin.xcodeproj/project.pbxproj'
       - 'ios/Youngmin/Info.plist'
       - 'ios/*/PrivacyInfo.xcprivacy'
-  # Exercise credential-free checks while preparing the submission branch.
-  push:
-    branches:
-      - claude/ios-testflight
-      - codex/testflight-submission-prep
-
 permissions:
   contents: read
 
