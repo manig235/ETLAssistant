@@ -17,6 +17,8 @@ Swift 앱은 Release 설정을 사용한다. Rust 라이브러리는 기존 검�
 이는 Rust `release`/LTO 빌드를 검증했다는 의미는 아니다.
 네이티브 링크에는 해당 Rust 빌드가 생성한 `native-static-libs.txt`를 사용하고, IPA의 Code Mode 런타임이
 현재 내장 실행기인 QuickJS인지도 확인한다. 캐시 키에는 JavaScript 브리지 소스와 시스템 라이브러리 목록을 포함한다.
+엔진 사용자 정의 키는 `Youngmin/Info.plist`에서 빌드 설정을 참조한다. `INFOPLIST_KEY_` 사용자 정의 설정만으로
+최종 plist에 키가 자동 추가되지는 않는다. 값은 서명 전에 포함하고 export 후 다시 확인한다.
 엔진 컴파일을 건너뛰는 재사용은 성공한 컴파일 표시와 정확한 소스·빌드 옵션 키가 모두 일치할 때만 허용한다.
 일부만 일치하는 캐시나 이전 표시가 없는 캐시는 Cargo 빌드를 거친다.
 
@@ -136,8 +138,12 @@ Apple 계정 비밀번호나 2단계 인증 코드는 CI에 등록하지 않는�
 App Group, 디버거 허용 해제, 내장 Codex 설정(QuickJS·고정 소스 revision), 버전·빌드 번호 일치,
 앱·확장의 개인정보 매니페스트가 저장소 원본과 같은지, 최종 실행 파일에 제거한 JavaScriptCore 비공개 함수 import가 없는지
 (`check-ios-private-apis.py`), `ITSAppUsesNonExemptEncryption = NO`와 파일 해시를 확인한 뒤 전달한다.
-실제 배포용 인증서·프로파일을 연결한 **macOS 서명·export와 Firebase 업로드는 미검증**이다.
-첫 유료 계정 설정 후 publish를 끄고 실제 빌드를 확인하고, 등록 기기에서 설치·로그인·확장 동작을 확인한다.
+2026-11-26 [실제 Ad Hoc 실행](https://github.com/manig235/ETLAssistant/actions/runs/45781297032)에서
+커밋 `8418ddc`의 버전 **0.3.3 (12.1)**을 실제 배포 인증서·세 프로파일로 archive·서명·export하고
+위 IPA 검증을 통과했다. 배포 관련 합성 검사 32개와 Swift Release 테스트 755개도 통과했다.
+이 실행은 `publish=false`였으며, 내려받은 IPA의 SHA-256도 빌드 메타데이터·해시 파일과 일치함을 확인했다.
+**기기 설치·로그인·확장 실행과 Firebase 업로드는 아직 확인 전**이다. 등록 기기에서 이 동작을 확인한 뒤 배포한다.
+이 Ad Hoc 실행은 App Store Connect용 서명·export·TestFlight 업로드를 검증한 것이 아니다.
 
 참고: [Apple Ad Hoc 프로파일](https://developer.apple.com/help/account/provisioning-profiles/create-an-ad-hoc-provisioning-profile),
 [Firebase CLI 배포](https://firebase.google.com/docs/app-distribution/ios/distribute-cli),
