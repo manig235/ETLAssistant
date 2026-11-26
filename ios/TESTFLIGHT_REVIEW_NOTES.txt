@@ -1,0 +1,35 @@
+Youngmin (영민이) is an unofficial study assistant for Seoul National University eTL. The app UI is in Korean. Please use the virtual eTL environment below to review it without a university account.
+
+1. Enter virtual eTL (FakeETL)
+On first launch, tap “가상 eTL로 테스트하기” (Test with virtual eTL). A “가상 eTL” banner remains visible. This mode uses synthetic courses, assignments, announcements, timetables, and sample files with the normal app UI, parsers, assistant tools, and change-approval flow. School data is simulated locally; AI replies are generated live.
+
+Tap “시작하기” (Get started) on the welcome screen. On the eTL connection screen, the virtual token is already available; tap “다음” (Next). Do not create or enter a university token.
+
+If the app was previously set to real eTL, open “설정” (Settings) > “학습 데이터” (Study data) > “가상 eTL로 전환 예약” (Switch to virtual eTL on next launch), fully close the app from the app switcher, and reopen it.
+
+2. Connect ChatGPT
+At “ChatGPT 계정으로 로그인해요” (Sign in with a ChatGPT account), tap “ChatGPT로 계속하기” (Continue with ChatGPT). Please sign in with your own ChatGPT account on the OpenAI authentication page and complete any authorization prompts. Return to Youngmin if it does not come to the foreground automatically. When “로그인됐어요” (Signed in) appears, tap “다음”. Choose notification preferences, continue, and tap “비서 시작하기” (Start assistant).
+
+If onboarding was already completed, open Settings > “ChatGPT 계정” (ChatGPT account) > “브라우저로 로그인” (Sign in using browser).
+
+There is no separate Youngmin account. Internet access and a ChatGPT account eligible to use the embedded Codex service are required for AI chat; available models and usage limits depend on that account. This review path uses ChatGPT sign-in, not an API key. If account access prevents review, please contact us through the beta review contact information in App Store Connect.
+
+3. Test live AI with the virtual data
+Send these Korean prompts individually:
+
+A. “수강 과목과 앞으로 7일 마감, 누락 과제를 알려줘.”
+List courses, upcoming deadlines, and missing assignments. Expect the assistant to retrieve the virtual courses and assignment states through the app's tools. Dates are relative to the current date.
+
+B. “회로이론 강의자료를 찾아 RC 회로 내용을 요약해줘.”
+Find the Circuit Theory material and summarize RC circuits. Expect tool calls to locate, download, and read the sample material, followed by a live AI summary.
+
+C. “글쓰기 에세이 초안이 제대로 제출됐는지 확인해줘.”
+Check the submission status of the Writing essay draft using virtual assignment data.
+
+D. “내일 오후 6시까지 가상 복습 일정을 추가해줘.”
+Add a virtual study deadline for tomorrow at 6 PM. Inspect the proposed change, then tap “변경 승인” (Approve change). The item is saved to the virtual profile's local schedule. Repeat with a different title and tap “취소” (Cancel); that change must not be saved.
+
+4. Scope and reset
+Real university data is separate. Virtual mode does not connect to the university servers and restricts real calendar integration, widget data sharing, and external LearningX boards. Real eTL mode requires the user's own university access.
+
+To reset the virtual profile, open Settings > Study data > “가상 데이터 초기화 예약” (Reset virtual data on next launch), fully close the app, and reopen it. This resets virtual conversations, files, and schedule entries while retaining ChatGPT sign-in.

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Manual Ad Hoc archive/export and Firebase upload; never prints credentials."""
+"""Manual Release archive/export for Ad Hoc (Firebase) or App Store Connect (TestFlight).
+
+Both distributions share the archive, signing and IPA verification. Never prints credentials.
+"""
 
 import argparse
 import base64
@@ -22,14 +25,41 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "ios-distribution-output"
 APP_GROUP = "group.kr.snu.etlassistant.ios"
-# Each extension has its own App ID and provisioning profile.
-TARGETS = (
-    ("kr.snu.etlassistant.ios", "IOS_APP_PROFILE_BASE64", "YOUNGMIN_APP_PROFILE"),
-    ("kr.snu.etlassistant.ios.widgets", "IOS_WIDGETS_PROFILE_BASE64", "YOUNGMIN_WIDGETS_PROFILE"),
-    ("kr.snu.etlassistant.ios.share", "IOS_SHARE_PROFILE_BASE64", "YOUNGMIN_SHARE_PROFILE"),
+APP_BUNDLE = "kr.snu.etlassistant.ios"
+CODEX_REVISION = "29eb79e9866b3262a777fdf8195c1b9e63684c91"
+# Each extension has its own App ID and provisioning profile (one set per distribution kind).
+BUNDLES = (
+    (APP_BUNDLE, "APP", "YOUNGMIN_APP_PROFILE"),
+    (APP_BUNDLE + ".widgets", "WIDGETS", "YOUNGMIN_WIDGETS_PROFILE"),
+    (APP_BUNDLE + ".share", "SHARE", "YOUNGMIN_SHARE_PROFILE"),
 )
+# Shipped privacy manifests: bundle path inside the exported .app -> source file.
+PRIVACY_MANIFESTS = {
+    ".": "ios/Youngmin/PrivacyInfo.xcprivacy",
+    "PlugIns/YoungminWidgets.appex": "ios/YoungminWidgets/PrivacyInfo.xcprivacy",
+    "PlugIns/YoungminShare.appex": "ios/YoungminShare/PrivacyInfo.xcprivacy",
+}
+DISTRIBUTIONS = {
+    # Firebase App Distribution: profiles list registered devices.
+    "ad-hoc": {"method": "release-testing", "secret_prefix": "IOS_", "ipa": "Youngmin-AdHoc.ipa",
+               "label": "Ad Hoc"},
+    # TestFlight / App Store: profiles have no device list and use their own secrets.
+    "app-store": {"method": "app-store-connect", "secret_prefix": "IOS_APPSTORE_", "ipa": "Youngmin-AppStore.ipa",
+                  "label": "App Store Connect"},
+}
+
+
+def targets(kind="ad-hoc"):
+    prefix = DISTRIBUTIONS[kind]["secret_prefix"]
+    return tuple((bundle, prefix + name + "_PROFILE_BASE64", variable) for bundle, name, variable in BUNDLES)
+
+
+TARGETS = targets("ad-hoc")
 SIGNING_KEYS = ("IOS_DISTRIBUTION_P12_BASE64", "IOS_DISTRIBUTION_P12_PASSWORD", "IOS_TEAM_ID")
 FIREBASE_KEYS = ("FIREBASE_APP_ID", "FIREBASE_GROUPS", "FIREBASE_SERVICE_ACCOUNT_JSON")
+ASC_KEYS = ("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_KEY_P8", "ASC_APP_ID")
+# TestFlight build numbers must grow; run numbers restart per workflow, so they get an offset.
+DEFAULT_BUILD_OFFSET = 1000
 
 
 def require(keys, env):
@@ -53,14 +83,56 @@ def firebase_config(env):
         raise ValueError("FIREBASE_SERVICE_ACCOUNT_JSON must contain a service account private key")
 
 
-def check_config(env, publish=False):
-    require(SIGNING_KEYS + tuple(t[1] for t in TARGETS), env)
+def asc_config(env):
+    require(ASC_KEYS, env)
+    if not re.fullmatch(r"[A-Z0-9]{10}", env["ASC_KEY_ID"]):
+        raise ValueError("ASC_KEY_ID must be the 10-character App Store Connect API key ID")
+    if not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", env["ASC_ISSUER_ID"]):
+        raise ValueError("ASC_ISSUER_ID must be the App Store Connect issuer UUID")
+    if not re.fullmatch(r"[0-9]{6,12}", env["ASC_APP_ID"]):
+        raise ValueError("ASC_APP_ID must be the numeric Apple ID of the App Store Connect app, not a Bundle ID")
+    key = env["ASC_KEY_P8"].strip()
+    if not (key.startswith("-----BEGIN PRIVATE KEY-----") and key.endswith("-----END PRIVATE KEY-----")):
+        raise ValueError("ASC_KEY_P8 must contain the downloaded AuthKey .p8 file as text")
+
+
+def project_build_number():
+    text = (ROOT / "ios/Youngmin.xcodeproj/project.pbxproj").read_text()
+    values = {int(v) for v in re.findall(r"CURRENT_PROJECT_VERSION = ([0-9]+);", text)}
+    if not values:
+        raise ValueError("CURRENT_PROJECT_VERSION is missing from the Xcode project")
+    return max(values)
+
+
+def build_number(env, kind="ad-hoc"):
+    run_number, attempt = env.get("GITHUB_RUN_NUMBER", "1"), env.get("GITHUB_RUN_ATTEMPT", "1")
+    if not (run_number.isdigit() and attempt.isdigit()):
+        raise ValueError("Invalid workflow build number")
+    if kind == "ad-hoc":
+        return run_number + "." + attempt
+    offset = env.get("IOS_TESTFLIGHT_BUILD_OFFSET", "").strip() or str(DEFAULT_BUILD_OFFSET)
+    if not offset.isdigit():
+        raise ValueError("IOS_TESTFLIGHT_BUILD_OFFSET must be a non-negative integer")
+    build = int(offset) + int(run_number)
+    # Apple compares builds numerically; stay above the project's local/sideload build number.
+    if build <= project_build_number():
+        raise ValueError("IOS_TESTFLIGHT_BUILD_OFFSET must keep builds above CURRENT_PROJECT_VERSION")
+    return str(build) + "." + str(int(attempt))
+
+
+def check_config(env, publish=False, kind="ad-hoc", upload=False):
+    profile_keys = tuple(t[1] for t in targets(kind))
+    # Report every missing name at once, before any slow native compilation.
+    require(SIGNING_KEYS + profile_keys + (FIREBASE_KEYS if publish else ()) + (ASC_KEYS if upload else ()), env)
     if not re.fullmatch(r"[A-Z0-9]{10}", env["IOS_TEAM_ID"]):
         raise ValueError("IOS_TEAM_ID must be the 10-character Apple Team ID")
-    for key in ("IOS_DISTRIBUTION_P12_BASE64",) + tuple(t[1] for t in TARGETS):
+    for key in ("IOS_DISTRIBUTION_P12_BASE64",) + profile_keys:
         decode_secret(env[key], key)
+    build_number(env, kind)
     if publish:
         firebase_config(env)
+    if upload:
+        asc_config(env)
 
 
 def decode_secret(value, name):
@@ -176,7 +248,7 @@ def read_profile(path):
     return plistlib.loads(run(["security", "cms", "-D", "-i", path], capture=True))
 
 
-def validate_profile(profile, bundle, team, certificate, now=None):
+def validate_profile(profile, bundle, team, certificate, now=None, kind="ad-hoc"):
     now = now or dt.datetime.now(dt.timezone.utc)
     entitlements = profile.get("Entitlements", {})
     expiry = profile.get("ExpirationDate")
@@ -190,10 +262,13 @@ def validate_profile(profile, bundle, team, certificate, now=None):
     prefixes = profile.get("ApplicationIdentifierPrefix", [])
     if entitlements.get("application-identifier") not in [p + "." + bundle for p in prefixes]:
         raise ValueError(bundle + ": profile must match the explicit Bundle ID")
+    # Ad Hoc profiles list devices; App Store Connect profiles must not (and neither may be debug/Enterprise).
     if (entitlements.get("get-task-allow") is not False
             or profile.get("ProvisionsAllDevices")
-            or not profile.get("ProvisionedDevices")):
-        raise ValueError(bundle + ": an Ad Hoc distribution profile with registered devices is required")
+            or bool(profile.get("ProvisionedDevices")) != (kind == "ad-hoc")):
+        expected = ("an Ad Hoc distribution profile with registered devices" if kind == "ad-hoc"
+                    else "an App Store Connect distribution profile without a device list")
+        raise ValueError(bundle + ": " + expected + " is required")
     if APP_GROUP not in entitlements.get("com.apple.security.application-groups", []):
         raise ValueError(bundle + ": profile must enable " + APP_GROUP)
     if certificate not in profile.get("DeveloperCertificates", []):
@@ -204,28 +279,44 @@ def validate_profile(profile, bundle, team, certificate, now=None):
         raise ValueError(bundle + ": invalid provisioning profile name")
 
 
-def validate_profile_set(profiles, team, certificate):
-    for bundle, _, _ in TARGETS:
-        validate_profile(profiles[bundle], bundle, team, certificate)
-    device_sets = [set(p["ProvisionedDevices"]) for p in profiles.values()]
-    if any(devices != device_sets[0] for devices in device_sets):
-        raise ValueError("App, widget and share profiles must contain the same registered devices")
+def validate_profile_set(profiles, team, certificate, kind="ad-hoc"):
+    for bundle, _, _ in BUNDLES:
+        validate_profile(profiles[bundle], bundle, team, certificate, kind=kind)
+    if kind == "ad-hoc":
+        device_sets = [set(p["ProvisionedDevices"]) for p in profiles.values()]
+        if any(devices != device_sets[0] for devices in device_sets):
+            raise ValueError("App, widget and share profiles must contain the same registered devices")
     if len({p["Name"] for p in profiles.values()}) != len(TARGETS):
         raise ValueError("Use distinct names for the app, widget and share profiles")
 
 
-def export_options(team, identity, profiles):
-    return {"method": "release-testing", "destination": "export", "teamID": team,
-            "signingStyle": "manual", "signingCertificate": identity,
-            "provisioningProfiles": {b: p["Name"] for b, p in profiles.items()},
-            "stripSwiftSymbols": True, "manageAppVersionAndBuildNumber": False}
+def export_options(team, identity, profiles, kind="ad-hoc"):
+    options = {"method": DISTRIBUTIONS[kind]["method"], "destination": "export", "teamID": team,
+               "signingStyle": "manual", "signingCertificate": identity,
+               "provisioningProfiles": {b: p["Name"] for b, p in profiles.items()},
+               "stripSwiftSymbols": True, "manageAppVersionAndBuildNumber": False}
+    if kind == "app-store":
+        # The upload is a separate step (altool); symbols travel with the IPA for crash reports.
+        options["uploadSymbols"] = True
+    return options
 
 
-def verify_export(ipa, temp, team, certificate):
+def verify_privacy_manifests(app):
+    for relative, source in PRIVACY_MANIFESTS.items():
+        shipped = app / relative / "PrivacyInfo.xcprivacy"
+        if not shipped.is_file():
+            raise ValueError(relative + ": privacy manifest is missing from the exported bundle")
+        if plistlib.loads(shipped.read_bytes()) != plistlib.loads((ROOT / source).read_bytes()):
+            raise ValueError(relative + ": exported privacy manifest differs from " + source)
+
+
+def verify_export(ipa, temp, team, certificate, kind="ad-hoc", build=None):
     unpacked = temp / "verified-ipa"
     run(["ditto", "-x", "-k", ipa, unpacked])
     app = unpacked / "Payload/Youngmin.app"
     run(["codesign", "--verify", "--deep", "--strict", app])
+    # The removed JavaScriptCore SPI must not come back through the final linked binary.
+    run([sys.executable, "-I", ROOT / ".github/scripts/check-ios-private-apis.py", app / "Youngmin"], capture=True)
     bundles = [app] + sorted((app / "PlugIns").glob("*.appex"))
     profiles = {}
     versions = set()
@@ -245,17 +336,26 @@ def verify_export(ipa, temp, team, certificate):
         versions.add((current_info["CFBundleShortVersionString"], current_info["CFBundleVersion"]))
         if bundle == app:
             info = current_info
-    if set(profiles) != {t[0] for t in TARGETS}:
+    if set(profiles) != {t[0] for t in BUNDLES}:
         raise ValueError("Export must contain the app, widget and share extension")
-    validate_profile_set(profiles, team, certificate)
+    verify_privacy_manifests(app)
+    validate_profile_set(profiles, team, certificate, kind)
     if (len(versions) != 1 or info.get("YoungminAuthEngine") != "codex-in-process"
-            or info.get("YoungminCodeModeRuntime") != "quickjs"):
+            or info.get("YoungminCodeModeRuntime") != "quickjs"
+            or info.get("YoungminCodexSourceRevision") != CODEX_REVISION):
         raise ValueError("Exported versions or native Codex engine metadata do not match")
+    if build is not None and info.get("CFBundleVersion") != build:
+        raise ValueError("Exported build number does not match the requested build")
+    if info.get("ITSAppUsesNonExemptEncryption") is not False:
+        raise ValueError("ITSAppUsesNonExemptEncryption must be NO in the app Info.plist")
     return info
 
 
-def build(env, *, verify_only=False):
-    check_config(env)
+def build(env, kind="ad-hoc", *, verify_only=False):
+    check_config(env, kind=kind)
+    distribution = DISTRIBUTIONS[kind]
+    kind_targets = targets(kind)
+    number = build_number(env, kind)
     team = env["IOS_TEAM_ID"]
     if not verify_only:
         generated = ROOT / "ios/NativeCodex/Generated"
@@ -307,13 +407,13 @@ def build(env, *, verify_only=False):
             if hashlib.sha1(certificate).hexdigest().upper() != identity:
                 raise ValueError("Distribution certificate does not match the signing identity")
             profiles, profile_files = {}, {}
-            for bundle, secret, _ in TARGETS:
+            for bundle, secret, _ in kind_targets:
                 path = temp / (secret + ".mobileprovision")
                 private_file(path, decode_secret(env[secret], secret))
                 profiles[bundle], profile_files[bundle] = read_profile(path), path
-            validate_profile_set(profiles, team, certificate)
+            validate_profile_set(profiles, team, certificate, kind)
             if verify_only:
-                print("Validated the distribution identity and all three Ad Hoc profiles.")
+                print("Validated the distribution identity and all three " + distribution["label"] + " profiles.")
                 return
             for bundle, profile in profiles.items():
                 # Support both current Xcode and the legacy lookup directory.
@@ -332,9 +432,6 @@ def build(env, *, verify_only=False):
             for license_file in list(generated.glob("*LICENSE*")) + list(generated.glob("*NOTICE*")):
                 shutil.copy2(license_file, licenses / license_file.name)
             archive = temp / "Youngmin.xcarchive"
-            number = env.get("GITHUB_RUN_NUMBER", "1") + "." + env.get("GITHUB_RUN_ATTEMPT", "1")
-            if not re.fullmatch(r"[0-9]+\.[0-9]+", number):
-                raise ValueError("Invalid workflow build number")
             run(["xcodebuild", "archive", "-project", ROOT / "ios/Youngmin.xcodeproj", "-scheme", "Youngmin",
                  "-configuration", "Release", "-sdk", "iphoneos", "-destination", "generic/platform=iOS",
                  "-archivePath", archive, "-derivedDataPath", temp / "DerivedData",
@@ -347,29 +444,29 @@ def build(env, *, verify_only=False):
                  "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge " + native_system_libs,
                  "INFOPLIST_KEY_YoungminAuthEngine=codex-in-process",
                  "INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs",
-                 "INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91",
-                 *[variable + "=" + profiles[bundle]["Name"] for bundle, _, variable in TARGETS]])
+                 "INFOPLIST_KEY_YoungminCodexSourceRevision=" + CODEX_REVISION,
+                 *[variable + "=" + profiles[bundle]["Name"] for bundle, _, variable in kind_targets]])
             options = temp / "ExportOptions.plist"
-            options.write_bytes(plistlib.dumps(export_options(team, identity, profiles)))
+            options.write_bytes(plistlib.dumps(export_options(team, identity, profiles, kind)))
             exported = temp / "export"
             run(["xcodebuild", "-exportArchive", "-archivePath", archive,
                  "-exportOptionsPlist", options, "-exportPath", exported])
             ipas = list(exported.glob("*.ipa"))
             if len(ipas) != 1:
                 raise ValueError("Expected exactly one exported IPA")
-            info = verify_export(ipas[0], temp, team, certificate)
-            ipa = OUTPUT / "Youngmin-AdHoc.ipa"
+            info = verify_export(ipas[0], temp, team, certificate, kind, number)
+            ipa = OUTPUT / distribution["ipa"]
             shutil.copy2(ipas[0], ipa)
             digest = hashlib.sha256(ipa.read_bytes()).hexdigest()
-            (OUTPUT / "Youngmin-AdHoc.ipa.sha256").write_text(digest + "  " + ipa.name + "\n")
+            (OUTPUT / (ipa.name + ".sha256")).write_text(digest + "  " + ipa.name + "\n")
             shutil.make_archive(str(OUTPUT / "Youngmin-dSYMs"), "zip", archive / "dSYMs")
-            metadata = {"configuration": "Release", "distribution": "ad-hoc", "native_codex": True,
+            metadata = {"configuration": "Release", "distribution": kind, "native_codex": True,
                         "version": info["CFBundleShortVersionString"], "build": info["CFBundleVersion"],
                         "commit": env.get("GITHUB_SHA", ""), "sha256": digest,
-                        "bundles": sorted(profiles),
+                        "bundle_id": info["CFBundleIdentifier"], "bundles": sorted(profiles),
                         "profile_expiration": min(p["ExpirationDate"] for p in profiles.values()).isoformat() + "Z"}
             (OUTPUT / "build.json").write_text(json.dumps(metadata, indent=2) + "\n")
-            print("Verified Release Ad Hoc IPA with native Codex, widgets and share extension.")
+            print("Verified Release " + distribution["label"] + " IPA with native Codex, widgets and share extension.")
         finally:
             # This also runs on failed import, validation, archive or export.
             for path in installed:
@@ -414,22 +511,72 @@ def publish(env):
                 summary.write("\n[Firebase에서 설치하기](" + url + ")\n")
 
 
+def upload(env):
+    # A separate command/step keeps the App Store Connect key out of the signing/build step.
+    asc_config(env)
+    ipa = OUTPUT / DISTRIBUTIONS["app-store"]["ipa"]
+    metadata = json.loads((OUTPUT / "build.json").read_text())
+    if (metadata.get("configuration") != "Release" or metadata.get("distribution") != "app-store"
+            or metadata.get("bundle_id") != APP_BUNDLE
+            or metadata.get("sha256") != hashlib.sha256(ipa.read_bytes()).hexdigest()):
+        raise ValueError("Only the verified Release App Store Connect IPA can be uploaded")
+    # altool looks up AuthKey_<id>.p8 here; the file exists only for this command.
+    keys = Path.home() / ".appstoreconnect/private_keys"
+    keys.mkdir(parents=True, exist_ok=True)
+    keys.chmod(0o700)
+    key_file = keys / ("AuthKey_" + env["ASC_KEY_ID"] + ".p8")
+    if key_file.exists():
+        raise ValueError("An App Store Connect key with this ID is already installed; use a fresh runner")
+    try:
+        private_file(key_file, (env["ASC_KEY_P8"].strip() + "\n").encode())
+        child_env = {k: v for k, v in os.environ.items() if k != "ASC_KEY_P8"}
+        run(["xcrun", "altool", "--upload-package", ipa, "-t", "ios",
+             "--apple-id", env["ASC_APP_ID"], "--bundle-id", APP_BUNDLE,
+             "--bundle-version", metadata["build"], "--bundle-short-version-string", metadata["version"],
+             "--apiKey", env["ASC_KEY_ID"], "--apiIssuer", env["ASC_ISSUER_ID"]], env=child_env)
+    finally:
+        key_file.unlink(missing_ok=True)
+    print(f"Uploaded {metadata['version']} ({metadata['build']}) to App Store Connect; processing continues there.")
+    if env.get("GITHUB_STEP_SUMMARY"):
+        notes = env.get("WHAT_TO_TEST", "").strip()
+        with Path(env["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+            summary.write(f"\n### TestFlight 업로드\n- 버전 {metadata['version']} ({metadata['build']}), "
+                          f"커밋 `{metadata['commit']}`\n- App Store Connect → TestFlight에서 처리 완료 후 "
+                          "수출 규정 확인과 테스트 그룹 배정을 진행한다.\n")
+            if notes:
+                summary.write("- 이 빌드의 **테스트할 내용(What to Test)**에 붙여 넣을 문구:\n\n```text\n"
+                              + notes.replace("```", "` ` `") + "\n```\n")
+
+
 def main():
     # GitHub cancellation must still run the temporary keychain/profile cleanup.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "check-p12", "check-signing", "build", "publish"))
+    parser.add_argument("command", choices=("check", "check-p12", "check-signing", "build", "publish", "upload"))
+    parser.add_argument("--distribution", choices=tuple(DISTRIBUTIONS), default="ad-hoc",
+                        help="Ad Hoc (Firebase) or App Store Connect (TestFlight) signing")
     parser.add_argument("--publish", action="store_true", help="Also check Firebase settings")
+    parser.add_argument("--upload", action="store_true", help="Also check App Store Connect upload settings")
     args = parser.parse_args()
+    kind = args.distribution
+    if (args.command == "publish" or args.publish) and kind != "ad-hoc":
+        parser.error("Firebase publishing uses the ad-hoc distribution")
+    if (args.command == "upload" or args.upload) and kind != "app-store":
+        parser.error("App Store Connect upload uses the app-store distribution")
     try:
         if args.command == "check":
-            check_config(os.environ, args.publish or os.environ.get("PUBLISH_TO_FIREBASE") == "true")
+            check_config(os.environ, kind=kind,
+                         publish=kind == "ad-hoc" and (args.publish or os.environ.get("PUBLISH_TO_FIREBASE") == "true"),
+                         upload=kind == "app-store" and (
+                             args.upload or os.environ.get("UPLOAD_TO_APP_STORE_CONNECT") == "true"))
             print("Required distribution settings are present.")
         elif args.command == "check-p12":
             verify_p12_password(os.environ)
             print("Verified the P12 MAC and password with OpenSSL.")
         elif args.command in ("check-signing", "build"):
-            build(os.environ, verify_only=args.command == "check-signing")
+            build(os.environ, kind, verify_only=args.command == "check-signing")
+        elif args.command == "upload":
+            upload(os.environ)
         else:
             publish(os.environ)
     except (ValueError, RuntimeError, OSError, KeyError, plistlib.InvalidFileException) as error:
