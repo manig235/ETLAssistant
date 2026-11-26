@@ -12,12 +12,13 @@ Apple Developer Program 가입 후 아래 서명 설정을 채우고, 로그인 
 Apple Distribution 인증서로 Ad Hoc 서명한 뒤 Firebase App Distribution으로 전달한다.
 앱 본체·위젯·공유 확장과 내장 Codex를 포함한다. 기존 unsigned Debug IPA 워크플로는 그대로 사용한다.
 Swift 앱은 Release 설정을 사용한다. Rust 라이브러리는 기존 검증 경로의 `dev-small` 프로파일을
-재사용하며 최적화 수준 1, debug 정보·debug assertion·overflow check를 끄고 별도 캐시에 빌드한다.
+재사용하며 최적화 수준 1, debug 정보·debug assertion·overflow check를 끈 `release` 빌드 옵션을 쓴다
+(iOS Native Codex IPA의 빠른 빌드를 끈 경우와 같은 라이브러리를 공유한다).
 이는 Rust `release`/LTO 빌드를 검증했다는 의미는 아니다.
 네이티브 링크에는 해당 Rust 빌드가 생성한 `native-static-libs.txt`를 사용하고, IPA의 Code Mode 런타임이
-현재 내장 실행기인 QuickJS인지도 확인한다. 캐시 키에는 JavaScript 브리지 소스와 시스템 라이브러리 목록을 포함한다.
-엔진 컴파일을 건너뛰는 재사용은 성공한 컴파일 표시와 정확한 소스·빌드 옵션 키가 모두 일치할 때만 허용한다.
-일부만 일치하는 캐시나 이전 표시가 없는 캐시는 Cargo 빌드를 거친다.
+현재 내장 실행기인 QuickJS인지도 확인한다. 완성된 라이브러리는 정확한 키로만 재사용하며,
+새로 빌드할 때는 iOS Native Codex IPA와 같은 QuickJS·Codex delegate 실행 테스트를 먼저 통과해야 한다.
+재컴파일 조건은 [내장 Codex 라이브러리 재사용](CODEX-RUNTIME.md#내장-codex-라이브러리-재사용)을 따른다.
 
 ## 나중에 한 번 준비할 것
 

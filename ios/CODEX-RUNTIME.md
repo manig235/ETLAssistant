@@ -29,6 +29,21 @@ Actions → **iOS Native Codex IPA** → **Run workflow**. 빠른 기기 테스�
 
 빌드에는 Apple 개발자 계정이나 사용자 ChatGPT 토큰이 필요 없다. 실제 로그인은 설치한 iPad의 공식 OpenAI 로그인 페이지에서 진행한다. 학교 워크스페이스 정책은 그대로 적용된다.
 
+## 내장 Codex 라이브러리 재사용
+
+앱 빌드에 필요한 것은 완성된 정적 라이브러리(`libyoungmin_codex_bridge.a`), Rust가 알려 준 시스템 라이브러리 목록과 라이선스 파일뿐이다. 이 파일들만 작은 캐시(`ios-codex-lib-v1-…`)에 manifest와 함께 저장하고(`.github/actions/ios-codex-lib`, `.github/scripts/ios-codex-lib.py`), 정확히 같은 키일 때 SHA-256을 확인한 뒤 그대로 링크한다. 이때 Rust 설치, Codex 소스 다운로드, 4GB 컴파일 캐시 복원을 모두 건너뛴다.
+
+다음 중 하나라도 바뀌면 키가 달라져 다시 컴파일한다.
+
+- 고정한 Codex·V8·MXC 커밋과 Rust 버전, 소스 패치(`ios-codex-probe.sh`, `prepare-ios-codex.py`)
+- `ios/NativeCodex/bridge`, `javascript`(QuickJS 포함), `code-mode-check`, `native-static-libs.txt`의 내용
+- 빌드 옵션: `fast`(빠른 IPA, 최적화 0, assertion 켬) / `release`(최적화 1, debug 정보·assertion·overflow check 끔, 최적화 IPA와 Ad Hoc 배포가 공유)
+- 대상(iphoneos arm64)과 실행기의 Xcode·iOS SDK 버전
+
+Swift 코드, Xcode 프로젝트, 워크플로의 다른 단계만 바뀐 경우에는 다시 컴파일하지 않는다. 새로 만든 라이브러리는 QuickJS·Codex delegate 실행 테스트를 통과한 경우에만 이 캐시에 저장되므로, 캐시가 있으면 같은 테스트를 다시 돌리지 않는다. 키에 맞지 않거나 파일 해시가 다른 캐시는 설치하지 않고 실패한다.
+
+다시 컴파일할 때만 Cargo 컴파일 캐시(`ios-codex-build-v1-…`, 약 4GB)를 복원해 바뀐 부분만 빌드하고, 모든 워크플로가 이 접두사 하나를 함께 쓴다. GitHub 캐시는 브랜치별이므로 다른 브랜치의 첫 실행은 main의 캐시만 읽을 수 있다.
+
 ## 현재 지원 범위
 
 내장 엔진은 별도 자식 프로세스·셸·PTY·code-mode host를 실행하지 않도록 설정한다. Code Mode는 앱에 소스와 함께 포함한 QuickJS 인터프리터를 사용하는 앱 내부 세션 provider에 연결한다. 셀마다 JavaScript context를 분리하고, 허용된 도구만 Codex가 제공한 delegate를 통해 호출하므로 eTL 쓰기 승인도 기존 경로를 따른다. 셀 사이의 `store`/`load`는 해당 Codex 세션 안에서만 공유한다. 중단·대기·비동기 도구 반환과 실행 시간 제한을 제공한다.
