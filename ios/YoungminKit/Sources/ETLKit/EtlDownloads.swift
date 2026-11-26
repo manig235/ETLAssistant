@@ -25,10 +25,13 @@ public enum EtlDownloads {
         return url
     }
 
-    /// 사용자용 폴더(`Documents/etl`, 파일 앱에서 보인다).
+    public static var userFolderName: String { StudyDataProfile.isDemo ? "etl-fake" : "etl" }
+    public static var userFolderLabel: String { "파일 앱 › 영민이 › \(userFolderName)" }
+
+    /// 사용자용 폴더(`Documents/etl`, 가상 모드는 `Documents/etl-fake`).
     public static var userDirectory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = docs.appendingPathComponent(StudyDataProfile.isDemo ? "etl-fake" : "etl", isDirectory: true)
+        let url = docs.appendingPathComponent(userFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

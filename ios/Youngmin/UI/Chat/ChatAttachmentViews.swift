@@ -1,4 +1,5 @@
 import ChatKit
+import ETLKit
 import SwiftUI
 import UIKit
 
@@ -240,7 +241,7 @@ struct ChatFileCard: View {
             parts.append(attachment.shownPath != nil ? "폰에서 지워진 파일이에요" : "정리된 파일이에요")
         } else if attachment.shownPath != nil {
             // Android "내 폰 Download/etl" → iOS 파일 앱의 이 앱 폴더(Documents/etl).
-            parts.append(generated ? "파일 앱 영민이/etl/\(Self.generatedSubdir)" : "파일 앱 영민이/etl")
+            parts.append(generated ? "파일 앱 영민이/\(EtlDownloads.userFolderName)/\(Self.generatedSubdir)" : "파일 앱 영민이/\(EtlDownloads.userFolderName)")
         }
         return parts.joined(separator: " · ")
     }

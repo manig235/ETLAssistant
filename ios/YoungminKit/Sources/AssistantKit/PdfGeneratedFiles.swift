@@ -6,7 +6,7 @@ public enum GeneratedFilesLogic {
     /// 사용자 폴더(`Documents/etl/`) 아래 AI가 만든 파일을 두는 하위 폴더.
     public static let SUBDIR = "영민이가 만든 파일"
     /// `Documents` 기준 상대 경로(끝에 `/`). 안드로이드는 `Download/etl/영민이가 만든 파일/`.
-    public static let RELATIVE_PATH = "etl/\(SUBDIR)/"
+    public static var RELATIVE_PATH: String { "\(EtlDownloads.userFolderName)/\(SUBDIR)/" }
 
     /// 상대 경로(`etl/영민이가 만든 파일/`)나 표시 경로(`etl/영민이가 만든 파일/요약.pdf`)가 AI가 만든 파일 폴더 안인가.
     /// 앞의 `/`·`./`, 대소문자(`ETL/`)와 하위 폴더는 허용한다.

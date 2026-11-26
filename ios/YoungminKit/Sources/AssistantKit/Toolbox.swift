@@ -38,7 +38,7 @@ public final class Toolbox: @unchecked Sendable {
                 timetableChanges: TimetableChangeStore = TimetableChangeStore(),
                 workspace: URL = EtlDownloads.workspaceDirectory,
                 userDirectory: URL? = nil,
-                userFolderLabel: String = "파일 앱 › 영민이 › etl",
+                userFolderLabel: String = EtlDownloads.userFolderLabel,
                 clock: @escaping @Sendable () -> Date = { Date() }) {
         self.tokens = tokens
         self.makeClient = makeClient
