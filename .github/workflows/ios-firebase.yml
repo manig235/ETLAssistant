@@ -99,6 +99,8 @@ jobs:
           ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_DEVICE_KEY_ID: ${{ vars.ASC_DEVICE_KEY_ID }}
+          ASC_DEVICE_KEY_P8: ${{ secrets.ASC_DEVICE_KEY_P8 }}
           FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
           FIREBASE_GROUPS: ${{ vars.FIREBASE_GROUPS }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}

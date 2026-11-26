@@ -115,6 +115,16 @@ class DeviceTests(unittest.TestCase):
             sync.synchronize(apple, data, {}, CERT, [], {"IOS_TEAM_ID": TEAM, "GITHUB_ENV": "unused"})
         self.assertEqual(apple.writes, [])
 
+    def test_key_for_another_signing_team_cannot_register_any_devices(self):
+        data = profiles()
+        apple = FakeApple(data)
+        listing = apple.listing
+        with mock.patch.object(apple, "listing", side_effect=lambda path: [] if path.startswith("/v1/certificates") else listing(path)):
+            with self.assertRaisesRegex(ValueError, "distribution certificate"):
+                sync.synchronize(apple, data, {}, CERT, [{"udid": UDIDS[4]}],
+                                 {"IOS_TEAM_ID": TEAM, "GITHUB_ENV": "unused"})
+        self.assertEqual(apple.writes, [])
+
     def test_pagination_cannot_send_apple_token_to_another_origin(self):
         apple = sync.Apple.__new__(sync.Apple)
         apple.token = "secret-marker"

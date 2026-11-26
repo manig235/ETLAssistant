@@ -119,9 +119,12 @@ def expected_devices(profiles, testers):
 class Apple:
     def __init__(self, env):
         now = int(time.time())
-        self.token = jwt({"alg": "ES256", "kid": env["ASC_KEY_ID"], "typ": "JWT"},
+        device_key = env.get("ASC_DEVICE_KEY_P8", "").strip()
+        if device_key:
+            distribution.require(("ASC_DEVICE_KEY_ID",), env)
+        self.token = jwt({"alg": "ES256", "kid": env["ASC_DEVICE_KEY_ID"] if device_key else env["ASC_KEY_ID"], "typ": "JWT"},
                          {"iss": env["ASC_ISSUER_ID"], "iat": now - 30, "exp": now + 600,
-                          "aud": "appstoreconnect-v1"}, env["ASC_KEY_P8"])
+                          "aud": "appstoreconnect-v1"}, device_key or env["ASC_KEY_P8"])
 
     def call(self, method, path, body=None):
         url = path if path.startswith("https://") else APPLE + path
@@ -186,6 +189,15 @@ def current_profiles(apple, env):
 
 def synchronize(apple, profiles, raw_profiles, certificate, testers, env):
     expected = expected_devices(profiles, testers)
+    # Prove that this key belongs to the existing signing team before creating
+    # any device registrations, including when a separate Admin key is supplied.
+    certificate_ids = [item["id"] for item in apple.listing("/v1/certificates?limit=200")
+                       if base64.b64decode(item["attributes"]["certificateContent"]) == certificate]
+    if len(certificate_ids) != 1:
+        raise ValueError("Could not uniquely match the existing distribution certificate")
+    bundle_ids = {item["attributes"]["identifier"]: item["id"] for item in apple.listing("/v1/bundleIds?limit=200")}
+    if any(bundle not in bundle_ids for bundle in profiles):
+        raise ValueError("Apple key does not have access to all three existing Bundle IDs")
     registered = {normalized(d["attributes"]["udid"]): d for d in apple.listing("/v1/devices?filter%5Bplatform%5D=IOS&limit=200")}
     for tester in testers:
         udid = normalized(tester["udid"])
@@ -197,11 +209,6 @@ def synchronize(apple, profiles, raw_profiles, certificate, testers, env):
         registered[udid] = record
     if any(value not in registered or registered[value]["attributes"].get("status") != "ENABLED" for value in expected):
         raise ValueError("A required Apple device is missing or disabled; existing device registrations were preserved")
-    certificate_ids = [item["id"] for item in apple.listing("/v1/certificates?limit=200")
-                       if base64.b64decode(item["attributes"]["certificateContent"]) == certificate]
-    if len(certificate_ids) != 1:
-        raise ValueError("Could not uniquely match the existing distribution certificate")
-    bundle_ids = {item["attributes"]["identifier"]: item["id"] for item in apple.listing("/v1/bundleIds?limit=200")}
     for bundle, secret, _ in distribution.TARGETS:
         if devices_in(profiles[bundle]) == expected:
             continue

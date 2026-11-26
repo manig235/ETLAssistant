@@ -123,11 +123,15 @@ Apple의 `Youngmin Auto App/Widgets/Share ...` 프로파일을 다음 검사와 
 
 이 기능에는 기존 Firebase 설정 외에 `ASC_KEY_P8` Secret, `ASC_KEY_ID`·`ASC_ISSUER_ID` Variables와
 해당 Apple 키의 Devices·Certificates·Identifiers·Profiles 접근 권한이 필요하다.
+기기 등록과 배포 프로파일 생성에는 Admin 권한의 팀 API 키를 사용한다.
+업로드용 키를 유지하려면 별도 `ASC_DEVICE_KEY_P8` Secret과 `ASC_DEVICE_KEY_ID` Variable을 등록한다.
+별도 키를 등록하면 동기화 단계에서만 그 키를 사용하고 같은 팀의 `ASC_ISSUER_ID`를 재사용한다.
+정기 확인에는 기존 읽기 가능한 업로드용 키를 사용한다.
 `sync_devices`를 끄면 기존 프로파일을 사용한다. `publish`를 꺼도 `sync_devices`를 켰으면
 Apple 기기 등록과 프로파일 갱신은 수행한다.
 
 `python3 scripts/test-ios-device-sync.py`는 기존 기기 보존, 두 신규 기기를 포함하는 세 프로파일 갱신,
-완성된 프로파일 재사용, 비활성 기기 보호, 읽기 전용 검사와 ES256 서명을 오프라인에서 검사한다.
+완성된 프로파일 재사용, 잘못된 팀 키·비활성 기기 보호, 읽기 전용 검사와 ES256 서명을 오프라인에서 검사한다.
 
 ### 수동 배포
 
