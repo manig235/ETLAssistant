@@ -36,3 +36,9 @@ __pycache__/
 ios-codex-probe/
 ios/NativeCodex/Generated/
 ios/NativeCodex/javascript/target/
+
+# iOS distribution outputs and private signing material
+/ios-distribution-output/
+/ios/Youngmin/NativeCodexLicenses/
+*.p12
+*.mobileprovision

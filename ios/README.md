@@ -1,5 +1,8 @@
 # 영민이 iOS
 
+지인에게 심사 없이 링크로 배포하는 Release Ad Hoc 워크플로와 나중에 등록할 인증서·프로파일·Firebase 설정은
+[배포 안내](DISTRIBUTION.md)에 정리했다. **iOS Ad Hoc Firebase**는 수동 실행이며 기본값은 IPA 생성만 한다.
+
 안드로이드 앱 영민이 0.3.3(저장소 루트)을 Swift·SwiftUI로 옮긴 iOS 판이다. 외부 라이브러리는 쓰지 않는다. 포팅 규칙은 `PORTING.md`에 있다.
 
 ## 실행
