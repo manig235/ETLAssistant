@@ -28,7 +28,11 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # 릴리스 메타데이터에서 asset 이름/URL/sha256 digest를 확인한다.
-curl -fsSL -H "Accept: application/vnd.github+json" \
+API_AUTH=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  API_AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+curl -fsSL --retry 3 -H "Accept: application/vnd.github+json" "${API_AUTH[@]}" \
   "https://api.github.com/repos/$REPO/releases/tags/$CODEX_VERSION" -o "$WORK/release.json"
 
 # zstd가 있으면 더 작은 .zst(단일 파일 압축)를, 없으면 .tar.gz를 쓴다.

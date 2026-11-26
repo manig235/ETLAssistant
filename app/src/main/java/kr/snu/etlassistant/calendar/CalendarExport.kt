@@ -196,9 +196,7 @@ object CalendarExport {
                 is CalendarLogic.Edit.PullMine -> {
                     val old = mine.firstOrNull { it.id == e.id }
                     val new = old?.let { CalendarLogic.applyPull(it, e, nextId++) }
-                    if (old == null || new == null) { force += e.key; reverted++; continue }
-                    if (new.id != old.id) store.delete(old.id)
-                    store.upsert(new)
+                    if (old == null || new == null || !store.compareAndSet(old, new)) { force += e.key; reverted++; continue }
                     pulled++
                     // 같은 일정을 새 ID의 키로 옮긴다(지우고 다시 넣지 않게). 다음 맞추기에서 앱 모양(제목 앞말 등)으로 고쳐 쓴다.
                     entries.remove(e.key)?.let { entries[CalendarLogic.mineKey(new)] = it.copy(hash = "", reverts = 0) }
@@ -206,9 +204,10 @@ object CalendarExport {
                 }
             }
         }
+        // Refresh even on conflicts/deletions so the export plan cannot use the old snapshot.
+        mine = store.load()
+        desired = CalendarLogic.desired(s, assignments, mine, courses, now)
         if (pulled > 0) {
-            mine = store.load()
-            desired = CalendarLogic.desired(s, assignments, mine, courses, now)
             runCatching { kr.snu.etlassistant.notify.NotifyScheduler.apply(app) }
         }
         val plan = CalendarLogic.plan(desired, entries, live, now, force)

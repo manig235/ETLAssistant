@@ -744,29 +744,62 @@ object MyDeadlines {
 }
 
 /** 앱 내부 SharedPreferences에 JSON으로 저장한다. */
-class MyDeadlineStore(context: Context) {
-    private val app = context.applicationContext
-    private val prefs = context.applicationContext.getSharedPreferences("my_deadlines", Context.MODE_PRIVATE)
+class MyDeadlineStore internal constructor(
+    private val readItems: () -> String?,
+    private val writeItems: (String) -> Unit,
+    private val onChanged: () -> Unit = {},
+) {
+    constructor(context: Context) : this(
+        { context.applicationContext.getSharedPreferences("my_deadlines", Context.MODE_PRIVATE).getString("items", null) },
+        { context.applicationContext.getSharedPreferences("my_deadlines", Context.MODE_PRIVATE).edit().putString("items", it).apply() },
+        {
+            kr.snu.etlassistant.widget.HomeWidgets.dataChanged(context.applicationContext)
+            kr.snu.etlassistant.calendar.CalendarExport.requestSync(context.applicationContext)
+        },
+    )
 
-    @Synchronized
-    fun load(): List<MyDeadline> = MyDeadlines.fromJson(prefs.getString("items", null))
+    // SharedPreferences is shared across instances, so its read/modify/write lock must be too.
+    private companion object { val lock = Any() }
 
-    @Synchronized
+    fun load(): List<MyDeadline> = synchronized(lock) { MyDeadlines.fromJson(readItems()) }
+
     fun save(list: List<MyDeadline>) {
-        prefs.edit().putString("items", MyDeadlines.toJson(list)).apply()
-        kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
-        kr.snu.etlassistant.calendar.CalendarExport.requestSync(app) // 캘린더로 내보내기가 켜져 있으면 뒤에서 맞춘다
+        synchronized(lock) { writeItems(MyDeadlines.toJson(list)) }
+        onChanged()
     }
 
-    /** 같은 ID면 바꾸고, 없으면 더한다. */
-    @Synchronized
     fun upsert(d: MyDeadline) {
-        val list = load().filter { it.id != d.id } + d
-        save(list)
+        synchronized(lock) { writeItems(MyDeadlines.toJson(load().filter { it.id != d.id } + d)) }
+        onChanged()
     }
 
-    @Synchronized
-    fun delete(id: Long) {
-        save(load().filter { it.id != id })
+    /** Transform the latest value; missing items stay deleted. A new ID is saved in the same write. */
+    fun update(id: Long, transform: (MyDeadline) -> MyDeadline?): Boolean {
+        synchronized(lock) {
+            val list = load()
+            val old = list.firstOrNull { it.id == id } ?: return false
+            val replacement = transform(old)
+            if (replacement != null && replacement.id != id && list.any { it.id == replacement.id }) return false
+            writeItems(MyDeadlines.toJson(list.filter { it.id != id && it.id != replacement?.id } + listOfNotNull(replacement)))
+        }
+        // Scheduling can acquire other locks; never call it with the store locked.
+        onChanged()
+        return true
     }
+
+    fun replace(oldId: Long, replacement: MyDeadline): Boolean = update(oldId) { replacement }
+
+    /** An approval or calendar snapshot cannot overwrite an item edited since it was read. */
+    fun compareAndSet(expected: MyDeadline, replacement: MyDeadline?): Boolean {
+        synchronized(lock) {
+            val list = load()
+            if (list.firstOrNull { it.id == expected.id } != expected) return false
+            if (replacement != null && replacement.id != expected.id && list.any { it.id == replacement.id }) return false
+            writeItems(MyDeadlines.toJson(list.filter { it.id != expected.id && it.id != replacement?.id } + listOfNotNull(replacement)))
+        }
+        onChanged()
+        return true
+    }
+
+    fun delete(id: Long) { update(id) { null } }
 }

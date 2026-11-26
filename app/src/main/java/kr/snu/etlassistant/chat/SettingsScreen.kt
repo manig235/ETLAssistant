@@ -78,6 +78,10 @@ import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.notify.NotifySettings
+import kr.snu.etlassistant.etl.WriteScope
+import kr.snu.etlassistant.etl.WriteMode
+import kr.snu.etlassistant.etl.WritePolicy
+import kr.snu.etlassistant.etl.WritePolicySettings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextDecoration
@@ -214,6 +218,8 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
                 Spacer(Modifier.height(32.dp))
                 CalendarSection(s, a)
                 Spacer(Modifier.height(32.dp))
+                WritePermissionsSection()
+                Spacer(Modifier.height(32.dp))
                 Section("받은 파일") { SettingsCard { kr.snu.etlassistant.files.DownloadCleanupSettingsContent() } }
                 Spacer(Modifier.height(32.dp))
                 ToneSection(s, a)
@@ -232,6 +238,48 @@ fun SettingsRoot(s: SettingsState, a: SettingsActions) {
 }
 
 // ---- 공통 조각 ----------------------------------------------------------------
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WritePermissionsSection() {
+    val context = LocalContext.current
+    val store = remember(context) { WritePolicySettings(context) }
+    var modes by remember(store) { mutableStateOf(WriteScope.entries.associateWith { store.mode(it) }) }
+    var consenting by remember { mutableStateOf<WriteScope?>(null) }
+    fun save(scope: WriteScope, mode: WriteMode, consented: Boolean = false) {
+        store.save(scope, mode, consented)
+        modes = modes + (scope to mode)
+    }
+    Section("비서 쓰기 권한") {
+        SettingsCard {
+            Caption("비서가 요청받은 변경을 처리하는 방식을 정해요. 수정·삭제는 항상 확인해요. 캘린더는 캘린더 연동 설정도 켜져 있어야 해요.")
+            for (scope in WriteScope.entries) {
+                Spacer(Modifier.height(16.dp))
+                Text(scope.label, style = DesignSystemTheme.typography.body1Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (mode in WriteMode.entries) {
+                        WantedChip(text = mode.label, isActive = modes[scope] == mode, onClick = {
+                            if (mode == WriteMode.AUTO_ADD && modes[scope] != mode) consenting = scope
+                            else if (mode != WriteMode.AUTO_ADD) save(scope, mode)
+                        })
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Caption("끔은 바로 적용돼요. 꺼 둔 도구를 다시 켜면 채팅 화면을 닫았다 열어 주세요.")
+        }
+    }
+    consenting?.let { scope ->
+        AlertDialog(
+            onDismissRequest = { consenting = null },
+            title = { Text("${scope.label}: 추가를 자동으로 할까요?") },
+            text = { Text("직접 요청한 추가는 답변 한 번에 최대 ${WritePolicy.MAX_AUTO_PER_TURN}개까지 확인 없이 처리해요. 그 이후 추가와 수정·삭제는 매번 확인해요. 처리한 내용은 채팅에 남아요. 캘린더 연동이나 계정 동기화가 켜져 있으면 일정이 해당 캘린더 계정에도 반영될 수 있어요.") },
+            confirmButton = { WantedTextButton(text = "동의하고 켜기", onClick = { save(scope, WriteMode.AUTO_ADD, consented = true); consenting = null }) },
+            dismissButton = { WantedTextButton(text = "취소", onClick = { consenting = null }) },
+        )
+    }
+}
 
 /** 소제목 + 카드(들). 카드가 여럿이면 12dp 간격으로 쌓는다. */
 @Composable

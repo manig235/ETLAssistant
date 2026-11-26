@@ -8,6 +8,8 @@ import android.provider.CalendarContract.Attendees
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import kr.snu.etlassistant.etl.AiWriteApproval
+import kr.snu.etlassistant.etl.WriteScope
+import kr.snu.etlassistant.etl.WriteKind
 import kr.snu.etlassistant.etl.EtlEvents
 import kr.snu.etlassistant.etl.EtlException
 import org.json.JSONArray
@@ -143,7 +145,7 @@ class CalendarAssistant(private val context: Context) {
             put(Events.DESCRIPTION, memo)
         }
         val proposed = CalendarToolLogic.Backup(0, cal.id, title, wh.dtStart, wh.dtEnd, wh.allDay, wh.timezone, location, memo)
-        val id = AiWriteApproval.execute("캘린더 일정 추가", CalendarToolLogic.reviewDetails(cal.name, cal.account, proposed)) {
+        val id = AiWriteApproval.execute(app, WriteScope.CALENDAR, WriteKind.ADD, "캘린더 일정 추가", CalendarToolLogic.reviewDetails(cal.name, cal.account, proposed)) {
             verifySettings(s)
             if (writableCalendar(s, calendarName) != cal) throw EtlException("캘린더가 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
             app.contentResolver.insert(Events.CONTENT_URI, v)?.lastPathSegment?.toLongOrNull() ?: throw EtlException("일정을 넣지 못했어요")
@@ -208,7 +210,7 @@ class CalendarAssistant(private val context: Context) {
         }
         val proposed = CalendarToolLogic.Backup(eventId, cal.id, title, wh.dtStart, wh.dtEnd, wh.allDay, wh.timezone, location, memo)
         val review = "변경 전\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, before)}\n\n변경 후\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, proposed)}"
-        AiWriteApproval.execute("캘린더 일정 수정", review, destructive = true) {
+        AiWriteApproval.execute(app, WriteScope.CALENDAR, WriteKind.UPDATE, "캘린더 일정 수정", review) {
             verifySettings(s)
             if (editable(s, eventId) != (before to cal)) throw EtlException("검토하는 동안 일정이 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
             if (app.contentResolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), v, null, null) <= 0) throw EtlException("일정을 고치지 못했어요")
@@ -240,7 +242,7 @@ class CalendarAssistant(private val context: Context) {
     private fun delete(s: CalendarReadSettings, args: JSONObject): JSONObject {
         val eventId = args.optLong("event_id", 0L).takeIf { it > 0 } ?: throw EtlException("event_id가 필요합니다")
         val (before, cal) = editable(s, eventId)
-        AiWriteApproval.execute("캘린더 일정 삭제", "다음 일정 하나를 삭제해요.\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, before)}\n삭제하면 캘린더 계정에도 반영돼요.", destructive = true) {
+        AiWriteApproval.execute(app, WriteScope.CALENDAR, WriteKind.DELETE, "캘린더 일정 삭제", "다음 일정 하나를 삭제해요.\n${CalendarToolLogic.reviewDetails(cal.name, cal.account, before)}\n삭제하면 캘린더 계정에도 반영돼요.") {
             verifySettings(s)
             if (editable(s, eventId) != (before to cal)) throw EtlException("검토하는 동안 일정이 바뀌어 실행하지 않았어요. 다시 요청해 주세요.")
             if (app.contentResolver.delete(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), null, null) <= 0) throw EtlException("일정을 지우지 못했어요")

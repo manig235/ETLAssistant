@@ -351,11 +351,15 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   쓰기 `calendar_add(title, start, end?, all_day?, location?, memo?, calendar?)`, `calendar_update(event_id, …)`, `calendar_delete(event_id)`(반복·초대 일정 제외, 되돌리기 기록, readOnlyHint=false)
 - `my_deadline_add|update`의 시험 인자 `kind=exam`·`start`·`end`·`location`·`course`·`supplies`, 반복 끝 `until` 또는 `count`(하나만), 공지에서 온 요청이면 `source_announcement_id`(`timetable_change_add`도)
 - `make_pdf(title, content_markdown, filename?)`(2026-11-24, 폰 안 쓰기): 비서가 쓴 마크다운을 기기 안에서 A4 PDF로(`pdf/`: `PdfMarkdown` 파서, `PdfLayoutLogic` 쪽 나누기·파일명, `PdfMaker` = PdfDocument+StaticLayout+시스템 글꼴, 수식은 `MathRender` 그림/`MathText.toUnicode`).
-  `Download/etl/영민이가 만든 파일/`(MediaStore)에 저장하고 받은 파일과 같은 카드를 붙인다. 20MB·200쪽·30만 자 상한. AI가 만든 파일은 `files/GeneratedFiles`가 URI를 기록하고 `isGenerated`로 판정한다(받은 파일 자동 정리 제외용). NOTICE 줄은 남기지 않는다(사용자가 요청한 결과물이고 카드가 보임).
+  `Download/etl/영민이가 만든 파일/`(MediaStore)에 저장하고 받은 파일과 같은 카드를 붙인다. 20MB·200쪽·30만 자 상한. AI가 만든 파일은 `files/GeneratedFiles`가 URI를 기록하고 `isGenerated`로 판정한다(받은 파일 자동 정리 제외용). 파일 만들기 쓰기 권한을 적용하며 파일 카드와 NOTICE 기록을 남긴다.
 - `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
 
 ## 보안 규칙
 
+- **비서 쓰기 권한(2026-11-26)**: 설정에서 내 마감·시험 / 보강·휴강 / 캘린더 / 파일 만들기에 `OFF`·`ASK`(기본)·`AUTO_ADD`를 따로 정한다.
+  `WritePolicy`가 순수 판정, `WritePolicySettings`가 저장, `AiWriteApproval`이 실행 직전에 적용한다. OFF는 도구 목록에서도 숨기고 이미 알려진 도구 호출도 거절한다.
+  AUTO_ADD는 사용자가 동의해야 켜지며 한 턴 전체에서 추가 5개까지만 자동이다. 이후 추가와 모든 수정·삭제는 확인 창을 거친다. 자동 쓰기도 채팅 화면이 붙어 있어야 하며 결과 기록·캘린더 되돌리기는 유지한다.
+  PDF도 같은 권한을 적용한다. 임시 PDF를 비공개 캐시에 준비하고 승인 뒤에만 작업 폴더·폰 사본으로 공개한다. 도구 목록은 연결 때 정해지므로 OFF 해제 후에는 비서를 다시 연결한다.
 - eTL 토큰은 `myetl.snu.ac.kr`에만 보낸다. Keystore 기반으로 암호화해 저장하고, 로그·크래시 리포트·에러 메시지에 절대 남기지 않는다.
 - eTL에는 GET 요청만 보낸다. 제출·수정 같은 쓰기 요청은 구현하지 않는다.
   **예외 하나(2026-11-21, 사용자 승인)**: 게시판(LearningX) 토큰을 받기 위한 LTI 실행 POST. eTL 호스트의 `/learningx/lti/…`로만,
