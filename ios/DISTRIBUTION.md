@@ -108,6 +108,29 @@ Apple 계정 비밀번호나 2단계 인증 코드는 CI에 등록하지 않는�
 
 ## 실행
 
+### Firebase UDID 확인과 자동 프로파일 갱신
+
+`iOS Ad Hoc Firebase`는 매시 17분·47분(약 30분 간격)에 Firebase가 수집한 UDID와
+현재 Apple Ad Hoc 프로파일을 조회한다. GitHub 스케줄은 혼잡할 때 늦게 실행될 수 있다.
+미반영 기기가 있으면 `device-monitor` 검사가 실패하고 실행 Summary에 수를 표시한다.
+알림 수신은 GitHub Actions의 사용자별 알림 설정을 따른다. 정기 확인은 Apple 기기 등록이나 배포를 하지 않는다.
+
+수동 배포의 `sync_devices`는 기본적으로 켜져 있다. 켜면 Firebase의 새 기기를 Apple에 등록하고,
+기존 등록 기기를 보존한 채 앱·위젯·공유 확장 프로파일을 같은 기기 목록과 기존 인증서로 갱신한다.
+갱신된 프로파일은 해당 서명 작업에만 전달하고, GitHub Secrets의 기존 프로파일은 복구용 기준으로 보존한다.
+Apple의 `Youngmin Auto App/Widgets/Share ...` 프로파일을 다음 검사와 배포에서 다시 사용한다.
+테스터 이메일·UDID·키·원본 프로파일은 로그·Summary·독립 아티팩트에 출력하지 않는다.
+
+이 기능에는 기존 Firebase 설정 외에 `ASC_KEY_P8` Secret, `ASC_KEY_ID`·`ASC_ISSUER_ID` Variables와
+해당 Apple 키의 Devices·Certificates·Identifiers·Profiles 접근 권한이 필요하다.
+`sync_devices`를 끄면 기존 프로파일을 사용한다. `publish`를 꺼도 `sync_devices`를 켰으면
+Apple 기기 등록과 프로파일 갱신은 수행한다.
+
+`python3 scripts/test-ios-device-sync.py`는 기존 기기 보존, 두 신규 기기를 포함하는 세 프로파일 갱신,
+완성된 프로파일 재사용, 비활성 기기 보호, 읽기 전용 검사와 ES256 서명을 오프라인에서 검사한다.
+
+### 수동 배포
+
 1. 워크플로가 기본 브랜치에도 반영된 뒤 **Actions → iOS Ad Hoc Firebase → Run workflow**를 연다.
 2. 배포할 코드가 있는 브랜치를 선택한다. 처음에는 **publish를 끈 채** 실행하면 서명된 IPA만 생성한다.
    이 모드에는 Firebase 설정이 없어도 된다. Apple 서명 설정과 세 프로파일은 필요하다.
