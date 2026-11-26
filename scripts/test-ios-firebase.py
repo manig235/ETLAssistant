@@ -198,7 +198,7 @@ class PublishTests(unittest.TestCase):
 
 class ExportVerificationTests(unittest.TestCase):
     def test_export_requires_both_extensions_and_distribution_entitlements(self):
-        for scenario in ("valid", "missing-share", "debug-signature", "wrong-version", "wrong-engine"):
+        for scenario in ("valid", "missing-share", "debug-signature", "wrong-version", "wrong-engine", "wrong-javascript-runtime"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 data = profiles()
@@ -210,11 +210,14 @@ class ExportVerificationTests(unittest.TestCase):
                         continue
                     bundle.mkdir(parents=True)
                     info = {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": "0.3.3",
-                            "CFBundleVersion": "1.1", "YoungminAuthEngine": "codex-in-process"}
+                            "CFBundleVersion": "1.1", "YoungminAuthEngine": "codex-in-process",
+                            "YoungminCodeModeRuntime": "quickjs"}
                     if scenario == "wrong-version" and bundle_id.endswith(".widgets"):
                         info["CFBundleVersion"] = "2.1"
                     if scenario == "wrong-engine":
                         info["YoungminAuthEngine"] = "stub"
+                    if scenario == "wrong-javascript-runtime":
+                        info["YoungminCodeModeRuntime"] = "javascriptcore"
                     (bundle / "Info.plist").write_bytes(plistlib.dumps(info))
                     profile_for_path[bundle] = data[bundle_id]
 
@@ -243,6 +246,7 @@ class SigningCleanupTests(unittest.TestCase):
             generated = root / "ios/NativeCodex/Generated"
             (generated / "iphoneos/arm64").mkdir(parents=True)
             (generated / "iphoneos/arm64/libyoungmin_codex_bridge.a").write_bytes(b"synthetic")
+            (generated / "iphoneos/arm64/native-static-libs.txt").write_text("-framework SyntheticNativeFramework -liconv\n")
             (generated / "Codex-LICENSE.txt").write_text("Synthetic license")
             (root / "ios/Youngmin").mkdir()
             data = profiles()
@@ -262,6 +266,8 @@ class SigningCleanupTests(unittest.TestCase):
                 if args[0] == "xcodebuild":
                     self.assertIn("Release", args)
                     self.assertIn("CODE_SIGN_STYLE=Manual", args)
+                    self.assertIn("YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -framework SyntheticNativeFramework -liconv", args)
+                    self.assertIn("INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs", args)
                     for bundle, _, variable in distribution.TARGETS:
                         self.assertIn(variable + "=" + data[bundle]["Name"], args)
                     raise RuntimeError("xcodebuild failed")

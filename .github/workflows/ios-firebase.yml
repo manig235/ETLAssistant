@@ -67,7 +67,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-distribution-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**') }}
+          key: ios-codex-170-distribution-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+          restore-keys: ios-codex-170-distribution-${{ runner.arch }}-
       - name: Build the embedded official Codex library
         env:
           CODEX_PROBE_COMPONENT: bridge
@@ -85,7 +86,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-distribution-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**') }}
+          key: ios-codex-170-distribution-${{ runner.arch }}-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
       - name: Test Swift logic in Release configuration
         run: swift test --package-path ios/YoungminKit -c release
       - name: Archive, sign and verify Release Ad Hoc IPA

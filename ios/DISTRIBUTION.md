@@ -14,6 +14,8 @@ Apple Distribution 인증서로 Ad Hoc 서명한 뒤 Firebase App Distribution�
 Swift 앱은 Release 설정을 사용한다. Rust 라이브러리는 기존 검증 경로의 `dev-small` 프로파일을
 재사용하며 최적화 수준 1, debug 정보·debug assertion·overflow check를 끄고 별도 캐시에 빌드한다.
 이는 Rust `release`/LTO 빌드를 검증했다는 의미는 아니다.
+네이티브 링크에는 해당 Rust 빌드가 생성한 `native-static-libs.txt`를 사용하고, IPA의 Code Mode 런타임이
+현재 내장 실행기인 QuickJS인지도 확인한다. 캐시 키에는 JavaScript 브리지 소스와 시스템 라이브러리 목록을 포함한다.
 
 ## 나중에 한 번 준비할 것
 

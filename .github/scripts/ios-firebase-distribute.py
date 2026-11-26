@@ -165,7 +165,8 @@ def verify_export(ipa, temp, team, certificate):
     if set(profiles) != {t[0] for t in TARGETS}:
         raise ValueError("Export must contain the app, widget and share extension")
     validate_profile_set(profiles, team, certificate)
-    if len(versions) != 1 or info.get("YoungminAuthEngine") != "codex-in-process":
+    if (len(versions) != 1 or info.get("YoungminAuthEngine") != "codex-in-process"
+            or info.get("YoungminCodeModeRuntime") != "quickjs"):
         raise ValueError("Exported versions or native Codex engine metadata do not match")
     return info
 
@@ -178,6 +179,10 @@ def build(env):
         raise ValueError("Build the native Codex bridge first")
     if not (generated / "Codex-LICENSE.txt").is_file():
         raise ValueError("Native Codex license is missing")
+    # Match ios-device-ipa.sh: Rust reports the frameworks required by this build.
+    native_system_libs = (generated / "iphoneos/arm64/native-static-libs.txt").read_text().strip()
+    if not native_system_libs:
+        raise ValueError("Native Codex system library flags are missing")
     OUTPUT.mkdir(exist_ok=True)
     # A fresh output directory prevents a failed rebuild from publishing an old IPA.
     if any(OUTPUT.iterdir()):
@@ -244,8 +249,9 @@ def build(env):
                  "YOUNGMIN_NATIVE_CONDITIONS=YOUNGMIN_NATIVE_CODEX",
                  "YOUNGMIN_NATIVE_BRIDGING_HEADER=$(PROJECT_DIR)/NativeCodex/include/YoungminCodex.h",
                  "YOUNGMIN_NATIVE_LIBRARY_PATH=$(PROJECT_DIR)/NativeCodex/Generated/$(PLATFORM_NAME)/$(CURRENT_ARCH)",
-                 "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge -lc++ -lz -liconv -framework Security -framework SystemConfiguration -framework CoreFoundation -framework Foundation -framework Network",
+                 "YOUNGMIN_NATIVE_LDFLAGS=-lyoungmin_codex_bridge " + native_system_libs,
                  "INFOPLIST_KEY_YoungminAuthEngine=codex-in-process",
+                 "INFOPLIST_KEY_YoungminCodeModeRuntime=quickjs",
                  "INFOPLIST_KEY_YoungminCodexSourceRevision=29eb79e9866b3262a777fdf8195c1b9e63684c91",
                  *[variable + "=" + profiles[bundle]["Name"] for bundle, _, variable in TARGETS]])
             options = temp / "ExportOptions.plist"
