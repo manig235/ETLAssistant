@@ -25,7 +25,7 @@ jobs:
     runs-on: macos-26-intel
     timeout-minutes: 5
     outputs:
-      compiled: ${{ steps.lookup.outputs.cache-hit }}
+      compiled: ${{ steps.lookup.outputs.hit }}
       runtime-verified: ${{ steps.proof.outputs.verified }}
       runtime-pending: ${{ steps.proof.outputs.pending }}
     steps:
@@ -35,14 +35,10 @@ jobs:
       - name: Check whether this exact engine was already tested and built
         id: lookup
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: ./.github/actions/ios-codex-lib
         with:
-          lookup-only: true
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
+          profile: ${{ inputs.fast && 'fast' || 'release' }}
+          lookup-only: 'true'
       - name: Verify explicitly supplied execution-test results
         id: proof
         env:
@@ -65,25 +61,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Restore native Rust dependencies
-        id: rust-cache
-        uses: actions/cache/restore@v6
+      - name: Restore the exact native library or the shared compilation cache
+        id: native-lib
+        uses: ./.github/actions/ios-codex-lib
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ios-codex-170-minimal-${{ runner.arch }}-device-${{ inputs.fast && 'dev0' || 'dev1' }}-build-${{ hashFiles('.github/scripts/prepare-ios-codex.py', '.github/scripts/ios-codex-probe.sh', 'ios/NativeCodex/bridge/**', 'ios/NativeCodex/javascript/**', 'ios/NativeCodex/native-static-libs.txt') }}
-          restore-keys: ios-codex-170-minimal-${{ runner.arch }}-
+          profile: ${{ inputs.fast && 'fast' || 'release' }}
       - name: Build the embedded official Codex library
         id: native-engine
-        env:
-          CODEX_PROBE_COMPONENT: bridge
-          CODEX_PROBE_OPERATION: build
-          CODEX_NATIVE_OPT_LEVEL: ${{ inputs.fast && '0' || '1' }}
-          CODEX_REUSE_COMPILED_LIBRARY: ${{ steps.rust-cache.outputs.cache-matched-key != '' }}
-          CODEX_NATIVE_CACHE_KEY: ${{ steps.rust-cache.outputs.cache-primary-key }}
-        run: bash .github/scripts/ios-codex-probe.sh
+        if: steps.native-lib.outputs.hit != 'true'
+        run: python3 .github/scripts/ios-codex-lib.py build --profile '${{ inputs.fast && 'fast' || 'release' }}' --key '${{ steps.native-lib.outputs.key }}'
       - name: Test Swift authentication transport and chat integration
         if: ${{ !inputs.fast }}
         run: swift test --package-path ios/YoungminKit
@@ -120,12 +106,13 @@ jobs:
             ios-device-output/*.log
             ios-device-output/*.json
           retention-days: 7
-      - name: Save native compilation cache
-        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+      - name: Save native library and compilation caches
+        if: always() && steps.native-lib.outcome == 'success' && steps.native-lib.outputs.hit != 'true'
+        uses: ./.github/actions/ios-codex-lib/save
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ios-codex-probe/source/codex-rs/target
-          key: ${{ steps.native-engine.outcome == 'success' && (needs.native-cache.outputs.runtime-pending != 'true' || steps.runtime-proof.outcome == 'success') && steps.rust-cache.outputs.cache-primary-key || format('{0}-partial-{1}-{2}', steps.rust-cache.outputs.cache-primary-key, github.run_id, github.run_attempt) }}
+          key: ${{ steps.native-lib.outputs.key }}
+          build-key: ${{ steps.native-lib.outputs.build-key }}
+          build-hit: ${{ steps.native-lib.outputs.build-hit }}
+          compiled: ${{ steps.native-engine.outcome == 'success' }}
+          # Only a library whose execution tests passed may let later runs skip them.
+          publish-library: ${{ needs.javascript-runtime-tests.result == 'success' || needs.native-cache.outputs.runtime-verified == 'true' || (needs.native-cache.outputs.runtime-pending == 'true' && steps.runtime-proof.outcome == 'success') }}
