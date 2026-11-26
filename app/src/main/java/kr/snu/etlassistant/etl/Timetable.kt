@@ -369,6 +369,7 @@ object TimetableLogic {
 
 /** 공개 수강편람 조회(로그인 없음, eTL 토큰 없음). sugang.snu.ac.kr과 강의계획서 첨부용 shine.snu.ac.kr(GET)에만 보낸다. */
 object CatalogClient {
+    internal const val MAX_RESPONSE_BYTES = 1024 * 1024
     private const val SUGANG = "https://sugang.snu.ac.kr"
     private const val SEARCH_PATH = "/sugang/cc/cc100InterfaceSrch.action"
     private const val DETAIL_PATH = "/sugang/cc/cc101ajax.action"
@@ -480,7 +481,7 @@ object CatalogClient {
             c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = c.responseCode
             if (code !in 200..299) throw Exception("수강편람 응답 오류($code)")
-            val text = c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
+            val text = c.inputStream.use { it.readBounded(MAX_RESPONSE_BYTES, "수강편람 응답이 너무 커요") }.toString(Charsets.UTF_8)
             return try { JSONObject(text) } catch (_: Exception) { throw Exception("수강편람 응답을 해석할 수 없어요") }
         } finally {
             c.disconnect()

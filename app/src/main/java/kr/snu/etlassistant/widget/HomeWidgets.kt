@@ -258,11 +258,10 @@ class DeadlineWidgetProvider : HomeWidgetProvider() {
         if (intent.action == HomeWidgets.ACTION_COMPLETE) {
             val store = MyDeadlineStore(context)
             val id = intent.getLongExtra(HomeWidgets.EXTRA_DEADLINE_ID, Long.MIN_VALUE)
-            val item = store.load().firstOrNull { it.id == id && !it.done } ?: return
             val occurrence = if (intent.hasExtra(HomeWidgets.EXTRA_OCCURRENCE_DAY))
                 java.time.LocalDate.ofEpochDay(intent.getLongExtra(HomeWidgets.EXTRA_OCCURRENCE_DAY, 0L)) else null
             // 항상 완료로 설정한다. 빠르게 두 번 눌러도 다시 미완료가 되지 않는다. 반복 마감은 그 회차만.
-            store.upsert(MyDeadlines.setDone(item, occurrence, true, java.time.Instant.now()))
+            if (!store.update(id) { MyDeadlines.setDone(it, occurrence, true, java.time.Instant.now()) }) return
             NotifyScheduler.apply(context)
             DeadlineAlarm.rearm(context)
             return

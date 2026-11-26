@@ -4,7 +4,6 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -87,7 +86,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
                     url = next
                     return@repeat
                 }
-                if (code == 401 && onEtl) throw EtlAuthException(AUTH_REJECTED)
+                if (code == 401 && onEtl) rejectUnauthorized(c, shownPath)
                 if (code !in 200..299) throw EtlException("다운로드 실패($code): $shownPath", "http-$code")
                 val md = MessageDigest.getInstance("SHA-256")
                 var n = 0L
@@ -152,17 +151,7 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             } catch (e: IOException) {
                 throw EtlException("eTL 연결 실패: $path (${e.javaClass.simpleName})", ioKind(e))
             }
-            if (code == 401) {
-                val text = try {
-                    c.errorStream?.use { it.readNBytesCompat(MAX_ERROR_BODY).toString(Charsets.UTF_8) }.orEmpty().lowercase()
-                } catch (_: IOException) {
-                    ""
-                }
-                // 서버 본문은 토큰·서명 URL을 반사할 수 있으므로 정해 둔 진단 문구만 사용한다.
-                val hint = errorHint(text)
-                if (isPermissionDenied(text)) throw EtlException("권한 없음(401): $path$hint", "forbidden")
-                throw EtlAuthException(AUTH_REJECTED + hint + " [$path]")
-            }
+            if (code == 401) rejectUnauthorized(c, path)
             if (code !in 200..299) throw EtlException("eTL 요청 실패($code): $path", "http-$code")
             val body = try {
                 c.inputStream.use {
@@ -179,6 +168,16 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
         } finally {
             c.disconnect()
         }
+    }
+
+    /** JSON 조회와 다운로드가 같은 상한·권한 판정·안전한 문구를 쓴다. */
+    private fun rejectUnauthorized(c: HttpURLConnection, path: String): Nothing {
+        val text = try {
+            c.errorStream?.use { it.readNBytesCompat(MAX_ERROR_BODY).toString(Charsets.UTF_8) }.orEmpty().lowercase()
+        } catch (_: IOException) { "" }
+        val hint = errorHint(text)
+        if (isPermissionDenied(text)) throw EtlException("권한 없음(401): $path$hint", "forbidden")
+        throw EtlAuthException(AUTH_REJECTED + hint + " [$path]")
     }
 
     companion object {
@@ -243,18 +242,6 @@ class EtlClient(token: String, private val origin: String = BASE_URL) {
             URL(URL(base), relative).toString()
         } catch (_: Exception) {
             throw EtlException("eTL 파일 주소를 해석할 수 없어요")
-        }
-
-        // InputStream.readNBytes는 일부 지원 Android 버전에 없으므로 직접 상한을 둔다.
-        private fun InputStream.readNBytesCompat(limit: Int): ByteArray {
-            val out = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (out.size() < limit) {
-                val count = read(buffer, 0, minOf(buffer.size, limit - out.size()))
-                if (count < 0) break
-                out.write(buffer, 0, count)
-            }
-            return out.toByteArray()
         }
 
         fun parseBody(body: String, path: String): Any {
