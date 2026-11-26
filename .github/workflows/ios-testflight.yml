@@ -10,7 +10,7 @@ on:
       what_to_test:
         description: 'TestFlight "테스트할 내용" 문구 (실행 Summary에 표시, App Store Connect에는 직접 붙여 넣음)'
         type: string
-        default: '첫 실행에서 "가상 eTL로 테스트하기"를 고른 뒤 마감·공지·강의자료 질문과 일정 추가 승인을 확인해 주세요.'
+        default: '첫 실행에서 "가상 eTL로 테스트하기"를 고르고 본인 ChatGPT 계정으로 로그인한 뒤 과제 조회·강의자료 요약·일정 추가 승인과 취소를 확인해 주세요.'
   pull_request:
     paths:
       - '.github/workflows/ios-testflight.yml'

@@ -145,6 +145,8 @@ App Group, 디버거 허용 해제, 내장 Codex 설정(QuickJS·고정 소스 r
 
 ## TestFlight 업로드 워크플로
 
+Apple 화면에서 해야 하는 앱 생성·프로파일·팀 API 키 설정은 [TestFlight 최초 설정](TESTFLIGHT_SETUP.md)을 따른다.
+
 **iOS TestFlight** (`.github/workflows/ios-testflight.yml`)는 Ad Hoc과 같은 native Codex 빌드·Swift Release 테스트·
 Release archive를 거쳐 `app-store-connect` 방식으로 export·검증하고, `upload`를 켠 경우에만 App Store Connect에 올린다.
 Ad Hoc 워크플로와 native 빌드 단계·캐시를 공유한다. 앱 전용(확장 제외) 모드는 없고 앱·위젯·공유 확장을 함께 올린다.
@@ -158,8 +160,8 @@ Ad Hoc 워크플로와 native 빌드 단계·캐시를 공유한다. 앱 전용(
    이름은 `Youngmin AppStore App`/`Widgets`/`Share`처럼 서로 다르게 한다. 세 App ID 모두 App Group
    `group.kr.snu.etlassistant.ios`가 켜져 있어야 한다. 기기 목록이 없으므로 기기 추가로 다시 만들 필요는 없다.
 3. **App Store Connect → 사용자 및 액세스 → 통합 → App Store Connect API → 팀 키**에서 키를 만든다
-   (개인 키는 Issuer ID가 없어 쓸 수 없다). 역할은 **App Manager**를 권장한다. `.p8`은 한 번만 내려받을 수 있다.
-   화면의 Issuer ID와 Key ID를 기록한다.
+   (현재 CI는 Issuer ID를 사용하는 팀 키로 구성돼 있다). 업로드 용도에는 **Developer** 역할을 사용하고,
+   추가 관리 권한도 필요할 때만 App Manager를 선택한다. `.p8`은 한 번만 내려받을 수 있다. 화면의 Issuer ID와 Key ID를 기록한다.
 
 ### GitHub 설정
 

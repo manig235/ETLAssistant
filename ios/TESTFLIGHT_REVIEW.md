@@ -8,11 +8,13 @@ App Store Connect 업로드는 별도 **iOS TestFlight** 워크플로가 담당�
 
 판정: **심사 메모는 준비됐지만 지금 바로 심사 제출할 상태는 아님**.
 이 점검은 저장소·GitHub Actions와 설정 이름을 조회한 결과이며 App Store Connect 화면과 실기기 동작은 확인하지 못했다.
+Apple 계정에서 해야 하는 작업은 [TestFlight 최초 설정](TESTFLIGHT_SETUP.md)에 순서대로 정리했다.
 
 확인한 항목:
 
-- 이 작업본 `3c5ab50`에서 배포 스크립트 테스트 **24개 통과**, 제거 대상 JavaScriptCore 비공개 API 소스 검사 통과, `git diff --check` 통과.
-- [TestFlight CI](https://github.com/manig235/ETLAssistant/actions/runs/45774772443)는 `distribution-checks`만 성공했다. `push` 실행이므로 `build-and-upload`는 **skipped**다. 서명된 제출용 빌드 생성이나 Apple 업로드 성공을 뜻하지 않는다.
+- `9026668`에서 배포 스크립트 테스트 **32개 통과**. 실제 OpenSSL 3으로 생성한 현대·구형 PKCS#12의 정상 암호 검증, 잘못된 암호 거부, 임시 호환 사본의 인증서 동일성을 포함한다. 제거 대상 JavaScriptCore 비공개 API 소스 검사와 `git diff --check`도 통과했다.
+- [수정 브랜치 TestFlight CI](https://github.com/manig235/ETLAssistant/actions/runs/45777028138)는 `distribution-checks`가 성공했다. `push` 실행이므로 `build-and-upload`는 **skipped**다. 서명된 제출용 빌드 생성이나 Apple 업로드 성공을 뜻하지 않는다.
+- [실제 저장소 Secret을 사용한 검사](https://github.com/manig235/ETLAssistant/actions/runs/45777028459)에서 OpenSSL의 **P12 MAC·비밀번호 검사가 통과**했다. macOS keychain 가져오기·프로파일 검증·Release 빌드는 다음 작업의 결과를 확인한다. 이 실행의 `publish=false`는 테스터에게 배포하지 않는다.
 - 공통 기반 `34b4f49`의 [iOS 검사](https://github.com/manig235/ETLAssistant/actions/runs/45771251265)는 Swift 로직·시뮬레이터 검사 모두 성공했다. 실제 ChatGPT 계정 로그인이나 현재 App Store 서명 빌드를 검증한 결과는 아니다.
 - [이전 Release archive 실행](https://github.com/manig235/ETLAssistant/actions/runs/45732010508)은 성공 기록이 있다. 다른 커밋의 실행이며 해당 실행에서 인증·채팅 통합 테스트 단계는 skipped이므로 현재 제출 준비 완료의 근거로 삼지 않는다.
 - 로컬 Apple 서명 폴더의 프로파일 세 개는 등록 기기가 포함된 **Ad Hoc** 프로파일이다.
@@ -21,11 +23,11 @@ App Store Connect 업로드는 별도 **iOS TestFlight** 워크플로가 담당�
 
 1. **App Store Connect용 프로파일 세 개**를 생성하고 `IOS_APPSTORE_APP_PROFILE_BASE64`, `IOS_APPSTORE_WIDGETS_PROFILE_BASE64`, `IOS_APPSTORE_SHARE_PROFILE_BASE64`를 GitHub Secrets에 등록한다. 조회 시점에는 모두 없었다.
 2. **Apple 업로드 인증 설정**을 등록한다. Secret `ASC_KEY_P8`, Variables `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_APP_ID`가 조회 시점에는 모두 없었다. 배포용 p12 및 비밀번호와 `IOS_TEAM_ID`는 등록돼 있다.
-3. **p12 서명 사전 검사 통과를 확인한다.** [최근 Firebase 빌드](https://github.com/manig235/ETLAssistant/actions/runs/45776032478)는 native 컴파일 전 OpenSSL의 P12 해독 실패로 중단됐다. 로그는 원본 p12와 `IOS_DISTRIBUTION_P12_PASSWORD` 확인을 요구한다. TestFlight도 같은 인증서를 사용한다. 최신 main에는 추가 p12 검사·정규화 변경이 있으므로 제출할 브랜치에 반영할 수정과 서명 성공 여부를 확인한다.
+3. **macOS 서명 사전 검사 결과를 확인한다.** 비밀번호 수정 후 P12 검사는 통과했다. main의 안전한 진단·임시 호환 사본 처리를 TestFlight 브랜치에 통합했고, OpenSSL 3이 구형 암호화 형식을 읽는 재시도도 추가했다. TestFlight도 같은 인증서를 사용하지만 App Store Connect 프로파일 세 개에 대한 실제 macOS 서명 검사는 해당 파일 등록 후 확인해야 한다.
 4. **업로드할 Release 빌드로 실기기 경로를 확인한다.** FakeETL 진입 → ChatGPT 로그인 → 과제 조회 → 자료 요약 → 일정 승인·취소를 확인한다. 이 작업 환경에는 Xcode와 Swift가 없어 여기서 실기기 검증을 대신하지 못했다.
 5. **TestFlight 빌드 생성·업로드 및 App Store Connect 입력을 완료한다.** 먼저 upload=false로 서명·검증하고, 성공한 소스로 upload=true를 실행한다. Apple 측 빌드 처리 완료, 연락처·피드백 이메일·개인정보 URL·심사 메모·테스트할 내용을 확인해 외부 그룹의 심사에 제출한다. App Store Connect의 현재 앱 레코드·연락처·빌드 상태는 이 점검에서 직접 조회하지 못했다.
 
-심사 메모 두 파일과 안내 문서 수정은 현재 로컬 변경이다. 이번 점검에서 원격 push, 배포 실행, App Store Connect 입력·제출은 수행하지 않았다.
+코드·심사 메모는 `codex/testflight-submission-prep` 브랜치에 push했다. 인증서 검사를 위해 publish=false 실행만 요청했으며 App Store Connect 입력·업로드·심사 제출은 수행하지 않았다.
 
 ## 이번 제출의 접근 방법
 
