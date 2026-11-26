@@ -443,12 +443,12 @@ class P12CompatibilityTests(unittest.TestCase):
             with self.subTest(reason=reason), mock.patch.object(
                     distribution, "run", side_effect=[RuntimeError(reason), b"verified"]) as run:
                 if reason == "PKCS12_UNSUPPORTED_ENCRYPTION":
-                    self.assertEqual(distribution.read_p12(args, env={}), b"verified")
+                    self.assertEqual(distribution.run_pkcs12(args, capture=True, env={}), b"verified")
                     self.assertEqual(run.call_count, 2)
                     self.assertEqual(run.call_args.args[0], ["openssl", "pkcs12", *args, "-legacy"])
                 else:
                     with self.assertRaisesRegex(RuntimeError, reason):
-                        distribution.read_p12(args, env={})
+                        distribution.run_pkcs12(args, capture=True, env={})
                     self.assertEqual(run.call_count, 1)
                 for call in run.call_args_list:
                     self.assertNotIn("-nomacver", call.args[0])
@@ -555,8 +555,8 @@ class RealP12Tests(unittest.TestCase):
                 self.assertEqual(list(Path(directory).iterdir()), [])
                 compatible, password = distribution.compatible_p12(source, Path(directory), self.password)
                 converted = dict(os.environ, YOUNGMIN_FIXTURE_PASSWORD=password)
-                pem = distribution.read_p12(["-in", compatible, "-passin", "env:YOUNGMIN_FIXTURE_PASSWORD",
-                                             "-clcerts", "-nokeys"], env=converted)
+                pem = distribution.run_pkcs12(["-in", compatible, "-passin", "env:YOUNGMIN_FIXTURE_PASSWORD",
+                                             "-clcerts", "-nokeys"], capture=True, env=converted)
                 der = distribution.run(["openssl", "x509", "-outform", "DER"], data=pem, capture=True)
                 self.assertEqual(der, self.certificate)
                 self.assertEqual(source.read_bytes(), original)
