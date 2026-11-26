@@ -355,6 +355,11 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
 - `make_pdf(title, content_markdown, filename?)`(2026-11-24, 폰 안 쓰기): 비서가 쓴 마크다운을 기기 안에서 A4 PDF로(`pdf/`: `PdfMarkdown` 파서, `PdfLayoutLogic` 쪽 나누기·파일명, `PdfMaker` = PdfDocument+StaticLayout+시스템 글꼴, 수식은 `MathRender` 그림/`MathText.toUnicode`).
   `Download/etl/영민이가 만든 파일/`(MediaStore)에 저장하고 받은 파일과 같은 카드를 붙인다. 20MB·200쪽·30만 자 상한. AI가 만든 파일은 `files/GeneratedFiles`가 URI를 기록하고 `isGenerated`로 판정한다(받은 파일 자동 정리 제외용). 파일 만들기 쓰기 권한을 적용하며 파일 카드와 NOTICE 기록을 남긴다.
 - `etl_get(path, all=false)`: 범용 GET. `^/api/v1/[\w\-./?=&\[\]%:,]*$`만 허용(위 보안 규칙의 거부 경로 제외). AI 지침에 Canvas 경로 목록이 있다
+- 공개 기출 자료(2026-11-27, 외부·읽기 전용·허용 목록, 설정 → 대화 → "공개 기출 자료 찾기" 기본 켬, 끄면 켜는 법을 알려 주는 오류): `study_search(query, course_id?, materials?, site="mit_ocw", limit?)` —
+  `course_id` 없으면 주제(영어)로 과목 검색, 있으면 그 과목의 시험·풀이·문제 세트 목록. `study_fetch(url, max_chars?)` — 자료 페이지·PDF면 PDF를 `etl-files/study/`에 받고(30MB, `%PDF` 확인,
+  `EtlFiles.isPrivateRead`라 폰 저장·파일 카드·쪽 미리보기 없음, 14일 정리) 일반 페이지면 본문 글(2MB)과 같은 사이트 링크. 결과 `source`(과목·학기·강사·라이선스·출처 문구)를 PDF 출처에 쓴다.
+  **시험 자료 만들기**: "시험 자료 만들어줘" → `etl_syllabus`·eTL 자료로 범위 → 주제로 `study_search` → `study_fetch` 시험·풀이 → 사용자가 첨부한 족보(기존 첨부·"공유 → 영민이"만) → `make_pdf`(범위 요약, 개념, 문제·풀이, `## 출처`).
+  학생 족보 사이트 크롤링·로그인은 하지 않는다(사용자 결정). 공개 자료를 이 과목 기출이라 하지 않고 문제마다 출처·변형 여부를 밝히는 규칙은 AGENTS.md "시험 자료 만들기". 상세는 `docs/study-material.md`.
 
 ## 보안 규칙
 
@@ -386,6 +391,10 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   비서의 캘린더 쓰기는 사용자가 직접 요청했을 때만, 고른 캘린더 안만, 매번 채팅 한 줄 + 되돌리기 기록. 앱이 직접 보내는 네트워크는 없다(구글 캘린더는 계정 동기화가 올린다).
 - 앱에는 분석 SDK나 외부 서버 전송을 넣지 않는다.
   **예외 하나(2026-11-22, 사용자 결정)**: 업데이트 확인용 `GET https://api.github.com/repos/manig235/ETLAssistant/releases/latest`(사용자 데이터·토큰·기기 정보 없음, 리다이렉트 안 따라감, 설정 "업데이트 알림"으로 끌 수 있음, `update/UpdateChecker.kt`).
+  **예외 둘(2026-11-27, 사용자 결정)**: 시험 자료용 공개 기출 자료 찾기(`study/`, iOS `AssistantKit/Study*`). 허용 목록 한 표(`StudySites`)의 호스트에만 GET:
+  `api.learn.mit.edu`(MIT Learn 검색 API, JSON)와 `ocw.mit.edu`(과목·자료 페이지, PDF). HTTPS만, 리다이렉트도 매번 허용 목록 검사(최대 3번), 사설망 주소로 풀리면 거부(프록시와 같은 규칙),
+  쿠키·토큰 없음, 개인 정보 없는 일반 User-Agent, JSON·HTML 2MB·PDF 30MB, 연결 8초·읽기 15초(PDF 30초), 앱 전체 동시 2개. 보내는 것은 비서가 정한 검색어(과목 주제)와 공개 자료 주소뿐이고
+  eTL 토큰·eTL 정보·파일·개인 정보는 보내지 않는다. 사용자가 시험 자료를 요청했을 때만 쓰고(AGENTS.md), 결과는 신뢰하지 않는 데이터다. 설정에서 끌 수 있다. 사이트를 늘릴 때는 `StudySites.ALL`에 한 줄과 응답 해석을 더한다.
 - 캘린더 연동의 자동으로 넣기(사용자가 켰을 때만): 과목명·과제명·마감 시각·eTL 과제 링크(쿼리 없는 eTL 주소만)·내 마감 메모·시험 장소·준비물을 사용자가 고른 캘린더에 쓴다.
   앱이 직접 보내지는 않지만, 고른 캘린더 계정(구글 등)이 동기화하면 그 내용이 구글·삼성 서버로 간다. 토큰·서명 링크는 넣지 않는다. 기본 대상인 앱 로컬 캘린더는 폰 밖으로 나가지 않는다.
 
