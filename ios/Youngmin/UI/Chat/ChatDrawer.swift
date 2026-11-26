@@ -169,7 +169,7 @@ struct ChatDrawer: View {
             Button("취소", role: .cancel) {}
             Button("삭제", role: .destructive) { controller.deleteConversation(meta.id) }
         } message: { meta in
-            Text("\"\(meta.title)\" 대화가 목록에서 사라지고 되돌릴 수 없어요.")
+            Text("\"\(meta.title)\" 대화가 목록에서 사라지고 되돌릴 수 없어요." + (controller.runningChats.contains(meta.id) ? " 답하는 중인 답변은 멈춰요." : ""))
         }
     }
 
@@ -201,23 +201,34 @@ struct ChatDrawer: View {
         .padding(.horizontal, 12)
     }
 
+    /// 답하는 대화는 제목 옆에 작은 돌아가는 표시(2026-11-27). 답하는 중에도 열기·이름 바꾸기가 되고, 지우면 그 답변을 먼저 멈춘다.
     private func row(_ meta: ChatMeta) -> some View {
         let current = meta.id == controller.chatId
-        let tint = controller.busy ? YMColor.disableForeground : YMColor.labelSecondary
+        let answering = controller.runningChats.contains(meta.id)
+        let tint = YMColor.labelSecondary
         return HStack(spacing: 0) {
-            Text(meta.title)
-                .font(YMFont.body2Medium)
-                .foregroundStyle(current ? YMColor.brandPrimary : YMColor.label)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
-            Button { guardBusy { startRename(meta) } } label: {
+            HStack(spacing: 8) {
+                Text(meta.title)
+                    .font(YMFont.body2Medium)
+                    .foregroundStyle(current ? YMColor.brandPrimary : YMColor.label)
+                    .lineLimit(1)
+                if answering {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(answering ? "답변 중" : "")
+            Button { startRename(meta) } label: {
                 Image(systemName: "pencil").font(.system(size: 17)).foregroundStyle(tint)
                     .frame(width: 40, height: 40).contentShape(Rectangle())
             }
             .buttonStyle(YMPressStyle())
             .accessibilityLabel("'\(meta.title)' 이름 바꾸기")
-            Button { guardBusy { startDelete(meta) } } label: {
+            Button { startDelete(meta) } label: {
                 Image(systemName: "trash").font(.system(size: 17)).foregroundStyle(tint)
                     .frame(width: 40, height: 40).contentShape(Rectangle())
             }
@@ -235,17 +246,12 @@ struct ChatDrawer: View {
         .padding(.horizontal, 12)
     }
 
-    private func guardBusy(_ action: () -> Void) {
-        if controller.busy { ToastCenter.shared.show("답변이 끝난 뒤에 바꾸거나 지울 수 있어요") } else { action() }
-    }
-
     private func startRename(_ meta: ChatMeta) {
         renameText = ChatTitles.cut(meta.title)
         renameTarget = meta
     }
 
     private func startDelete(_ meta: ChatMeta) {
-        if controller.busy { ToastCenter.shared.show("답변이 끝난 뒤에 지울 수 있어요"); return }
         deleteTarget = meta
     }
 }

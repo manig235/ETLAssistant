@@ -20,11 +20,14 @@ public final class WriteApprovalGate: @unchecked Sendable {
         public let operation: String
         public let details: String
         public let destructive: Bool
-        public init(id: String, operation: String, details: String, destructive: Bool) {
+        /// 요청을 낸 대화([ToolOrigin.chatId], 모르면 nil). 대화마다 따로 답하므로 확인 창은 그 대화를 볼 때만 뜬다.
+        public let origin: String?
+        public init(id: String, operation: String, details: String, destructive: Bool, origin: String? = nil) {
             self.id = id
             self.operation = operation
             self.details = details
             self.destructive = destructive
+            self.origin = origin
         }
     }
 
@@ -111,6 +114,20 @@ public final class WriteApprovalGate: @unchecked Sendable {
         changed()
     }
 
+    /// 대화 하나의 답변이 끝나거나 멈춤: 그 대화의 요청과 대화를 모르는 요청만 거절한다(다른 대화의 확인은 그대로).
+    public func cancel(origin: String?) {
+        let any: Bool = locked {
+            let hit = waiting.values.filter { !$0.done && ($0.request.origin == nil || $0.request.origin == origin) }
+            for w in hit {
+                w.approved = false
+                resolveLocked(w)
+                removeLocked(w.request.id)
+            }
+            return !hit.isEmpty
+        }
+        if any { changed() }
+    }
+
     private func cancelLocked() {
         for w in waiting.values {
             w.approved = false
@@ -160,9 +177,10 @@ public final class WriteApprovalGate: @unchecked Sendable {
     /// 승인을 받으면 [action]을 실행한다. 승인된 미리보기([details])와 이 클로저는 앱 메모리 안에서만 묶이고 도구 인자로 오가지 않는다.
     /// 거절·시간 초과·취소·host 변경이면 [Denied]를 던지고 [action]은 실행하지 않는다.
     public func execute<T>(_ operation: String, _ details: String, destructive: Bool = false, _ action: () throws -> T) async throws -> T {
+        let origin = ToolOrigin.chatId
         let w: Waiting = try locked {
             guard let owner = host else { throw Denied() }
-            let request = Request(id: UUID().uuidString, operation: operation, details: details, destructive: destructive)
+            let request = Request(id: UUID().uuidString, operation: operation, details: details, destructive: destructive, origin: origin)
             let w = Waiting(request, owner, Self.now() + timeoutNanos)
             waiting[request.id] = w
             order.append(request.id)
@@ -204,6 +222,7 @@ public enum AiWriteApproval {
     public static func attachHost() -> String { gate.attachHost() }
     public static func detachHost(_ id: String) { gate.detachHost(id) }
     public static func cancelAll() { gate.cancelAll() }
+    public static func cancel(origin: String?) { gate.cancel(origin: origin) }
     public static func pending() -> [WriteApprovalGate.Request] { gate.pending() }
     @discardableResult
     public static func decide(hostId: String, requestId: String, approved: Bool) -> Bool {

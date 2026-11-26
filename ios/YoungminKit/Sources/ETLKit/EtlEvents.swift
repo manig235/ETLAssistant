@@ -111,6 +111,15 @@ public enum EtlEvents {
     public static func dataChanged() { post(.dataChanged) }
 }
 
+/// 지금 도구를 실행하게 한 대화(2026-11-27, 대화마다 따로 답하기). Kotlin `mcp.ToolOrigin`과 같은 역할이다.
+///
+/// 채팅 화면은 대화마다 턴을 따로 돌리고, 도구 실행기를 `ToolOrigin.$chatId.withValue(대화 ID) { … }`로 감싸 부른다.
+/// `EtlEvents.post`는 도구의 Task에서 처리기를 바로 부르므로, 처리기 안에서 이 값을 읽으면 받은 파일·바뀐 데이터 알림이 어느 대화의
+/// 것인지 알 수 있다(쓰기 승인 요청도 같은 값을 쓴다). 라우팅에만 쓰고 권한 판단에는 쓰지 않는다.
+public enum ToolOrigin {
+    @TaskLocal public static var chatId: String?
+}
+
 public extension EtlEvents.Listener {
     func onNotice(_ text: String) {}
 }

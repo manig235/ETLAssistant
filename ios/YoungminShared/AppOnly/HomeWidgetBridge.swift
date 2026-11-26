@@ -116,11 +116,8 @@ enum ShareInbox {
             if s.failures.isEmpty { ToastCenter.shared.show("가져올 수 있는 내용이 없어요") }
             return
         }
-        if chat.busy {
-            ToastCenter.shared.show("답변 중이라 지금 대화의 입력창에 넣었어요")
-        } else {
-            chat.newConversation()
-        }
+        // 답하는 대화가 있어도 새 대화로 연다(그 답변은 뒤에서 계속된다).
+        chat.newConversation()
         var failures = s.failures
         var attachments: [Attachment] = []
         for f in s.files {

@@ -135,36 +135,36 @@ enum DemoSeed {
 
     /// 시연 답변: 활동 줄 → 글 조각 스트리밍. 멈추면 "답변을 멈췄어요".
     @MainActor
-    static func runDemoTurn(_ c: ChatController, prompt: String) async {
+    static func runDemoTurn(_ c: ChatController, chatId: String, model m: ChatModel, prompt: String) async {
         let itemId = "demo-\(UUID().uuidString)"
-        c.demoSetActivity(ActivityTracker.THINKING)
+        c.demoSetActivity(chatId, ActivityTracker.THINKING)
         try? await Task.sleep(nanoseconds: 700_000_000)
         if !Task.isCancelled {
-            c.demoSetActivity("조회하는 중…")
+            c.demoSetActivity(chatId, "조회하는 중…")
             try? await Task.sleep(nanoseconds: 900_000_000)
         }
         let answer = "샘플 모드라 실제로 조회하지는 않았어요. 이런 모양으로 답해요.\n\n" + sampleAnswer
         if !Task.isCancelled {
-            c.demoSetActivity(nil)
+            c.demoSetActivity(chatId, nil)
             var index = answer.startIndex
             while index < answer.endIndex && !Task.isCancelled {
                 let next = answer.index(index, offsetBy: 6, limitedBy: answer.endIndex) ?? answer.endIndex
-                c.model.appendAssistant(itemId, String(answer[index..<next]))
-                c.sync()
+                m.appendAssistant(itemId, String(answer[index..<next]))
+                c.sync(chatId)
                 index = next
                 try? await Task.sleep(nanoseconds: 25_000_000)
             }
         }
         if Task.isCancelled {
-            c.model.closeStreaming()
-            c.model.addNotice("답변을 멈췄어요")
+            m.closeStreaming()
+            m.addNotice("답변을 멈췄어요")
         } else {
-            c.model.finishAssistant(itemId, answer)
+            m.finishAssistant(itemId, answer)
         }
-        c.sync()
+        c.sync(chatId)
     }
     #else
     @MainActor
-    static func runDemoTurn(_ c: ChatController, prompt: String) async {}
+    static func runDemoTurn(_ c: ChatController, chatId: String, model m: ChatModel, prompt: String) async {}
     #endif
 }

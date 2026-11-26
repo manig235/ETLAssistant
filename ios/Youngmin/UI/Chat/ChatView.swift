@@ -122,6 +122,8 @@ struct ChatView: View {
             if controller.models.isEmpty { await controller.loadModels() }
         }
         .onChange(of: scenePhase) { _, phase in
+            // 채팅 화면이 안 보이면(앱이 뒤로 감) 끝난 답변을 기기 알림으로 알린다.
+            controller.chatScreenVisible = phase != .background && path.isEmpty
             switch phase {
             case .active:
                 FilesCleanupService.runIfDue()
@@ -135,6 +137,7 @@ struct ChatView: View {
             }
         }
         .onChange(of: path) { _, newPath in
+            controller.chatScreenVisible = scenePhase != .background && newPath.isEmpty
             // 화면을 떠나면(설정 등으로 push) 승인 창을 닫는다(Android onPause와 같음). 돌아오면 다시 붙인다.
             if newPath.isEmpty {
                 controller.attachApprovals()
@@ -162,10 +165,24 @@ struct ChatView: View {
             if let banner = controller.banner {
                 ChatBanner(spec: banner, onTap: { handleBanner(banner) }, onDismiss: { controller.snoozeNotifyBanner() })
             }
+            if let other = controller.approvalElsewhere {
+                // 다른 대화의 쓰기 확인: 누르면 그 대화로 옮겨 확인 창을 띄운다.
+                ChatBanner(spec: BannerSpec(TurnLogic.APPROVAL_ELSEWHERE, .openChat), onTap: { controller.openConversation(other) }, onDismiss: {})
+            }
             if controller.items.isEmpty {
                 ChatEmptyState { q in controller.send(q) }
             } else {
                 ChatMessageList(controller: controller, onOpen: open, onLink: { openURL($0) })
+            }
+            if let bar = controller.finishBar {
+                ChatFinishBar(text: bar.text, onOpen: {
+                    controller.finishBar = nil
+                    controller.openConversation(bar.chatId)
+                }, onDismiss: { controller.finishBar = nil })
+                .task(id: bar.id) {
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    if controller.finishBar?.id == bar.id { controller.finishBar = nil }
+                }
             }
             if let activity = controller.activity {
                 ChatActivityLine(text: activity)
@@ -242,7 +259,7 @@ struct ChatView: View {
                 }
             }
         case .retry: Task { await controller.refreshEnvironment() }
-        case .none: break
+        case .openChat, .none: break
         }
     }
 

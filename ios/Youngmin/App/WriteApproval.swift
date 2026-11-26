@@ -9,12 +9,15 @@ struct WriteApprovalRequest: Identifiable, Hashable, Sendable {
     let details: String
     /// 원본 UI에서는 쓰지 않는다.
     let destructive: Bool
+    /// 요청을 낸 대화(모르면 nil). 확인 창은 그 대화를 보고 있을 때만 뜬다.
+    let origin: String?
 
-    init(id: String, operation: String, details: String, destructive: Bool = false) {
+    init(id: String, operation: String, details: String, destructive: Bool = false, origin: String? = nil) {
         self.id = id
         self.operation = operation
         self.details = details
         self.destructive = destructive
+        self.origin = origin
     }
 }
 
@@ -32,6 +35,8 @@ protocol WriteApprovalSource: AnyObject, Sendable {
     func decide(hostId: String, requestId: String, approved: Bool) -> Bool
     /// 오류로 턴이 끝나거나 사용자가 멈추면 대기 요청을 모두 거절한다.
     func cancelAll()
+    /// 대화 하나의 답변이 끝나거나 멈춤: 그 대화의 요청(과 대화를 모르는 요청)만 거절한다.
+    func cancel(origin: String?)
     func setChangeHandler(_ handler: (@Sendable () -> Void)?)
 }
 
@@ -42,5 +47,6 @@ final class NoWriteApprovals: WriteApprovalSource, @unchecked Sendable {
     func pending() -> [WriteApprovalRequest] { [] }
     func decide(hostId: String, requestId: String, approved: Bool) -> Bool { false }
     func cancelAll() {}
+    func cancel(origin: String?) {}
     func setChangeHandler(_ handler: (@Sendable () -> Void)?) {}
 }

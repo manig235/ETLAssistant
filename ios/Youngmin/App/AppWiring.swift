@@ -18,11 +18,12 @@ final class AssistantWriteApprovals: WriteApprovalSource, @unchecked Sendable {
     func attachHost() -> String { gate.attachHost() }
     func detachHost(_ hostId: String) { gate.detachHost(hostId) }
     func pending() -> [WriteApprovalRequest] {
-        gate.pending().map { WriteApprovalRequest(id: $0.id, operation: $0.operation, details: $0.details, destructive: $0.destructive) }
+        gate.pending().map { WriteApprovalRequest(id: $0.id, operation: $0.operation, details: $0.details, destructive: $0.destructive, origin: $0.origin) }
     }
     @discardableResult
     func decide(hostId: String, requestId: String, approved: Bool) -> Bool { gate.decide(hostId: hostId, requestId: requestId, approved: approved) }
     func cancelAll() { gate.cancelAll() }
+    func cancel(origin: String?) { gate.cancel(origin: origin) }
     func setChangeHandler(_ handler: (@Sendable () -> Void)?) { gate.setChangeHandler(handler) }
 }
 
@@ -340,6 +341,11 @@ enum NotificationSync {
     /// 알림 본문·버튼(안드로이드 PendingIntent들): 초안 창, 채팅 입력창 채우기, eTL(LearningX/웹), 내 일정.
     @MainActor
     static func open(_ info: [AnyHashable: Any], action: String, app: AppState) {
+        // 답변 완료 알림: 그 대화를 연다(LocalNotifications.postAnswerDone).
+        if let chat = info[LocalNotifications.answerChatKey] as? String {
+            app.openChat(chat)
+            return
+        }
         let notice = NoticeCodec.fromJson(info["notice"] as? String) ?? legacyNotice(info)
         let target = NoticeOpen.resolve(notice, action: action)
         DiagLog.logger.notice("notify: opened channel=\(notice.channel.id, privacy: .public) action=\(action, privacy: .public) target=\(String(describing: target).prefix(12), privacy: .public)")

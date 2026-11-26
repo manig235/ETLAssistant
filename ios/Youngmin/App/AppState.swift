@@ -24,6 +24,12 @@ final class AppState {
         openRoute = route
         openRequest += 1
     }
+    /// 답변 완료 알림: 그 대화를 열고 채팅 뿌리로 간다.
+    func openChat(_ id: String) {
+        chatController().openConversation(id)
+        openRoute = nil
+        openRequest += 1
+    }
     /// eTL 토큰 저장 여부(배너·온보딩 분기). 토큰을 바꾸는 화면은 `refreshTokenState()`를 부른다.
     private(set) var hasEtlToken: Bool
 

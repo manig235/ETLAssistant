@@ -2,42 +2,44 @@ import Foundation
 
 /// Runs conversation turns in the embedded official engine. Only app-provided
 /// dynamic tools are executed by Swift; unsupported server requests are rejected.
+///
+/// Turns of different conversations run concurrently (2026-11-27): each `send`
+/// subscribes to the shared event stream and only handles its own thread's
+/// notifications and requests. The app allows one running turn per conversation.
 public actor CodexEngine {
     public static let threadMarker = "youngmin_codex_thread"
     private let client: CodexClient
-    private var current: Task<Void, Never>?
-    private var serial = 0
+    /// Thread-less server requests every running turn sees; only one turn answers each.
+    private var answeredRequests: Set<String> = []
 
     public init(client: CodexClient) { self.client = client }
 
     public func send(history: [ChatJSON], input: [ChatJSON], config: TurnConfig, cancellation: TurnCancellation? = nil,
                      tools: @escaping ToolExecutor) -> AsyncStream<ResponsesEvent> {
         let (stream, output) = AsyncStream<ResponsesEvent>.makeStream()
-        guard current == nil else {
-            output.yield(.turnEnded(TurnResult(status: .failed(ResponsesError(.invalidResponse, message: "이전 답변이 끝날 때까지 기다려 주세요")), responseId: nil, usage: nil, history: history, finalText: "")))
-            output.finish(); return stream
-        }
-        serial += 1
-        let turnSerial = serial
         let task = Task { [weak self] in
             guard let self else { output.finish(); return }
             await self.run(history: history, input: input, config: config, tools: tools, output: output)
-            await self.clear(turnSerial)
         }
-        current = task
         cancellation?.onCancel { task.cancel() }
         output.onTermination = { reason in if case .cancelled = reason { task.cancel() } }
         return stream
     }
 
-    private func clear(_ value: Int) { if serial == value { current = nil } }
+    /// True for the first turn that sees this thread-less request.
+    private func claim(_ requestID: ChatJSON) -> Bool {
+        let key = requestID.jsonString
+        if answeredRequests.contains(key) { return false }
+        if answeredRequests.count > 256 { answeredRequests.removeAll() }
+        answeredRequests.insert(key)
+        return true
+    }
 
     private func run(history: [ChatJSON], input: [ChatJSON], config: TurnConfig, tools: @escaping ToolExecutor,
                      output: AsyncStream<ResponsesEvent>.Continuation) async {
         let (subscription, events) = await client.subscribe()
         defer {
             Task { await client.cancelEvents(subscription) }
-            current = nil
             output.yield(.activity(nil)); output.finish()
         }
         output.yield(.activity(ActivityTracker.THINKING))
@@ -102,7 +104,7 @@ public actor CodexEngine {
                 let p = event["params"] ?? [:]
                 if method == "youngmin/fatal" { throw CodexError(p["message"]?.string ?? "Codex 실행이 중단됐어요") }
                 if let requestID = event["id"], p["threadId"] == nil {
-                    try await client.reject(id: requestID, message: "이 iOS 앱에서 지원하지 않는 요청입니다")
+                    if claim(requestID) { try await client.reject(id: requestID, message: "이 iOS 앱에서 지원하지 않는 요청입니다") }
                     continue
                 }
                 guard p["threadId"]?.string == id else { continue }

@@ -1,7 +1,8 @@
 import Foundation
 
 /// 위쪽 배너를 눌렀을 때 할 일(Kotlin `BannerAction`).
-public enum BannerAction: String, Sendable, Hashable { case settings = "SETTINGS", retry = "RETRY", notifications = "NOTIFICATIONS", none = "NONE" }
+/// `openChat`: 다른 대화로 옮긴다(그 대화의 확인 창).
+public enum BannerAction: String, Sendable, Hashable { case settings = "SETTINGS", retry = "RETRY", notifications = "NOTIFICATIONS", openChat = "OPEN_CHAT", none = "NONE" }
 
 /// `dismissible`이면 ×(나중에)로 닫을 수 있다(Kotlin `BannerSpec`).
 public struct BannerSpec: Sendable, Hashable {

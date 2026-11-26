@@ -161,6 +161,44 @@ struct ChatEmptyState: View {
 }
 
 /// 활동 줄(Kotlin `ActivityLine`): caption1Medium secondary, 1.0↔0.35 700ms 깜빡임.
+/// 다른 대화의 답변이 끝났다는 막대(Kotlin `FinishBar`): "‘…’ 답변이 끝났어요" [보기] [×]. 몇 초 뒤 사라진다.
+struct ChatFinishBar: View {
+    let text: String
+    let onOpen: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(text)
+                .font(YMFont.body2Medium)
+                .foregroundStyle(YMColor.label)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("보기", action: onOpen)
+                .font(YMFont.body2Medium)
+                .foregroundStyle(YMColor.brandPrimary)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 36)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(YMColor.labelSecondary)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(YMPressStyle())
+            .accessibilityLabel("닫기")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 14).fill(YMColor.surfaceSecondary))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
+    }
+}
+
 struct ChatActivityLine: View {
     let text: String
     @State private var dim = false

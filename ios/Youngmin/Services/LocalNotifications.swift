@@ -138,6 +138,29 @@ final class LocalNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
     private var loadedSystemCategories = false
 
+    // MARK: 답변 완료(2026-11-27)
+
+    /// 답변 완료 알림의 userInfo 키(누르면 이 대화를 연다).
+    nonisolated static let answerChatKey = "answerChat"
+    private static func answerTag(_ chatId: String) -> String { "answer-done." + chatId }
+
+    /// 채팅 화면이 안 보일 때 끝난 답변(Android 채널 answer_done, DEFAULT: 소리는 나지만 시간 민감 알림은 아님).
+    func postAnswerDone(chatId: String, text: String) {
+        let content = UNMutableNotificationContent()
+        content.title = text
+        content.body = "탭하면 대화를 열어요"
+        content.threadIdentifier = "answer_done"
+        content.interruptionLevel = .active
+        content.sound = .default
+        content.userInfo = [Self.answerChatKey: chatId]
+        center.add(UNNotificationRequest(identifier: Self.answerTag(chatId), content: content, trigger: nil), withCompletionHandler: nil)
+    }
+
+    /// 그 대화를 열었거나 지웠으면 남은 답변 완료 알림을 치운다.
+    func removeAnswerDone(chatId: String) {
+        center.removeDeliveredNotifications(withIdentifiers: [Self.answerTag(chatId)])
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         await MainActor.run { self.onPresent?() }
         return [.banner, .list, .sound]

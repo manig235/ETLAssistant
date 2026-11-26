@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ETLKit
 @testable import AssistantKit
 
 /// Kotlin `WriteApprovalGateTest` 이식 + Task 취소.
@@ -119,5 +120,46 @@ import Testing
         #expect(!gate.decide(hostId: host, requestId: request.id, approved: true))
         #expect(writes.value == 0)
         #expect(gate.pending().isEmpty)
+    }
+
+    /// 대화마다 따로 답하기(2026-11-27): 요청은 그 도구를 부른 대화에 묶이고, 턴 경계는 그 대화의 요청만 거절한다.
+    @Test func turnBoundaryCancelsOnlyThatConversationsReview() async throws {
+        let gate = WriteApprovalGate()
+        let host = gate.attachHost()
+        let requests = RequestObserver(gate)
+        let writes = Counter()
+        defer { gate.cancelAll() }
+        let a = Task { () -> Bool in
+            do {
+                _ = try await ToolOrigin.$chatId.withValue("chat-a") { try await gate.execute("add", "A") { writes.inc() } }
+                return false
+            } catch { return error is Denied }
+        }
+        let ra = try #require(await requests.next())
+        let b = Task { try await ToolOrigin.$chatId.withValue("chat-b") { try await gate.execute("add", "B") { writes.inc() } } }
+        let rb = try #require(await requests.next())
+        #expect(ra.origin == "chat-a")
+        #expect(rb.origin == "chat-b")
+        gate.cancel(origin: "chat-a")
+        #expect(await a.value)
+        #expect(gate.pending().map(\.id) == [rb.id])
+        #expect(!gate.decide(hostId: host, requestId: ra.id, approved: true))
+        #expect(gate.decide(hostId: host, requestId: rb.id, approved: true))
+        #expect(try await b.value == 1)
+        #expect(writes.value == 1)
+    }
+
+    @Test func unknownOriginIsCancelledByAnyTurnBoundary() async throws {
+        let gate = WriteApprovalGate()
+        _ = gate.attachHost()
+        let requests = RequestObserver(gate)
+        let writes = Counter()
+        defer { gate.cancelAll() }
+        let call = deniedCall(gate, "add", "?", writes)
+        let r = try #require(await requests.next())
+        #expect(r.origin == nil)
+        gate.cancel(origin: "chat-x")
+        #expect(await call.value)
+        #expect(writes.value == 0)
     }
 }
