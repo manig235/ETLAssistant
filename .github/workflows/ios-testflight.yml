@@ -20,6 +20,10 @@ on:
       - 'ios/Youngmin.xcodeproj/project.pbxproj'
       - 'ios/Youngmin/Info.plist'
       - 'ios/*/PrivacyInfo.xcprivacy'
+  # Temporary: lets the feature branch run the credential-free checks before the workflow is on main.
+  push:
+    branches:
+      - claude/ios-testflight
 
 permissions:
   contents: read
