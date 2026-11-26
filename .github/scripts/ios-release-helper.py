@@ -166,7 +166,7 @@ def app_only_project(args):
     seal intact. Every edit must match exactly once, so a project restructure
     fails here loudly instead of silently shipping extensions.
     """
-    source, dest = Path(args.source), Path(args.dest)
+    source, dest = Path(args.source).resolve(), Path(args.dest).resolve()
     require(dest.parent == source.parent, "The copy must sit next to the original project (relative source paths)")
     text = (source / "project.pbxproj").read_text()
     require(text.count(APP_TARGET_DEPENDENCIES) == 1, "App target dependency list changed; update ios-release-helper.py")

@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import importlib.util
 import io
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -60,6 +61,18 @@ class AppOnlyProjectTests(unittest.TestCase):
             scheme = (dest / "xcshareddata/xcschemes/Youngmin.xcscheme").read_text()
             self.assertIn("container:YoungminAppOnly.xcodeproj", scheme)
             self.assertNotIn("container:Youngmin.xcodeproj", scheme)
+
+    def test_accepts_relative_source_and_absolute_destination(self):
+        with tempfile.TemporaryDirectory() as temp:
+            shutil.copytree(ROOT / "ios/Youngmin.xcodeproj", Path(temp) / "ios/Youngmin.xcodeproj")
+            previous = os.getcwd()
+            os.chdir(temp)
+            try:
+                quiet(release.app_only_project, type("A", (), {
+                    "source": "ios/Youngmin.xcodeproj", "dest": f"{temp}/ios/YoungminAppOnly.xcodeproj"}))
+            finally:
+                os.chdir(previous)
+            self.assertTrue((Path(temp) / "ios/YoungminAppOnly.xcodeproj/project.pbxproj").is_file())
 
     def test_changed_project_fails_loudly(self):
         with tempfile.TemporaryDirectory() as temp:
