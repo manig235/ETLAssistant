@@ -79,6 +79,10 @@ public struct WidgetSnapshot: Codable, Hashable, Sendable {
         TimetableWidgetLogic.week(weekly, changes, EtlLogic.kstParts(now).day, filter)
     }
 
+    public func todayClasses(_ now: Date) -> TodayClassesWidgetLogic.Today {
+        TodayClassesWidgetLogic.today(weekly, changes, now, filter)
+    }
+
     public func nextClass(_ now: Date) -> TimetableWidgetLogic.NextClass? {
         TimetableWidgetLogic.nextClass(weekly, changes, now, filter)
     }
@@ -153,6 +157,10 @@ public enum WidgetTimelineLogic {
         }
         if let s {
             for item in s.deadlineItems(now) where item.due <= end { dates.append(item.due) }
+            // 오늘 수업 목록(중간 크기 시간표)의 진행 중·끝남 표시.
+            for row in s.todayClasses(now).rows {
+                for t in [row.startsAt, row.endsAt] where t > now && t <= end { dates.append(t) }
+            }
             var at = now
             for _ in 0..<64 {
                 guard let next = s.nextClass(at), next.switchesAt <= end, next.switchesAt > at else { break }

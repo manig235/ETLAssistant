@@ -48,6 +48,18 @@ final class YoungminUITests: XCTestCase {
         app.buttons["설정"].tap()
         XCTAssertTrue(app.staticTexts["ChatGPT 계정"].waitForExistence(timeout: 10))
         capture("04-settings")
+        // 기타 → 홈 화면에 위젯 추가하기(iOS는 안내 화면).
+        let widgetGuide = app.staticTexts["홈 화면에 위젯 추가하기"]
+        for _ in 0..<15 {
+            if widgetGuide.exists && widgetGuide.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(widgetGuide.exists && widgetGuide.isHittable, "Widget guide row must be reachable")
+        widgetGuide.tap()
+        XCTAssertTrue(app.staticTexts["위젯 종류"].waitForExistence(timeout: 10))
+        capture("04b-widget-guide")
+        app.buttons["뒤로"].tap()
+        XCTAssertTrue(app.staticTexts["처음 안내 다시 보기"].waitForExistence(timeout: 10))
         app.buttons["뒤로"].tap()
 
         for (title, screenshot) in [("내 일정", "05-schedule"), ("시간표", "06-timetable"), ("알림 기록", "07-notifications")] {

@@ -273,7 +273,12 @@ HyperLink: 확인 중 "확인하는 중…"(비활성) / 새 버전 있음 "새 
 - Android: `chat/SettingsScreen.kt:893`, kind dialog
 - 제목 "홈 화면에 위젯 추가하기". 본문 LinkRow 5개: "일정 · 2×2", "일정 · 2×1", "시간표 · 4×4", "시간표 · 4×6", "다음 수업 · 2×1". 버튼 "닫기".
 - 행 누르면 닫고 `requestPinAppWidget`(런처의 위젯 추가 확인 → `ext-widget-picker`). 지원 안 되면 긴 토스트 "홈 화면을 길게 누르고 위젯 목록에서 영민이를 선택해 주세요."
-- SwiftUI: iOS는 앱에서 위젯을 추가할 수 없다 → 같은 제목의 시트에 "홈 화면을 길게 누르고 + → 영민이" 안내와 각 위젯 미리보기만. 크기 이름은 iOS 패밀리(작게/크게)로 바뀜.
+- SwiftUI: iOS는 앱에서 위젯을 추가할 수 없다 → 같은 제목의 안내 화면(`WidgetGuideView`, push, 2026-11-27 구현).
+  - 홈 화면 단계: 빈 곳 길게 누르기 → 왼쪽 위 "편집" → "위젯 추가" → 목록에서 "영민이"(검색 가능) → 좌우로 넘겨 일정·시간표·다음 수업과 크기 고르기 → "위젯 추가" → "완료".
+  - 위젯 종류 카드: 일정 "작게 · 중간 · 크게 · 잠금 화면", 시간표 "중간 · 크게 · 아주 크게(iPad)", 다음 수업 "작게 · 잠금 화면". 미리보기 그림은 넣지 않았다.
+  - 메모: iOS 18부터 편집 중 위젯 모서리를 끌어 지원 크기 사이에서 바꿀 수 있음, 아주 크게는 iPad 전용, 위젯은 앱이 저장해 둔 정보로 그림.
+  - 잠금 화면 단계: 잠금 화면 길게 누르기 → "사용자화" → "잠금 화면" → 시계 아래 위젯 영역 → "영민이"에서 일정·다음 수업.
+  - 가상 eTL: 행 설명 "위젯에는 실제 eTL 자료만 보여요", 안내 화면 위 주의 배너.
 
 ## settings-feedback-dialog — 건의사항 · 오류 제보
 
@@ -636,7 +641,7 @@ HyperLink: 확인 중 "확인하는 중…"(비활성) / 새 버전 있음 "새 
 - 남은 시간 문구: "곧 마감"(1분 미만) / "N분 남음" / "N시간 M분 남음" / "N일 N시간 남음".
 - 동작: 머리·빈 곳·빈 문구 → `my-schedule`; 내 마감/시험 행 → `my-schedule-edit`(그 항목); 과제 행 → `ext-etl`; "○" → 그 회차 완료(앱 안 열림, 다시 그림) → `widget-deadlines`.
 - 갱신: 15분마다 다시 그림(네트워크 없음), 1시간마다 동기화, 마감·KST 자정 경계에 다시 그림, 데이터 저장 때마다.
-- iOS 메모: WidgetKit `systemSmall`(2×2에 해당; 크기 조절 불가 → 행 수 고정 2~3개) 또는 `systemMedium`. "○" 완료 → iOS 17 interactive widget `Button(intent: CompleteDeadlineIntent)`. 타임라인: 마감 경계·자정마다 entry, `.after(15분)`. 다크 색은 같은 hex를 Asset 색으로. 모서리 20dp는 iOS가 강제(컨테이너 배경 `containerBackground`)라 다름.
+- iOS 메모: WidgetKit `systemSmall`(2×2에 해당) · `systemMedium` · `systemLarge`(2026-11-27). 세 크기 모두 안드로이드처럼 실제 높이·글자 배율로 행 수를 계산해(`DeadlineWidgetLogic.capacity`) 들어가는 만큼 보인다. "○" 완료 → iOS 17 interactive widget `Button(intent: CompleteDeadlineIntent)`. 타임라인: 마감 경계·자정마다 entry, `.after(15분)`. 다크 색은 같은 hex를 Asset 색으로. 모서리 20dp는 iOS가 강제(컨테이너 배경 `containerBackground`)라 다름.
 
 ## widget-deadlines-compact — 일정 위젯 2×1
 
@@ -653,12 +658,16 @@ HyperLink: 확인 중 "확인하는 중…"(비활성) / 새 버전 있음 "새 
   블록: 모서리 3, 색 8가지 `#9ACBF0 #E5AFBC #AFA9E4 #88CDBD #ECC596 #E3CC8E #C6B1DD #B4CE9E`(휴강은 구분선색), 글자 11sp bold `rgb(29,42,62)`(휴강은 보조색), 가운데 정렬, 최대 6줄, 내용 "휴강 · {과목}" / "보강 · {과목}" / "{과목}" + (3줄 이상 들어가면) "\n{강의실}". 지금 시각: 오늘 열에 1.3 강조색 가로선 + 2.2 반지름 점.
 - 동작: 어디든 → `timetable`.
 - iOS 메모: `systemLarge`. 비트맵 대신 위젯 SwiftUI 뷰에서 `Canvas`/`GeometryReader`로 같은 격자를 그림. 지금 시각 선은 타임라인 entry(수업 경계·15분)로 근사.
+- iOS 중간 크기(`systemMedium`, 2026-11-27, 안드로이드에 없음): 격자 대신 **오늘 수업 목록**(`TodayClassesWidgetLogic`). 머리 "오늘 수업"(14 bold 강조색) + 오른쪽 "11/27(금)"(11 보조색).
+  줄: 과목색 막대 4×16 · "09:30~10:45"(12, 숫자 고정폭, 진행 중이면 강조색 bold) · 과목(13 bold, 보강은 "보강 · 과목") · 오른쪽 강의실(11 보조색). 줄 높이 24×배율, 진행 중은 강조색 12% 배경, 끝난 수업은 흐리게.
+  휴강으로 빠진 수업은 없고 보강은 넣는다. 시간표에서 숨긴 과목 제외. 줄이 모자라면 끝난 수업부터 빼고 "+N개 더".
+  오늘 수업이 없으면 "오늘은 수업이 없어요" + "다음 수업 · {내일|{요}요일} HH:mm" + 과목·강의실(이번 주 일요일까지), 없으면 "이번 주 남은 수업이 없어요". 다 끝났으면 흐린 목록 아래에 다음 수업 한 줄(없으면 "이번 주 남은 수업이 없어요").
 
 ## widget-timetable-tall — 시간표 위젯 4×6
 
 - Android: `TallTimetableWidgetProvider`(`widget/HomeWidgets.kt:276`), 같은 렌더·레이아웃, 정보 `timetable_tall_widget.xml`(min 250×390dp, 최소 조절 250×250, 4×6). 목록 이름 "영민이 · 시간표 4×6". 기본 높이 390dp로 그림.
 - 동작: → `timetable`.
-- iOS 메모: iPhone에 4×6 패밀리 없음(`systemExtraLarge`는 iPad 전용) → `systemLarge` 하나로 합치거나 생략.
+- iOS 메모: iPhone에 4×6 패밀리 없음 → 아이폰은 `systemLarge` 하나. iPad는 `systemExtraLarge`(2026-11-27)로 같은 격자를 글자·축 1.3배, 머리 18pt, 여백 18로 그린다. 아이폰 위젯 갤러리에는 아주 크게가 나오지 않는 것이 정상이다.
 
 ## widget-next-class — 다음 수업 위젯 2×1
 

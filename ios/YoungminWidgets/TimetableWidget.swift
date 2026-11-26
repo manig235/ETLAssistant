@@ -3,53 +3,207 @@ import NotifyKit
 import SwiftUI
 import WidgetKit
 
-/// 시간표 위젯(안드로이드 4×4 `TimetableWidgetProvider`·4×6 `TallTimetableWidgetProvider` → systemLarge 하나).
-/// 이번 주(KST 월~) 수업과 등록한 휴강·보강. 휴강은 흐린 블록과 `휴강` 문구로 남긴다. 누르면 앱의 시간표.
+/// 시간표 위젯(안드로이드 4×4 `TimetableWidgetProvider`·4×6 `TallTimetableWidgetProvider`).
+/// - systemLarge: 이번 주(KST 월~) 격자. 등록한 휴강은 흐린 블록과 `휴강` 문구로 남긴다.
+/// - systemExtraLarge(iPad에만 있음): 같은 격자를 더 큰 글자·여백으로.
+/// - systemMedium(iOS에만 있음): 격자는 너무 작아서 오늘 수업 목록(휴강 제외, 보강 포함). 오늘 남은 수업이 없으면 이번 주 다음 수업 날의 첫 수업.
+/// 누르면 앱의 시간표.
 struct TimetableWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetKinds.timetable, provider: SnapshotProvider()) { entry in
             TimetableWidgetView(entry: entry)
         }
         .configurationDisplayName("시간표")
-        .description("이번 주 수업과 등록한 휴강·보강을 한눈에 볼 수 있어요.")
-        .supportedFamilies([.systemLarge])
+        .description("중간 크기는 오늘 수업을, 큰 크기는 이번 주 수업과 등록한 휴강·보강을 보여줘요.")
+        .supportedFamilies([.systemMedium, .systemLarge, .systemExtraLarge])
         .contentMarginsDisabled()
     }
 }
 
 struct TimetableWidgetView: View {
     let entry: SnapshotEntry
+    @Environment(\.widgetFamily) private var family
     @Environment(\.dynamicTypeSize) private var dynamicType
 
+    /// 시간표 위젯 글자 배율(격자와 같이 1~1.5).
+    private var scale: Double { min(max(dynamicType.widgetFontScale, 1), 1.5) }
+
     var body: some View {
+        Group {
+            if family == .systemMedium {
+                TodayClassesView(today: entry.snapshot?.todayClasses(entry.date), scale: scale)
+            } else {
+                weekView
+            }
+        }
+        .containerBackground(WidgetPalette.background, for: .widget)
+        .widgetURL(WidgetLinks.url(.timetable))
+    }
+
+    /// 큰 크기·아주 큰 크기(iPad): 이번 주 격자. 아주 큰 크기는 글자와 여백을 키운다.
+    private var weekView: some View {
         let week = entry.snapshot?.week(entry.date)
-        VStack(spacing: 0) {
+        let extra = family == .systemExtraLarge
+        let gridScale = scale * (extra ? 1.3 : 1)
+        return VStack(spacing: 0) {
             Text("시간표")
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: extra ? 18 : 15, weight: .bold))
                 .kerning(0.6)
                 .foregroundStyle(WidgetPalette.accent)
-                .frame(maxWidth: .infinity, minHeight: 26)
+                .frame(maxWidth: .infinity, minHeight: extra ? 34 : 26)
             if let week, !week.entries.isEmpty {
-                WeekGrid(week: week, now: entry.date, fontScale: min(max(dynamicType.widgetFontScale, 1), 1.5))
+                WeekGrid(week: week, now: entry.date, fontScale: gridScale)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(week.entries.map(describe).joined(separator: "\n"))
             } else {
                 Text("등록된 수업이 없어요\n눌러서 시간표 열기")
-                    .font(.system(size: 11))
+                    .font(.system(size: extra ? 14 : 11))
                     .foregroundStyle(WidgetPalette.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .padding(10)
-        .containerBackground(WidgetPalette.background, for: .widget)
-        .widgetURL(WidgetLinks.url(.timetable))
+        .padding(extra ? 18 : 10)
     }
 
     private func describe(_ e: TimetableWidgetLogic.Entry) -> String {
         "\(e.date.monthValue)/\(e.date.dayOfMonth) \(e.row.start)~\(e.row.end) \(e.row.course)" +
             (e.row.room.map { " \($0)" } ?? "") + (e.cancelled ? " 휴강" : " \(e.row.kind)")
+    }
+}
+
+/// 중간 크기: 오늘 수업 목록. 줄 수는 실제 높이와 글자 크기로 정한다(`TodayClassesWidgetLogic.capacity`).
+private struct TodayClassesView: View {
+    /// nil이면 앱이 아직 위젯 사본을 쓰지 않았다.
+    let today: TodayClassesWidgetLogic.Today?
+    let scale: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                if let today, !today.rows.isEmpty {
+                    list(today, height: Double(geo.size.height))
+                } else {
+                    empty
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+        .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 14))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("오늘 수업")
+                .font(.system(size: 14 * scale, weight: .bold))
+                .foregroundStyle(WidgetPalette.accent)
+            Spacer(minLength: 4)
+            if let today {
+                Text(TodayClassesWidgetLogic.dateLabel(today.date))
+                    .font(.system(size: 11 * scale))
+                    .foregroundStyle(WidgetPalette.secondary)
+            }
+        }
+        .lineLimit(1)
+        .frame(minHeight: 22 * scale)
+    }
+
+    @ViewBuilder
+    private func list(_ today: TodayClassesWidgetLogic.Today, height: Double) -> some View {
+        let capacity = TodayClassesWidgetLogic.capacity(height, scale)
+        // 오늘 수업이 다 끝났으면 마지막 한 줄은 다음 수업 안내에 쓴다.
+        let window = TodayClassesWidgetLogic.window(today.rows, today.hasRemaining ? capacity : max(capacity - 1, 1))
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(window.rows.enumerated()), id: \.offset) { _, row in
+                rowView(row)
+            }
+            if window.more > 0 {
+                footer("+\(window.more)개 더")
+            } else if !today.hasRemaining {
+                footer(TodayClassesWidgetLogic.nextMessage(today) + (today.next.map { " \($0.row.course)" } ?? ""))
+            }
+        }
+    }
+
+    private func rowView(_ row: TodayClassesWidgetLogic.Row) -> some View {
+        let r = row.entry.row
+        let pair = WidgetPalette.coursePairs[WidgetText.colorIndex(r.courseId, r.course, WidgetPalette.coursePairs.count)]
+        let ongoing = row.phase == .ongoing
+        return HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(pair.0)
+                .frame(width: 4, height: 16 * scale)
+            Text(TodayClassesWidgetLogic.timeRange(r))
+                .font(.system(size: 12 * scale, weight: ongoing ? .bold : .regular).monospacedDigit())
+                .foregroundStyle(ongoing ? WidgetPalette.accent : WidgetPalette.secondary)
+                .fixedSize()
+            Text(WidgetText.blockTitle(row.entry))
+                .font(.system(size: 13 * scale, weight: .bold))
+                .foregroundStyle(WidgetPalette.text)
+                .layoutPriority(1)
+            Spacer(minLength: 4)
+            if let room = WidgetText.room(r.room) {
+                Text(room)
+                    .font(.system(size: 11 * scale))
+                    .foregroundStyle(WidgetPalette.secondary)
+            }
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 6)
+        .frame(height: 24 * scale)
+        .background(RoundedRectangle(cornerRadius: 6).fill(ongoing ? WidgetPalette.accent.opacity(0.12) : Color.clear))
+        .opacity(row.phase == .done ? 0.45 : 1)
+    }
+
+    private func footer(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11 * scale))
+            .foregroundStyle(WidgetPalette.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .frame(height: 22 * scale, alignment: .leading)
+    }
+
+    /// 오늘 수업이 없거나 사본이 없을 때.
+    @ViewBuilder
+    private var empty: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let today {
+                Text(TodayClassesWidgetLogic.emptyMessage(today))
+                    .font(.system(size: 12 * scale))
+                    .foregroundStyle(WidgetPalette.secondary)
+                Text(TodayClassesWidgetLogic.nextMessage(today))
+                    .font(.system(size: 11 * scale, weight: .bold))
+                    .foregroundStyle(WidgetPalette.accent)
+                    .padding(.top, 4)
+                if let next = today.next {
+                    Text(next.row.course + (WidgetText.room(next.row.room).map { " · \($0)" } ?? ""))
+                        .font(.system(size: 14 * scale, weight: .bold))
+                        .foregroundStyle(WidgetPalette.text)
+                }
+            } else {
+                Text("등록된 수업이 없어요\n눌러서 시간표 열기")
+                    .font(.system(size: 11 * scale))
+                    .foregroundStyle(WidgetPalette.secondary)
+            }
+        }
+        .lineLimit(2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var accessibilityText: String {
+        guard let today else { return "등록된 수업이 없어요. 시간표 열기" }
+        let head = "오늘 수업, \(TodayClassesWidgetLogic.dateLabel(today.date))"
+        var parts = [head] + today.rows.map(TodayClassesWidgetLogic.accessibilityLine)
+        if !today.hasRemaining {
+            parts.append(TodayClassesWidgetLogic.emptyMessage(today))
+            parts.append(TodayClassesWidgetLogic.nextMessage(today) + (today.next.map { " \($0.row.course)" } ?? ""))
+        }
+        return parts.joined(separator: ". ") + ". 시간표 열기"
     }
 }
 
@@ -174,6 +328,12 @@ private struct WeekGrid: View {
 }
 
 #Preview(as: .systemLarge) {
+    TimetableWidget()
+} timeline: {
+    SnapshotEntry(date: Date(), snapshot: WidgetSamples.snapshot(Date()))
+}
+
+#Preview(as: .systemMedium) {
     TimetableWidget()
 } timeline: {
     SnapshotEntry(date: Date(), snapshot: WidgetSamples.snapshot(Date()))

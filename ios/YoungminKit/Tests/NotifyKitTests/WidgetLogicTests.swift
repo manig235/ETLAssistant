@@ -190,6 +190,87 @@ struct WidgetLogicTests {
         #expect(WidgetText.colorIndex(nil, "abc", 9) == 96354 % 9)
     }
 
+    // ---- 중간 크기 시간표: 오늘 수업 ----
+
+    @Test func todayListsClassesWithPhasesAndNextDayOnlyWhenNothingRemains() {
+        let early = TodayClassesWidgetLogic.today(weekly(), [], at("08:00"))
+        #expect(early.date == monday)
+        #expect(early.rows.map { $0.entry.row.courseId } == [10])
+        #expect(early.rows.map(\.phase) == [.upcoming])
+        #expect(early.next == nil && early.hasRemaining)
+        #expect(TodayClassesWidgetLogic.today(weekly(), [], at("09:30")).rows.map(\.phase) == [.ongoing])
+
+        let finished = TodayClassesWidgetLogic.today(weekly(), [], at("10:00"))
+        #expect(finished.rows.map(\.phase) == [.done])
+        #expect(finished.next?.row.courseId == -100)
+        #expect(TodayClassesWidgetLogic.emptyMessage(finished) == "오늘 수업이 끝났어요")
+        #expect(TodayClassesWidgetLogic.nextMessage(finished) == "다음 수업 · 수요일 10:00")
+
+        let tuesday = TodayClassesWidgetLogic.today(weekly(), [], at("08:00", 1))
+        #expect(tuesday.rows.isEmpty)
+        #expect(TodayClassesWidgetLogic.emptyMessage(tuesday) == "오늘은 수업이 없어요")
+        #expect(TodayClassesWidgetLogic.nextMessage(tuesday) == "다음 수업 · 내일 10:00")
+    }
+
+    @Test func todayDropsCancelledClassesKeepsMakeupsAndStopsAtSunday() {
+        let changes = [
+            TimetableLogic.Change(1, monday, "휴강", "정규 수업", courseId: 10),
+            TimetableLogic.Change(2, monday, "보강", "정규 수업", courseId: 10, start: "13:00", end: "14:00", room: "302-201"),
+        ]
+        let today = TodayClassesWidgetLogic.today(weekly(), changes, at("08:00"))
+        #expect(today.rows.count == 1)
+        #expect(today.rows[0].entry.row.kind == "보강")
+        #expect(today.rows[0].startsAt == at("13:00"))
+        #expect(TodayClassesWidgetLogic.timeRange(today.rows[0].entry.row) == "13:00~14:00")
+        #expect(TodayClassesWidgetLogic.accessibilityLine(today.rows[0]) == "13시부터 14시까지 보강 · 정규 수업, 302-201")
+
+        // 목요일 이후 이번 주에는 수업이 없다. 다음 주 월요일 수업은 "이번 주 남은 수업"이 아니다.
+        let thursday = TodayClassesWidgetLogic.today(weekly(), [], at("08:00", 3))
+        #expect(thursday.rows.isEmpty && thursday.next == nil)
+        #expect(TodayClassesWidgetLogic.nextMessage(thursday) == "이번 주 남은 수업이 없어요")
+        #expect(TodayClassesWidgetLogic.today(nil, [], now).rows.isEmpty)
+    }
+
+    @Test func todayHonoursHiddenTimetableCourses() {
+        let filter = CourseFilter([10: .HIDE], [10: "정규 수업"], [10])
+        let today = TodayClassesWidgetLogic.today(weekly(), [], at("08:00"), filter)
+        #expect(today.rows.isEmpty)
+        #expect(today.next?.row.courseId == -100)
+        // 숨기기만 하고 "시간표에서도 숨기기"는 끈 과목은 그대로 보인다.
+        let shown = TodayClassesWidgetLogic.today(weekly(), [], at("08:00"), CourseFilter([10: .HIDE], [10: "정규 수업"]))
+        #expect(shown.rows.map { $0.entry.row.courseId } == [10])
+    }
+
+    @Test func todayWindowDropsFinishedClassesFirstThenShowsMore() {
+        func row(_ i: Int, _ phase: TodayClassesWidgetLogic.Phase) -> TodayClassesWidgetLogic.Row {
+            let entry = TimetableWidgetLogic.Entry(monday, TimetableLogic.ClassRow("09:00", "10:00", "수업\(i)", Int64(i), nil, "정규"), false)
+            return TodayClassesWidgetLogic.Row(entry: entry, startsAt: at("09:00"), endsAt: at("10:00"), phase: phase)
+        }
+        let rows = [row(1, .done), row(2, .done), row(3, .ongoing), row(4, .upcoming), row(5, .upcoming)]
+        let all = TodayClassesWidgetLogic.window(rows, 10)
+        #expect(all.rows.count == 5 && all.skippedDone == 0 && all.more == 0)
+        let fit = TodayClassesWidgetLogic.window(rows, 3)
+        #expect(fit.rows.map { $0.entry.row.courseId } == [3, 4, 5] && fit.skippedDone == 2 && fit.more == 0)
+        let partial = TodayClassesWidgetLogic.window(rows, 4)
+        #expect(partial.rows.map { $0.entry.row.courseId } == [2, 3, 4, 5] && partial.skippedDone == 1)
+        let tight = TodayClassesWidgetLogic.window(rows, 2)
+        #expect(tight.rows.map { $0.entry.row.courseId } == [3] && tight.skippedDone == 2 && tight.more == 2)
+        let upcoming = TodayClassesWidgetLogic.window((1...4).map { row($0, .upcoming) }, 3)
+        #expect(upcoming.rows.map { $0.entry.row.courseId } == [1, 2] && upcoming.more == 2)
+        #expect(TodayClassesWidgetLogic.window([row(1, .upcoming), row(2, .upcoming)], 0).rows.count == 1)
+    }
+
+    @Test func todayCapacityAndLabels() {
+        #expect(TodayClassesWidgetLogic.capacity(140, 1) == 4)
+        #expect(TodayClassesWidgetLogic.capacity(140, 1.5) == 2)
+        #expect(TodayClassesWidgetLogic.capacity(140, 0.8) == 4)
+        #expect(TodayClassesWidgetLogic.capacity(10, 1) == 1)
+        #expect(TodayClassesWidgetLogic.dateLabel(monday) == "11/23(월)")
+        #expect(WidgetText.dayLabel(monday, monday) == "오늘")
+        #expect(WidgetText.dayLabel(monday.plusDays(1), monday) == "내일")
+        #expect(WidgetText.dayLabel(monday.plusDays(4), monday) == "금요일")
+    }
+
     // ---- App Group 사본 ----
 
     @Test func snapshotRoundTripsAndDropsStaleData() {
@@ -239,6 +320,9 @@ struct WidgetLogicTests {
         #expect(dates.contains(at("09:05")))
         #expect(dates.contains(at("09:30")))
         #expect(dates.contains(at("13:07")))
+        // 오늘 수업의 시작·끝(중간 크기 시간표의 진행 중·끝남 표시).
+        #expect(dates.contains(at("09:00")))
+        #expect(dates.contains(at("10:00")))
         #expect(dates == dates.sorted())
         #expect(dates.last! <= at("14:50"))
         let late = WidgetTimelineLogic.entryDates(nil, at("22:00"), horizon: 3 * 3600)

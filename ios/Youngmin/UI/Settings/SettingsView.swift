@@ -5,7 +5,8 @@ import SwiftUI
 
 /// 설정(Kotlin `SettingsActivity` / `SettingsScreen.kt` `SettingsRoot`). 채팅 NavigationStack에 `AppRoute.settings`로 push된다.
 /// 섹션 순서는 원본 그대로: ChatGPT 계정 · eTL 토큰 · 알림 · 대화 · AI 모델 · OpenAI API 키 (고급) · 기타 · 앱 정보.
-/// 원본의 캘린더·받은 파일 섹션, 정확한 알림·배터리 행, 업데이트 알림·확인, 위젯 추가는 iOS 1단계에 없어 뺐다(INTEGRATION.md).
+/// 원본의 정확한 알림·배터리 행, 업데이트 알림·확인은 iOS에 없어 뺐다(INTEGRATION.md). 캘린더·받은 파일 섹션은 2단계에서 옮겼다.
+/// "홈 화면에 위젯 추가하기"는 iOS 앱이 위젯을 직접 추가할 수 없어 추가 순서를 알려 주는 안내 화면(`WidgetGuideView`)을 연다.
 struct SettingsView: View {
     /// 과목별 알림 화면. `AppRoute`에 과목별 알림 경로가 생기기 전까지 통합 담당이 넘겨 준다(INTEGRATION.md).
     var courseAlerts: () -> AnyView = { AnyView(SettingsPendingScreen(title: "과목별 알림")) }
@@ -478,6 +479,12 @@ private struct SettingsContent: View {
                     .buttonStyle(YMPressStyle())
                 NavigationLink(value: AppRoute.mySchedule) { SettingsLinkRowLabel(title: "내 일정") }
                     .buttonStyle(YMPressStyle())
+                // 안드로이드와 같은 자리. iOS는 앱이 위젯을 추가할 수 없어 안내 화면을 연다. 가상 eTL에서도 안내는 보이되 실제 자료만 보인다고 알린다.
+                NavigationLink { WidgetGuideView() } label: {
+                    SettingsLinkRowLabel(title: "홈 화면에 위젯 추가하기",
+                                         desc: StudyDataProfile.isDemo ? "위젯에는 실제 eTL 자료만 보여요" : nil)
+                }
+                .buttonStyle(YMPressStyle())
                 SettingsLinkRow(title: "처음 안내 다시 보기") { app.showOnboarding() }
             }
         }

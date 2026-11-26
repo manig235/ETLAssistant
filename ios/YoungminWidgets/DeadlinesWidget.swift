@@ -3,7 +3,8 @@ import NotifyKit
 import SwiftUI
 import WidgetKit
 
-/// 일정 위젯(안드로이드 2×2 `DeadlineWidgetProvider` → systemSmall/systemMedium, 2×1 `CompactDeadlineWidgetProvider` → 잠금 화면 accessoryRectangular).
+/// 일정 위젯(안드로이드 2×2 `DeadlineWidgetProvider` → systemSmall/systemMedium/systemLarge, 2×1 `CompactDeadlineWidgetProvider` → 잠금 화면 accessoryRectangular).
+/// 홈 화면 크기는 안드로이드처럼 실제 높이와 글자 크기로 줄 수를 정해 들어가는 만큼 보인다(`DeadlineWidgetLogic.capacity`).
 struct DeadlinesWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetKinds.deadlines, provider: SnapshotProvider()) { entry in
@@ -11,7 +12,7 @@ struct DeadlinesWidget: Widget {
         }
         .configurationDisplayName("일정")
         .description("가까운 과제와 내 마감을 보여줘요. 크기를 늘리면 더 많이 볼 수 있어요.")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular])
         .contentMarginsDisabled()
     }
 }
@@ -33,7 +34,7 @@ struct DeadlinesWidgetView: View {
         }
     }
 
-    // MARK: 홈 화면 (2×2)
+    // MARK: 홈 화면 (2×2에 해당: 작게·중간·크게)
 
     private var home: some View {
         GeometryReader { geo in
@@ -139,6 +140,12 @@ struct DeadlinesWidgetView: View {
 }
 
 #Preview(as: .systemSmall) {
+    DeadlinesWidget()
+} timeline: {
+    SnapshotEntry(date: Date(), snapshot: WidgetSamples.snapshot(Date()))
+}
+
+#Preview(as: .systemLarge) {
     DeadlinesWidget()
 } timeline: {
     SnapshotEntry(date: Date(), snapshot: WidgetSamples.snapshot(Date()))

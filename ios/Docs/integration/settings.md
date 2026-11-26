@@ -48,6 +48,9 @@ case .settings: SettingsView(courseAlerts: { AnyView(CourseAlertsView()) })   //
   안내 문구는 "…끝나면 이 화면으로 돌아와요."로 바꿨다(원본 "끝나면 알림이 오고…").
 - "Keystore" 문구 → "Keychain". API 키 설명의 "실행할 때만 환경변수로 넘겨요" → "OpenAI에 요청할 때만 써요".
 - eTL 토큰 "저장"은 첫 실행 안내와 같은 확인 흐름(`OnboardingModel.checkAndSaveToken`, eTL `users/self` 확인 후 저장)을 쓴다. 원본은 형식만 보고 저장.
+- "홈 화면에 위젯 추가하기"(2026-11-27): 원본은 위젯 고르기 대화상자 → `requestPinAppWidget`. iOS 앱은 위젯을 추가할 수 없어서
+  같은 자리(기타, "내 일정" 아래)의 행이 안내 화면 `WidgetGuideView`를 연다: 홈 화면 추가 순서, 위젯별 크기(작게·중간·크게, iPad 아주 크게),
+  iOS 18 모서리 끌기 크기 전환, 잠금 화면 추가 순서. 가상 eTL에서는 행 설명과 안내 배너로 "위젯에는 실제 eTL 자료만 보여요"를 알린다.
 
 ## 5. 뺀 행(iOS에 의미 없음 또는 2단계)
 
@@ -56,5 +59,4 @@ case .settings: SettingsView(courseAlerts: { AnyView(CourseAlertsView()) })   //
 - 캘린더 섹션("캘린더 연동") — 2단계
 - 받은 파일 섹션("받은 강의자료 자동 정리") — 2단계
 - 업데이트 알림 스위치, "업데이트 확인"/"새 버전 받기" 링크(App Store/TestFlight)
-- "홈 화면에 위젯 추가하기"(iOS 앱은 위젯을 추가할 수 없음) — 2단계(위젯)
 - "지금 확인"·"브리핑 미리 보내기"는 `SettingsHooks`를 채울 때만 보인다.

@@ -161,6 +161,19 @@ Kotlin `calendar/CalendarLogic.kt`(내보내기 부분)·`CalendarExport.kt`·`C
 | `final class CalendarExport(store:backend:mine:snapshot:courses:)`: `summary(showEnabled:assistantEnabled:)`, `localCalendarId`, `localPlacement`, `accountCalendars`, `syncIfEnabled(now)`, `enable`, `disable`, `switchTarget`, `icsContent`, `InsertDraft`, `insertDraft(_ assignment)`, `insertDraft(series:occurrence:)`, `onChanged`, `log` | `object CalendarExport` | 잠금으로 한 번에 하나 |
 | `final class CalendarSyncEventKit: CalendarSyncBackend` (`eventStore`, `requestAccess`, `makeEvent(draft, store)`, `rule(Recurrence)`) | — | 앱 캘린더는 로컬 소스(없으면 iCloud)에 만든다. 일정 주소 `youngmin://item/{key}`(키의 `:`→`-`, 위젯 링크와 같은 모양) |
 
+## 홈 화면 위젯 (`WidgetLogic.swift`, `WidgetGridLogic.swift`, `WidgetSnapshot.swift`, `WidgetTodayLogic.swift`)
+
+Kotlin `widget/WidgetLogic.kt`·`chat/TimetableGridLogic`. 위젯 확장(`YoungminWidgets/`)은 App Group 사본(`WidgetSnapshot`)만 읽고 그린다.
+
+| Swift | Kotlin | 설명 |
+|---|---|---|
+| `DeadlineWidgetLogic`: `Item`, `items`, `assignmentUrl`, `capacity(height, fontScale, compact:)`, `dueLabel`, `remaining`, `nextBoundary` | same | 일정 위젯(작게·중간·크게). 줄 수는 실제 높이·글자 배율로 |
+| `TimetableWidgetLogic`: `Entry`, `Week`, `NextClass`, `week`, `nextClass` | same | 시간표 격자(크게·아주 크게), 다음 수업 |
+| `WidgetGridLogic.build` | `TimetableGridLogic` | 격자 배치 |
+| `WidgetText`: `room`, `nextClassDetail`, `dayLabel`(2026-11-27), `blockTitle`, `colorIndex` | same | |
+| `TodayClassesWidgetLogic`(2026-11-27, iOS만): `Phase`(`done/ongoing/upcoming`), `Row`, `Today`(`rows`, `next`, `hasRemaining`), `today(weekly, changes, now, filter)`, `capacity(height, fontScale)`, `window(rows, capacity)`, `timeRange`, `dateLabel`, `emptyMessage`, `nextMessage`, `accessibilityLine` | — | 시간표 위젯 중간 크기의 오늘 수업 목록. 휴강 제외·보강 포함, `CourseFilter.timetableDay`로 숨긴 과목 제외. 오늘 남은 수업이 없으면 일요일까지 다음 수업 날의 첫 수업. 칸이 모자라면 끝난 수업부터 빼고 "+N개 더" |
+| `WidgetSnapshot` (`make`, `encoded`/`decode`, `deadlineItems`, `week`, `todayClasses`, `nextClass`, `markingDone`), `WidgetCompletion`, `WidgetTimelineLogic.entryDates` | — | 타임라인은 15분·마감·다음 수업 전환·오늘 수업 시작/끝·KST 자정 |
+
 ## 옮기지 않은 것(안드로이드 전용)
 
 `NotifyScheduler`(WorkManager 주기·브리핑 예약), `NotifyCheckWorker`, `BriefWorker`, `DeadlineAlarm`(정확한 알람), `SystemEventReceiver`(재부팅·시간 변경),

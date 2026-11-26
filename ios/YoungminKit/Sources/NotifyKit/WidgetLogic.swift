@@ -184,14 +184,16 @@ public enum WidgetText {
 
     /// 다음 수업 두 번째 줄: `{오늘|내일|{요}요일} {HH:mm}[ · {강의실}]`.
     public static func nextClassDetail(_ next: TimetableWidgetLogic.NextClass, _ now: Date) -> String {
-        let today = EtlLogic.kstParts(now).day
-        let day: String
-        switch next.entry.date {
-        case today: day = "오늘"
-        case today.plusDays(1): day = "내일"
-        default: day = TimetableLogic.weekdayOf(next.entry.date) + "요일"
+        "\(dayLabel(next.entry.date, EtlLogic.kstParts(now).day)) \(next.entry.row.start)" + (room(next.entry.row.room).map { " · \($0)" } ?? "")
+    }
+
+    /// `오늘` / `내일` / `{요}요일`.
+    public static func dayLabel(_ date: DayDate, _ today: DayDate) -> String {
+        switch date {
+        case today: return "오늘"
+        case today.plusDays(1): return "내일"
+        default: return TimetableLogic.weekdayOf(date) + "요일"
         }
-        return "\(day) \(next.entry.row.start)" + (room(next.entry.row.room).map { " · \($0)" } ?? "")
     }
 
     /// 시간표 블록 글: `휴강 · {과목}` / `보강 · {과목}` / `{과목}`.
