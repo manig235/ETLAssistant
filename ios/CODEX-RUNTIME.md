@@ -37,6 +37,16 @@ GPT-5.5 고정값과 모델 화이트리스트를 제거하고, 공식 엔진이
 
 앱 내부 엔진은 시작할 때 자격 증명이나 외부 요청 없이 Code Mode 세션을 만들고, JavaScript에서 네이티브 도구를 호출해 `42`를 받는 자체 검사를 수행한다.
 
+## 원격 측정 끄기 (Android와 같게)
+
+고정한 Codex의 앱 내부(in-process) 서버는 설정을 비우면 사용 분석을 켠 채로 시작한다. `analytics.enabled`가 없으면 `AnalyticsEventsClient`가 전송 큐를 만들고(`analytics/src/client.rs`의 `new_with_runtime`: `Some(false)`가 아니면 켜짐) `{chatgpt 백엔드}/codex/analytics-events/events`로 스레드·턴·토큰 사용량·도구 호출·오류 이벤트를 보낸다. stdio app-server의 `--analytics-default-enabled` 기본값은 이 경로와 상관없다. `feedback.enabled`도 기본이 켜짐이며 `feedback/upload`(Sentry 업로드)와 Guardian 검토 보관을 허용한다. 지표 내보내기 기본값은 Statsig다(`core/src/config/otel.rs`).
+
+`bridge/src/telemetry.rs`가 Android `config.toml`과 같은 값을 엔진 시작 설정과 스레드마다 다시 읽는 설정에 CLI 계층 덮어쓰기로 넣는다: `analytics.enabled=false`, `feedback.enabled=false`, `otel.exporter`·`otel.trace_exporter`·`otel.metrics_exporter="none"`, `otel.log_user_prompt`·`otel.log_agent_responses=false`. CLI 계층은 `CODEX_HOME/config.toml`보다 우선한다. 요청의 `config` 맵은 CLI 덮어쓰기 뒤에 합쳐지므로(`app-server/src/config_manager.rs`) 브리지가 `analytics`·`feedback`·`otel` 키를 지우고, `feedback/upload` 요청은 엔진에 넘기지 않고 거절한다. 앱 내부 서버는 `otel_init::build_provider`를 부르지 않으므로 OpenTelemetry 내보내기는 원래 만들어지지 않는다.
+
+끌 수 없는 것: 대화 요청 자체의 메타데이터다. User-Agent(OS 종류·버전·CPU 구조, Codex 버전, 클라이언트 `youngmin_ios`), `x-codex-installation-id`(설치마다 만든 임의 UUID, `CODEX_HOME`에 저장), `chatgpt-account-id`, 세션·스레드·턴 ID, 요청 시각 헤더(`x-codex-ws-stream-request-start-ms`, `turn_started_at_unix_ms`), `analytics_enabled: false` 표시가 OpenAI로 간다. App Store 개인정보 레이블은 이를 포함해 [Docs/privacy-labels.md](Docs/privacy-labels.md)에 선언했다.
+
+검증: Actions → **iOS Codex Runtime Probe** → component `bridge`, operation `bridge-test`가 macOS에서 브리지 단위 테스트를 돌린다. 실제 설정 로더로 `config.toml`에 원격 측정을 켜 두어도 꺼진 값이 나오는지, Codex 기본값이 여전히 켜짐인지(업그레이드 때 전제 확인), 요청 덮어쓰기 제거와 `feedback/upload` 거절을 확인한다. 기기에서 네트워크를 직접 캡처해 확인하지는 않았다.
+
 기존 SIWC 토큰을 Codex 서버로 보내거나 로그인 client ID만 교체하지 않는다. 공식 Codex의 인증과 실제 엔진을 함께 사용한다. API 키 모드는 기존 Swift Responses 클라이언트를 사용한다.
 
 ## 빌드 재현
