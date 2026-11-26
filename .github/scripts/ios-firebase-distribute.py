@@ -96,6 +96,14 @@ def run(args, *, data=None, capture=False, env=None):
                 if marker in diagnostic:
                     reason = ": " + label
                     break
+        elif command == "openssl":
+            if len(args) > 1 and args[1] in {"pkcs12", "x509"}:
+                command += " " + args[1]
+            diagnostic = (result.stderr or b"").lower()
+            if b"mac verify error" in diagnostic or b"mac verification failed" in diagnostic:
+                reason = ": PKCS12_PASSWORD_REJECTED"
+            elif b"unsupported" in diagnostic or b"unknown pbe algorithm" in diagnostic:
+                reason = ": PKCS12_UNSUPPORTED_ENCRYPTION"
         raise RuntimeError(f"{command} failed (exit {result.returncode}){reason}")
     return result.stdout if capture else None
 
@@ -104,6 +112,22 @@ def private_file(path, data):
     with path.open("xb") as stream:
         path.chmod(0o600)
         stream.write(data)
+
+
+def verify_p12_password(env):
+    require(("IOS_DISTRIBUTION_P12_BASE64", "IOS_DISTRIBUTION_P12_PASSWORD"), env)
+    with tempfile.TemporaryDirectory(prefix="youngmin-p12-check-", dir=env.get("RUNNER_TEMP")) as directory:
+        source = Path(directory) / "distribution.p12"
+        private_file(source, decode_secret(env["IOS_DISTRIBUTION_P12_BASE64"], "IOS_DISTRIBUTION_P12_BASE64"))
+        child_env = dict(os.environ, YOUNGMIN_P12_VERIFY_PASSWORD=env["IOS_DISTRIBUTION_P12_PASSWORD"])
+        try:
+            run(["openssl", "pkcs12", "-in", source, "-passin", "env:YOUNGMIN_P12_VERIFY_PASSWORD", "-noout"],
+                capture=True, env=child_env)
+        except RuntimeError as error:
+            classification = next((label for label in ("PKCS12_PASSWORD_REJECTED", "PKCS12_UNSUPPORTED_ENCRYPTION")
+                                   if label in str(error)), "PKCS12_INVALID_INPUT")
+            raise ValueError("P12 verification failed: " + classification
+                             + "; verify the original P12 and IOS_DISTRIBUTION_P12_PASSWORD") from None
 
 
 def compatible_p12(source, temp, password):
@@ -382,13 +406,16 @@ def main():
     # GitHub cancellation must still run the temporary keychain/profile cleanup.
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "check-signing", "build", "publish"))
+    parser.add_argument("command", choices=("check", "check-p12", "check-signing", "build", "publish"))
     parser.add_argument("--publish", action="store_true", help="Also check Firebase settings")
     args = parser.parse_args()
     try:
         if args.command == "check":
             check_config(os.environ, args.publish or os.environ.get("PUBLISH_TO_FIREBASE") == "true")
             print("Required distribution settings are present.")
+        elif args.command == "check-p12":
+            verify_p12_password(os.environ)
+            print("Verified the P12 MAC and password with OpenSSL.")
         elif args.command in ("check-signing", "build"):
             build(os.environ, verify_only=args.command == "check-signing")
         else:

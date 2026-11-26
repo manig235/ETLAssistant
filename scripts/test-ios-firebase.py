@@ -241,6 +241,26 @@ class ExportVerificationTests(unittest.TestCase):
 
 
 class P12CompatibilityTests(unittest.TestCase):
+    def test_password_verification_hides_errors_and_removes_temporary_file(self):
+        for failure in (None, "PKCS12_PASSWORD_REJECTED secret-marker-output"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                env = dict(settings(), RUNNER_TEMP=str(root))
+                def fake_run(args, **kwargs):
+                    self.assertIn("-noout", args)
+                    self.assertNotIn(env["IOS_DISTRIBUTION_P12_PASSWORD"], args)
+                    if failure:
+                        raise RuntimeError(failure)
+                    return b""
+                with mock.patch.object(distribution, "run", side_effect=fake_run):
+                    if failure:
+                        with self.assertRaisesRegex(ValueError, "PKCS12_PASSWORD_REJECTED") as error:
+                            distribution.verify_p12_password(env)
+                        self.assertNotIn("secret-marker", str(error.exception))
+                    else:
+                        distribution.verify_p12_password(env)
+                self.assertEqual(list(root.iterdir()), [])
+
     def test_conversion_keeps_plaintext_key_off_disk_and_out_of_arguments_and_logs(self):
         plaintext = b"secret-marker-plaintext-private-key"
         original_password = "secret-marker-original-password"
