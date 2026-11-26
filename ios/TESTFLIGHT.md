@@ -34,6 +34,6 @@ JavaScriptCore의 비공개 실행 시간 제한 함수 대신 앱에 소스로 
 - App Store Connect용 프로파일 세 개와 App Store Connect API 키를 GitHub에 등록하고 **iOS TestFlight** 워크플로를 실행한다([배포 안내](DISTRIBUTION.md#testflight-업로드-워크플로)). 서명 없는 Debug IPA 워크플로의 결과는 Windows Sideloadly 설치용이며 TestFlight에 올릴 수 없다.
 - 앱과 확장에 설정 저장·앱 파일/사용자 선택 파일 메타데이터·타이머의 required reason API 선언을 포함했다. 최종 서명 archive에서 실제 API 사용과 개인정보 공개 내용을 다시 확인한다. [Apple 문서](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 - 앱 정보·아이콘·스크린샷·개인정보 공개 내용·지원/개인정보 URL과 베타 심사 정보 작성. 암호화는 `ITSAppUsesNonExemptEncryption = NO`로 선언했다(HTTPS·OS 암호 기능만 사용).
-- 심사 메모에 가상 eTL 진입 절차와 채팅에 OpenAI 로그인이 필요하다는 점을 설명한다. 검증에 전용 계정이 필요하면 승인된 전용 테스트 계정을 App Store Connect 심사 정보에 제공한다. 실제 학교 계정이나 자격 증명을 소스·아티팩트에 넣지 않는다.
+- **베타 앱 심사 정보 → 메모**에 [영문 심사 메모](TESTFLIGHT_REVIEW_NOTES.txt)를, 빌드의 **테스트할 내용**에 [한글 테스트 안내](TESTFLIGHT_WHAT_TO_TEST.txt)를 붙여 넣는다. 이번 제출은 심사 담당자가 본인 ChatGPT 계정으로 로그인해 가상 eTL을 테스트하는 경로로 요청한다. 별도 GPT 서버를 추가하거나 개발자 ChatGPT 계정을 공유하지 않는다. 심사자의 추가 접근 요청은 심사 중 대응한다. [제출 준비 상태](TESTFLIGHT_REVIEW.md)를 함께 확인한다.
 
 이 구현과 자동 테스트는 Apple의 심사 통과나 OpenAI 로그인 경로의 제3자 iOS 배포 승인을 보장하지 않는다. 실제 설치본에서 로그인·AI 도구 호출·승인/취소·모드 전환·초기화를 한 번 더 확인해야 한다.
