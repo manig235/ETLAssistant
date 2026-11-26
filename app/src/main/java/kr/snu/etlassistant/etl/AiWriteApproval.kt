@@ -1,5 +1,6 @@
 package kr.snu.etlassistant.etl
 
+import android.content.Context
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.CountDownLatch
@@ -43,6 +44,12 @@ class WriteApprovalGate(private val timeoutMillis: Long = 90_000) {
     private fun cancelLocked() {
         waiting.values.forEach { it.approved = false; it.done.countDown() }
         waiting.clear()
+    }
+
+    /** Automatic additions still require the foreground host, atomically with the write. */
+    fun <T> executeAutomatic(action: () -> T): T = synchronized(lock) {
+        if (host == null) throw Denied()
+        action()
     }
 
     fun pending(): List<Request> = synchronized(lock) { waiting.values.filter { it.done.count != 0L }.map { it.request } }
@@ -91,14 +98,30 @@ class WriteApprovalGate(private val timeoutMillis: Long = 90_000) {
 /** Only the foreground chat can answer these requests; tool callers only create requests. */
 object AiWriteApproval {
     private val gate = WriteApprovalGate()
+    private val budget = WriteTurnBudget()
     val listeners get() = gate.listeners
     fun attachHost() = gate.attachHost()
     fun detachHost(id: String) = gate.detachHost(id)
-    fun cancelAll() = gate.cancelAll()
+    fun beginTurn() { gate.cancelAll(); budget.beginTurn() }
+    fun cancelAll() { gate.cancelAll(); budget.endTurn() }
     fun pending() = gate.pending()
     fun decide(hostId: String, requestId: String, approved: Boolean) = gate.decide(hostId, requestId, approved)
-    fun <T> execute(operation: String, details: String, destructive: Boolean = false, action: () -> T): T = try {
-        gate.execute(operation, details, destructive, action)
+    fun <T> execute(context: Context, scope: WriteScope, kind: WriteKind, operation: String, details: String, action: () -> T): T = try {
+        val settings = WritePolicySettings(context)
+        val permit = budget.claim(settings.mode(scope), kind)
+        val checkedAction = {
+            // Settings may have changed while a confirmation was open.
+            settings.requireEnabled(scope)
+            action()
+        }
+        when (permit.decision) {
+            WritePolicy.Decision.DENY -> { settings.requireEnabled(scope); throw EtlException("변경이 취소되었어요") }
+            WritePolicy.Decision.ASK -> gate.execute(operation, details, destructive = kind != WriteKind.ADD, checkedAction)
+            WritePolicy.Decision.AUTO -> gate.executeAutomatic {
+                if (!budget.isCurrent(permit) || settings.mode(scope) != WriteMode.AUTO_ADD) throw WriteApprovalGate.Denied()
+                checkedAction()
+            }
+        }
     } catch (e: WriteApprovalGate.Denied) {
         throw EtlException(e.message ?: "변경이 취소되었어요")
     }

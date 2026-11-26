@@ -443,17 +443,6 @@ class BoardClient(private val etl: EtlClient, private val owner: String, private
         }
     }
 
-    private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
-        val out = java.io.ByteArrayOutputStream()
-        val buf = ByteArray(1 shl 14)
-        while (out.size() < max) {
-            val r = read(buf, 0, minOf(buf.size, max - out.size()))
-            if (r < 0) break
-            out.write(buf, 0, r)
-        }
-        return out.toByteArray()
-    }
-
     companion object {
         const val API = "${BoardLogic.BASE}/learningx/api/v1/learningx_board"
         const val MAX_REDIRECTS = 3

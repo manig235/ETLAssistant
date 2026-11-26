@@ -174,8 +174,9 @@ class MyDeadlinesActivity : AppCompatActivity() {
                 onOpen = { url -> runCatching { startActivity(LearningXOpenActivity.intent(this, url)) } },
                 onSave = { old, new ->
                     // 마감 시각을 바꾸면 새 ID로 저장한다: 예전 시각 기준으로 이미 보낸 알림 기록이 새 알림을 막지 않게.
-                    if (old != null && old.id != new.id) store.delete(old.id)
-                    save(new)
+                    if (old == null) store.upsert(new)
+                    else if (!store.compareAndSet(old, new)) toast("수정하는 동안 일정이 바뀌었어요. 다시 열어 주세요.")
+                    afterSave()
                 },
                 // 동영상 강의 공지: "그날 대면 수업은 휴강으로 표시"를 체크하면 같은 저장에서 시간표 휴강도 넣는다.
                 onCancelClass = { day, courseName, annId ->
@@ -188,10 +189,15 @@ class MyDeadlinesActivity : AppCompatActivity() {
                     toast("시간표에 휴강도 넣었어요")
                 },
                 // 반복 마감의 회차는 그 회차만 완료로 표시한다.
-                onToggleDone = { d -> seriesOf(d)?.let { save(MyDeadlines.setDone(it, d.occurrence, !d.done, Instant.now())) } },
+                onToggleDone = { d ->
+                    store.update(d.id) { MyDeadlines.setDone(it, d.occurrence, !d.done, Instant.now()) }
+                    afterSave()
+                },
                 onDelete = { d, onlyThis ->
-                    val series = seriesOf(d)
-                    if (onlyThis && series != null && d.occurrence != null) save(MyDeadlines.skip(series, d.occurrence, Instant.now()))
+                    if (onlyThis && d.occurrence != null) {
+                        store.update(d.id) { MyDeadlines.skip(it, d.occurrence, Instant.now()) }
+                        afterSave()
+                    }
                     else { store.delete(d.id); reload() }
                     toast("지웠어요")
                 },
@@ -294,8 +300,7 @@ class MyDeadlinesActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun save(d: MyDeadline) {
-        store.upsert(d)
+    private fun afterSave() {
         reload()
         // 새 마감이 곧 알림 시점에 들어가면 다음 주기 확인까지 기다리지 않도록 지금 한 번 확인한다(제시간 알람도 다시 잡힌다).
         runCatching {

@@ -1,0 +1,103 @@
+name: Android
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'scripts/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew*'
+      - 'docs/privacy-policy.md'
+      - '.github/workflows/android.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'scripts/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew*'
+      - 'docs/privacy-policy.md'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CODEX_VERSION: rust-v0.170.0
+
+jobs:
+  checks:
+    name: Android ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: tests-and-build
+            tasks: testDebugUnitTest assembleDebug
+          - check: lint
+            tasks: lintDebug
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+      - name: Restore pinned Codex runtime
+        id: codex-cache
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ runner.os }}-android-codex-${{ env.CODEX_VERSION }}-${{ hashFiles('scripts/fetch-codex.sh', 'scripts/prepare-codex-runtime.py') }}
+          path: |
+            app/src/main/jniLibs/arm64-v8a/libcodex.so
+            app/src/main/jniLibs/arm64-v8a/libcodex-code-mode-host.so
+            app/src/main/assets/cacert.pem
+            app/src/main/assets/codex-version.txt
+      - name: Fetch pinned Codex runtime
+        if: steps.codex-cache.outputs.cache-hit != 'true'
+        run: bash scripts/fetch-codex.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Save pinned Codex runtime
+        if: steps.codex-cache.outputs.cache-hit != 'true' && matrix.check == 'tests-and-build'
+        uses: actions/cache/save@v6
+        with:
+          key: ${{ steps.codex-cache.outputs.cache-primary-key }}
+          path: |
+            app/src/main/jniLibs/arm64-v8a/libcodex.so
+            app/src/main/jniLibs/arm64-v8a/libcodex-code-mode-host.so
+            app/src/main/assets/cacert.pem
+            app/src/main/assets/codex-version.txt
+      - name: Run checks
+        run: ./gradlew --no-daemon --stacktrace ${{ matrix.tasks }}
+      - name: Check release shrinking without signing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.check == 'tests-and-build'
+        run: ./gradlew --no-daemon --stacktrace :app:minifyReleaseWithR8
+      - name: Save reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-${{ matrix.check }}-${{ github.run_attempt }}
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

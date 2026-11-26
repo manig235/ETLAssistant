@@ -53,7 +53,16 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     private val calendar by lazy { kr.snu.etlassistant.calendar.CalendarAssistant(context) }
 
-    override fun tools(): JSONArray = etlTools().also { a -> calendar.tools().forEach { a.put(it) } }
+    override fun tools(): JSONArray {
+        val settings = WritePolicySettings(context)
+        val all = etlTools().also { a -> calendar.tools().forEach { a.put(it) } }
+        return JSONArray().also { out ->
+            for (i in 0 until all.length()) {
+                val tool = all.getJSONObject(i)
+                if (settings.toolEnabled(tool.getString("name"))) out.put(tool)
+            }
+        }
+    }
 
     private fun etlTools(): JSONArray = JSONArray()
         .put(tool("etl_digest", "마감 임박(미제출) 과제, 누락 과제, 최근 공지를 한 번에 요약한다. 시간은 KST.",
@@ -161,6 +170,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         if (name == WorkspaceImage.NAME) return WorkspaceImage.view(workspace, args.optString("path", ""))
         val secrets = listOfNotNull(tokenStore.load())
         return try {
+            WritePolicy.operation(name)?.let { WritePolicySettings(context).requireEnabled(it.scope) }
             val out: Any = when (name) {
                 in calendar.names -> calendar.call(name, args)
                 "etl_digest" -> digest(client(), args.optInt("days", 7).coerceIn(1, 60), args.optInt("ann_days", 1).coerceIn(1, 30))
@@ -361,7 +371,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             ?: throw EtlException(if (exam) "시험은 start(\"YYYY-MM-DD HH:MM\", KST)가 필요합니다" else "due는 \"YYYY-MM-DD HH:MM\"(KST) 형식이어야 합니다")
         if (exam) rejectExamRepeat(args)
         val reminders = reminderArgs(args, due) ?: if (exam) MyDeadlines.defaultExamReminders(due, Instant.now()) else emptyList()
-        val d = MyDeadline(System.currentTimeMillis(), title, due, memo, reminders = reminders, repeat = if (exam) null else repeatArgs(args, null),
+        val d = MyDeadline(AssistantWriteIds.next(), title, due, memo, reminders = reminders, repeat = if (exam) null else repeatArgs(args, null),
             kind = kind, end = if (exam) endArg(args, due, null) else null,
             location = if (exam) str(args, "location").orEmpty().trim() else "",
             course = if (exam) str(args, "course").orEmpty().trim() else "",
@@ -369,7 +379,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             sourceAnnouncementId = optId(args, "source_announcement_id"))
         MyDeadlines.validateRepeat(d)?.let { throw EtlException(it) }
         MyDeadlines.validateExam(d)?.let { throw EtlException(it) }
-        AiWriteApproval.execute("${d.kind.label} 추가", deadlinePreview(d)) {
+        AiWriteApproval.execute(context, WriteScope.DEADLINES, WriteKind.ADD, "${d.kind.label} 추가", deadlinePreview(d)) {
             MyDeadlines.validate(d.title, d.memo, store.load().size)?.let { throw EtlException(it) }
             store.upsert(d)
         }
@@ -397,7 +407,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val reminders = reminderArgs(args, due)
             ?: (if (repeat != null || exam) old.reminders.map { it.plus(java.time.Duration.between(old.due, due)) } else old.reminders).filter { it.isBefore(due) }
         // 마감 시각이 바뀌면 새 ID로 저장한다(예전 시각 기준 알림 기록이 새 알림을 막지 않게, 화면과 같은 규칙).
-        var new = old.copy(id = if (due != old.due) System.currentTimeMillis() else old.id, title = title, due = due, memo = memo, reminders = reminders,
+        var new = old.copy(id = if (due != old.due) AssistantWriteIds.next() else old.id, title = title, due = due, memo = memo, reminders = reminders,
             repeat = repeat, doneDates = if (repeat == null) emptySet() else old.doneDates, skipDates = if (repeat == null) emptySet() else old.skipDates,
             done = if (repeat == null) old.done else false,
             kind = kind,
@@ -426,10 +436,8 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 what = (if (done) "완료 표시" else "완료 취소") + "(${kr.snu.etlassistant.notify.Agenda.dateLabel(date)} 회차)"
             }
         }
-        AiWriteApproval.execute("${new.kind.label} $what", "변경 전\n${deadlinePreview(old)}\n\n변경 후\n${deadlinePreview(new)}") {
-            if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회한 뒤 요청해 주세요.")
-            if (new.id != old.id) store.delete(old.id)
-            store.upsert(new)
+        AiWriteApproval.execute(context, WriteScope.DEADLINES, WriteKind.UPDATE, "${new.kind.label} $what", "변경 전\n${deadlinePreview(old)}\n\n변경 후\n${deadlinePreview(new)}") {
+            if (!store.compareAndSet(old, new)) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회한 뒤 요청해 주세요.")
         }
         rescheduleNotify()
         EtlEvents.notice((if (exam) "📝 시험 $what: " else "📌 내 마감 $what: ") + MyDeadlines.line(new) + (if (new.reminders.isNotEmpty()) " · 🔔 ${MyDeadlines.reminderLabel(new)}" else ""))
@@ -443,17 +451,15 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val date = occurrenceArg(args)
         if (date != null && old.repeat != null) {
             if (!MyDeadlines.matches(old, date)) throw EtlException("$date 는 이 반복 마감의 회차가 아닙니다. my_deadlines의 occurrence를 쓰세요")
-            AiWriteApproval.execute("반복 일정 한 회차 삭제", "${deadlinePreview(old)}\n\n삭제할 회차: $date (다른 회차는 유지)", destructive = true) {
-                if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회해 주세요.")
-                store.upsert(MyDeadlines.skip(old, date, Instant.now()))
+            AiWriteApproval.execute(context, WriteScope.DEADLINES, WriteKind.DELETE, "반복 일정 한 회차 삭제", "${deadlinePreview(old)}\n\n삭제할 회차: $date (다른 회차는 유지)") {
+                if (!store.compareAndSet(old, MyDeadlines.skip(old, date, Instant.now()))) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회해 주세요.")
             }
             rescheduleNotify()
             EtlEvents.notice("🗑 내 마감에서 한 회차 지움: ${old.title} · ${kr.snu.etlassistant.notify.Agenda.dateLabel(date)}")
             return JSONObject().put("ok", true).put("deleted", old.title).put("occurrence", date.toString())
         }
-        AiWriteApproval.execute("${old.kind.label} 삭제", deadlinePreview(old) + if (old.repeat != null) "\n\n반복 일정 전체를 삭제해요." else "", destructive = true) {
-            if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회해 주세요.")
-            store.delete(idv)
+        AiWriteApproval.execute(context, WriteScope.DEADLINES, WriteKind.DELETE, "${old.kind.label} 삭제", deadlinePreview(old) + if (old.repeat != null) "\n\n반복 일정 전체를 삭제해요." else "") {
+            if (!store.compareAndSet(old, null)) throw EtlException("확인하는 동안 일정이 바뀌었어요. 다시 조회해 주세요.")
         }
         EtlEvents.notice("🗑 내 마감에서 지움: ${MyDeadlines.line(old)}")
         return JSONObject().put("ok", true).put("deleted", old.title)
@@ -470,13 +476,13 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         // 과목명이 시간표의 과목과 맞으면 그 과목에 묶는다(이름이 조금 달라도 휴강이 정확히 걸리게).
         val course = TimetableStore(context).load()?.courses?.firstOrNull { TimetableLogic.sameCourse(courseText, it.name) }
         val ch = TimetableLogic.Change(
-            id = System.currentTimeMillis(), date = date, kind = kind,
+            id = AssistantWriteIds.next(), date = date, kind = kind,
             course = course?.let { TimetableLogic.shortName(it.name) } ?: courseText, courseId = course?.courseId,
             start = start, end = if (kind == "보강") end else null,
             room = str(args, "room")?.trim()?.take(40)?.ifEmpty { null }, note = str(args, "note")?.trim()?.take(100)?.ifEmpty { null },
             sourceAnnouncementId = optId(args, "source_announcement_id"),
         )
-        AiWriteApproval.execute("시간표에 $kind 추가", changePreview(ch)) { TimetableChangeStore(context).add(ch) }
+        AiWriteApproval.execute(context, WriteScope.TIMETABLE, WriteKind.ADD, "시간표에 $kind 추가", changePreview(ch)) { TimetableChangeStore(context).add(ch) }
         rescheduleNotify()
         val wd = TimetableLogic.weekdayOf(date)
         EtlEvents.notice("🗓 시간표에 $kind 추가: ${date.monthValue}/${date.dayOfMonth}($wd) ${ch.course}" +
@@ -488,7 +494,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val store = TimetableChangeStore(context)
         val idv = id(args, "id")
         val old = store.load().firstOrNull { it.id == idv } ?: throw EtlException("보강·휴강에서 id $idv 를 찾을 수 없습니다. etl_timetable(week=true)로 확인하세요.")
-        AiWriteApproval.execute("시간표에서 ${old.kind} 삭제", changePreview(old), destructive = true) {
+        AiWriteApproval.execute(context, WriteScope.TIMETABLE, WriteKind.DELETE, "시간표에서 ${old.kind} 삭제", changePreview(old)) {
             if (store.load().firstOrNull { it.id == old.id } != old) throw EtlException("확인하는 동안 시간표가 바뀌었어요. 다시 조회해 주세요.")
             store.delete(idv)
         }
