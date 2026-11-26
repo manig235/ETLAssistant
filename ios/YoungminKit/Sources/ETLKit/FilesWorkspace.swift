@@ -10,6 +10,8 @@ public enum EtlFiles {
     public static let RENDER_DIR = "render"
     /// 강의계획서 첨부를 두는 하위 폴더. 비서가 정보를 얻으려고만 읽는 파일이라 채팅에 쪽 미리보기나 파일 카드를 띄우지 않는다([isPrivateRead]).
     public static let SYLLABUS_DIR = EtlDownloads.SYLLABUS_DIR
+    /// 공개 기출 자료(MIT OCW 등, `study_fetch`)를 두는 하위 폴더. 강의계획서 첨부처럼 비서만 읽는다([isPrivateRead]).
+    public static let STUDY_DIR = "study"
     public static let MAX_RENDER_PAGES = 6
     public static let DEFAULT_TEXT_CHARS = 20_000
     public static let MAX_TEXT_CHARS = 60_000
@@ -94,13 +96,14 @@ public enum EtlFiles {
         return URL(fileURLWithPath: full)
     }
 
-    /// 비서만 읽고 사용자에게는 보여 주지 않는 파일인가(강의계획서 첨부). `etl-files/syllabus/` 아래이거나,
+    /// 비서만 읽고 사용자에게는 보여 주지 않는 파일인가(강의계획서 첨부, 공개 기출 자료). `etl-files/syllabus/`·`etl-files/study/` 아래이거나,
     /// 이전 빌드가 `etl-files/` 바로 아래에 둔 `syllabus-…` 파일.
     public static func isPrivateRead(_ workspace: URL, _ f: URL) -> Bool {
         let root = canonicalPath(workspace.path)
         let c = canonicalPath(f.path)
         let parent = (c as NSString).deletingLastPathComponent
-        return c.hasPrefix(root + "/" + SYLLABUS_DIR + "/") || (parent == root && (c as NSString).lastPathComponent.hasPrefix("syllabus-"))
+        return c.hasPrefix(root + "/" + SYLLABUS_DIR + "/") || c.hasPrefix(root + "/" + STUDY_DIR + "/")
+            || (parent == root && (c as NSString).lastPathComponent.hasPrefix("syllabus-"))
     }
 
     /// 작업 폴더 기준 상대 경로 표기(`etl-files/…`).

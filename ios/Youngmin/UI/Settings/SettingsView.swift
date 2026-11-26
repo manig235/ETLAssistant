@@ -407,6 +407,9 @@ private struct SettingsContent: View {
         SettingsSection(title: "대화") {
             YMCard {
                 SettingsSwitchRow(title: "반말로 대화", desc: "영민이가 친구처럼 반말로 답해요", isOn: model.casualTone) { model.setCasualTone($0) }
+                SettingsSwitchRow(title: "공개 기출 자료 찾기", desc: "시험 자료를 만들 때 MIT OpenCourseWare의 공개 기출·연습 문제를 찾아 함께 써요",
+                                  isOn: model.studyLookup) { model.setStudyLookup($0) }
+                SettingsCaption("찾을 주제(검색어)만 MIT로 가요. eTL 정보·파일·개인 정보는 보내지 않아요.").padding(.top, 4)
             }
         }
     }

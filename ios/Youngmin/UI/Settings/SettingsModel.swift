@@ -1,3 +1,4 @@
+import AssistantKit
 import ChatKit
 import ETLKit
 import NotifyKit
@@ -38,6 +39,8 @@ final class SettingsModel {
     private(set) var apiKeyMasked: String?
     private(set) var useApiKey = false
     private(set) var casualTone = false
+    /// 공개 기출 자료 찾기(MIT OCW 등, 기본 켬).
+    private(set) var studyLookup = true
     private(set) var courseAlertsSummary = ""
     private(set) var lastCheckText = ""
     private(set) var lastBriefText = ""
@@ -87,6 +90,7 @@ final class SettingsModel {
         apiKeyMasked = hasApiKey ? raw.map(SettingsLogic.maskKey) : nil
         useApiKey = auth.settings.authMode == ChatSettings.AUTH_API_KEY
         casualTone = auth.settings.casualTone
+        studyLookup = StudySettings().enabled
         hasEtlToken = AppStores.tokens.hasToken()
     }
 
@@ -243,6 +247,12 @@ final class SettingsModel {
     func setCasualTone(_ on: Bool) {
         auth.settings.casualTone = on
         casualTone = auth.settings.casualTone
+    }
+
+    func setStudyLookup(_ on: Bool) {
+        let s = StudySettings()
+        s.enabled = on
+        studyLookup = s.enabled
     }
 
     // MARK: API 키

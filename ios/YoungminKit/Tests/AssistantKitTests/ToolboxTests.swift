@@ -61,7 +61,7 @@ import NotifyKit
         let names = ToolSpecs.all.map(\.name)
         #expect(Set(names).count == names.count)
         // 1단계 19개 + 2단계 그룹별 파일이 더한 도구.
-        #expect(names.count == 19 + ToolSpecs.filesTools.count + ToolSpecs.boardPdfTools.count + ToolSpecs.calendarTools.count)
+        #expect(names.count == 19 + ToolSpecs.filesTools.count + ToolSpecs.boardPdfTools.count + ToolSpecs.calendarTools.count + ToolSpecs.studyTools.count)
         let re = KRegex("^[a-zA-Z0-9_-]{1,64}$")
         for n in names { #expect(re.matches(n), "\(n)") }
         for n in ToolSpecs.deferred { #expect(!ToolSpecs.names.contains(n), "\(n)") }

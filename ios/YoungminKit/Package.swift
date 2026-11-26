@@ -22,7 +22,7 @@ let package = Package(
         .testTarget(name: "ETLKitTests", dependencies: ["ETLKit"]),
         .testTarget(name: "NotifyKitTests", dependencies: ["NotifyKit"]),
         .testTarget(name: "ChatKitTests", dependencies: ["ChatKit"]),
-        .testTarget(name: "AssistantKitTests", dependencies: ["AssistantKit"]),
+        .testTarget(name: "AssistantKitTests", dependencies: ["AssistantKit"], resources: [.copy("Fixtures")]),
     ],
     swiftLanguageModes: [.v5]
 )

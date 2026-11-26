@@ -9,7 +9,7 @@ ETLKit·NotifyKit·ChatKit 위에 만든다. 도구 이름·설명·JSON 스키�
 | Swift | Kotlin origin | 설명 |
 |---|---|---|
 | `final class Toolbox` | `EtlTools` + `EtlService` | 도구 상자. `instructions`, `instructions(casualTone:)`, `specs: [ToolSpec]`, `toolDefinitions: [FunctionTool]`, `run(name:argumentsJSON:) async -> ToolOutput`, `run(name:arguments:)`(같은 것, 앱 계약 이름) |
-| `Toolbox.init(tokens:makeClient:approvals:myDeadlines:timetableStore:timetableChanges:workspace:userDirectory:userFolderLabel:clock:)` | — | 모두 기본값 있음: Keychain `TokenStore().load()`, `EtlClient($0)`, `AiWriteApproval.gate`, UserDefaults 저장소(`my_deadlines`, `timetable`, `timetable_changes`), `EtlDownloads.workspaceDirectory`(`etl-files`), `Documents/etl`, `"파일 앱 › 영민이 › etl"`, `Date()` |
+| `Toolbox.init(tokens:makeClient:approvals:myDeadlines:timetableStore:timetableChanges:workspace:userDirectory:userFolderLabel:clock:studyEnabled:study:)` | — | 모두 기본값 있음: Keychain `TokenStore().load()`, `EtlClient($0)`, `AiWriteApproval.gate`, UserDefaults 저장소(`my_deadlines`, `timetable`, `timetable_changes`), `EtlDownloads.workspaceDirectory`(`etl-files`), `Documents/etl`, `"파일 앱 › 영민이 › etl"`, `Date()`, `StudySettings().enabled`, `StudyClient()` |
 | `struct ToolSpec` (`name`, `description`, `inputSchema: ChatJSON`, `readOnly`, `annotations`, `functionTool`) | `EtlTools.tool(...)` | 도구 정의 하나(MCP annotations: `readOnlyHint`, `destructiveHint`=false, `openWorldHint`=readOnly) |
 | `enum ToolSpecs` (`all`, `names`, `writeTools`, `deferred`, `untrusted`) | `EtlTools.etlTools()` | 등록 도구 목록 / 쓰기 도구 / 옮기지 않은 도구 이름 |
 | `final class WriteApprovalGate` (`init(timeout: 90)`, `attachHost()`, `detachHost(_:)`, `pending() -> [Request]`, `decide(hostId:requestId:approved:) -> Bool`, `cancelAll()`, `setChangeHandler(_:)`, `execute(_ op, _ details, destructive:, _ action) async throws -> T`) | `WriteApprovalGate` | 쓰기 승인 게이트. `Request(id, operation, details, destructive)`, `Denied` |
@@ -204,3 +204,16 @@ Kotlin `etl/Board.kt` → ETLKit `BoardLogic.swift`·`BoardClient.swift`, `pdf/P
 - `etl_download`의 게시판 첨부 인자(`course_id`·`board_id`·`post_id`): `ToolboxEtl.swift`의 `downloadFile`이 아직 숨김 파일을 모두 거절한다.
   `boardAttachmentPost`를 부르도록 세 줄을 바꾸면 안드로이드와 같아진다(코드는 `ToolboxBoardPdf.swift`의 주석).
 - 지침·도구 설명의 "폰의 Download/etl/영민이가 만든 파일/" 문구는 안드로이드 그대로다.
+
+## 공개 기출 자료 도구 (`ToolboxStudy.swift`·`StudySources.swift`·`StudyClient.swift`, 2026-11-27, Kotlin `study/`)
+
+| Swift | Kotlin origin | 설명 |
+|---|---|---|
+| `enum StudySites` (`Site`, `MIT_OCW`, `ALL`, `byId`, `forFetchHost`, `isSearchHost`) | `StudySites` | 허용 목록 한 표. 지금은 `mit_ocw`: 검색 `api.learn.mit.edu`, 받기 `ocw.mit.edu`, CC BY-NC-SA 4.0 |
+| `enum StudyLogic` | `StudyLogic` | 순수 로직: `checkFetchUrl`·`redirectTarget`(HTTPS·허용 호스트·사용자 정보/포트 거부), `courseSearchUrl`·`fileSearchUrl`, `parseCourses`·`parseFiles`·`parsePage`·`source`, `kindOf`·`looksLikePdf`·`storedName`, `isPublicAddress`, 상한(JSON·HTML 2MB, PDF 30MB, 리다이렉트 3번, 동시 2개), `DISABLED_MESSAGE` |
+| `final class StudyClient` (`init(session:resolve:)`, `getJson`, `fetch(_:pdfTarget:) -> Fetched`) | `StudyClient` | GET만. 쿠키 저장소·캐시 없음, 리다이렉트는 직접 검사, getaddrinfo로 사설망 주소 거부, 일반 User-Agent |
+| `final class StudySettings` (`enabled`, UserDefaults `study_settings`의 `publicExams`, 기본 켬) | `StudySettings` | 설정 → 대화 → "공개 기출 자료 찾기" |
+
+- 도구: `study_search(query, course_id?, materials?, site?, limit?)`, `study_fetch(url, max_chars?)`. 이름·설명·스키마·결과 키·한국어 문구는 안드로이드와 같다.
+- 받은 PDF는 `etl-files/study/`(`EtlFiles.STUDY_DIR`)에 두고 `EtlFiles.isPrivateRead`라 쪽 미리보기·파일 카드가 없다. 14일 정리는 다른 작업 파일과 같다.
+- 테스트: `Tests/AssistantKitTests/StudyTests.swift`(고정 응답 `Fixtures/`는 실제 MIT 응답, 안드로이드와 같은 파일).

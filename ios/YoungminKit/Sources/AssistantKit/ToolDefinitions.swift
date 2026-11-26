@@ -97,8 +97,8 @@ public enum ToolSpecs {
     // MARK: 도구 목록
 
     /// 등록하는 도구(안드로이드 순서, 옮기지 않은 도구는 뺐다).
-    /// 등록하는 모든 도구: 기본 도구 + 2단계에서 그룹별 파일(ToolboxFiles·ToolboxBoardPdf·ToolboxCalendar)이 더한 도구.
-    public static let all: [ToolSpec] = core + filesTools + boardPdfTools + calendarTools
+    /// 등록하는 모든 도구: 기본 도구 + 2단계에서 그룹별 파일(ToolboxFiles·ToolboxBoardPdf·ToolboxCalendar·ToolboxStudy)이 더한 도구.
+    public static let all: [ToolSpec] = core + filesTools + boardPdfTools + calendarTools + studyTools
 
     /// 1단계 도구.
     static let core: [ToolSpec] = [

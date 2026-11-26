@@ -22,6 +22,10 @@ public final class Toolbox: @unchecked Sendable {
     /// 결과의 `saved_to`에 쓰는 사용자 사본 위치 표시(안드로이드 `Download/etl/<이름>` 자리).
     let userFolderLabel: String
     let clock: @Sendable () -> Date
+    /// 설정 "공개 기출 자료 찾기"(기본 켬). 꺼져 있으면 study_* 도구가 켜는 방법을 알려 주는 오류를 돌려준다.
+    let studyEnabled: @Sendable () -> Bool
+    /// 공개 기출 자료 사이트 클라이언트(테스트에서 가짜 세션을 넣는다).
+    let study: StudyClient
 
     static let MAX_GET_CHARS = 200_000
     static let DETAIL_LIMIT = 40
@@ -39,7 +43,9 @@ public final class Toolbox: @unchecked Sendable {
                 workspace: URL = EtlDownloads.workspaceDirectory,
                 userDirectory: URL? = nil,
                 userFolderLabel: String = EtlDownloads.userFolderLabel,
-                clock: @escaping @Sendable () -> Date = { Date() }) {
+                clock: @escaping @Sendable () -> Date = { Date() },
+                studyEnabled: @escaping @Sendable () -> Bool = { StudySettings().enabled },
+                study: StudyClient = StudyClient()) {
         self.tokens = tokens
         self.makeClient = makeClient
         self.approvals = approvals
@@ -50,6 +56,8 @@ public final class Toolbox: @unchecked Sendable {
         self.userDirectory = userDirectory
         self.userFolderLabel = userFolderLabel
         self.clock = clock
+        self.studyEnabled = studyEnabled
+        self.study = study
     }
 
     // MARK: 앱 계약
@@ -148,6 +156,7 @@ public final class Toolbox: @unchecked Sendable {
             if let r = try await callFiles(name, args) { return r }
             if let r = try await callBoardPdf(name, args) { return r }
             if let r = try await callCalendar(name, args) { return r }
+            if let r = try await callStudy(name, args) { return r }
             throw EtlException("알 수 없는 도구입니다: \(name)")
         }
     }
