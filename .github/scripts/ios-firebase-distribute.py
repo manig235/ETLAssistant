@@ -106,6 +106,36 @@ def private_file(path, data):
         stream.write(data)
 
 
+def compatible_p12(source, temp, password):
+    # Verify the original MAC/password; never use -nomacver. Only encrypted
+    # PEM/P12 leaves OpenSSL, and no password appears in subprocess arguments.
+    working_password = secrets.token_urlsafe(32)
+    child_env = dict(os.environ, YOUNGMIN_P12_INPUT_PASSWORD=password,
+                     YOUNGMIN_P12_WORK_PASSWORD=working_password)
+    try:
+        encrypted_pem = run(["openssl", "pkcs12", "-in", source,
+                             "-passin", "env:YOUNGMIN_P12_INPUT_PASSWORD", "-aes256",
+                             "-passout", "env:YOUNGMIN_P12_WORK_PASSWORD"], capture=True, env=child_env)
+    except RuntimeError:
+        raise ValueError("OpenSSL could not decrypt the P12; verify the original file and "
+                         "IOS_DISTRIBUTION_P12_PASSWORD") from None
+    protected_pem = temp / "keychain-import-encrypted.pem"
+    private_file(protected_pem, encrypted_pem)
+    temporary_password = secrets.token_urlsafe(32)
+    child_env.pop("YOUNGMIN_P12_INPUT_PASSWORD")
+    child_env["YOUNGMIN_P12_OUTPUT_PASSWORD"] = temporary_password
+    try:
+        encrypted = run(["openssl", "pkcs12", "-export", "-in", protected_pem,
+                         "-passin", "env:YOUNGMIN_P12_WORK_PASSWORD", "-keypbe", "PBE-SHA1-3DES",
+                         "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1",
+                         "-passout", "env:YOUNGMIN_P12_OUTPUT_PASSWORD"], capture=True, env=child_env)
+    finally:
+        protected_pem.unlink(missing_ok=True)
+    path = temp / "keychain-compatible.p12"
+    private_file(path, encrypted)
+    return path, temporary_password
+
+
 def read_profile(path):
     return plistlib.loads(run(["security", "cms", "-D", "-i", path], capture=True))
 
@@ -219,8 +249,16 @@ def build(env, *, verify_only=False):
             run(["security", "create-keychain", "-p", password, keychain], capture=True)
             run(["security", "set-keychain-settings", "-lut", "21600", keychain], capture=True)
             run(["security", "unlock-keychain", "-p", password, keychain], capture=True)
-            run(["security", "import", p12, "-P", env["IOS_DISTRIBUTION_P12_PASSWORD"], "-k", keychain,
-                 "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"], capture=True)
+            try:
+                run(["security", "import", p12, "-P", env["IOS_DISTRIBUTION_P12_PASSWORD"], "-k", keychain,
+                     "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"], capture=True)
+            except RuntimeError as error:
+                if "PKCS12_PASSWORD_OR_FORMAT_REJECTED" not in str(error):
+                    raise
+                compatible, compatible_password = compatible_p12(p12, temp, env["IOS_DISTRIBUTION_P12_PASSWORD"])
+                run(["security", "import", compatible, "-P", compatible_password, "-k", keychain,
+                     "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"], capture=True)
+                print("Imported the verified P12 through a temporary keychain-compatible wrapper.")
             run(["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:",
                  "-s", "-k", password, keychain], capture=True)
             identities = run(["security", "find-identity", "-v", "-p", "codesigning", keychain], capture=True).decode()

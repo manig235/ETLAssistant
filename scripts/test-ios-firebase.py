@@ -240,6 +240,49 @@ class ExportVerificationTests(unittest.TestCase):
                             distribution.verify_export(root / "synthetic.ipa", root, TEAM, CERT)
 
 
+class P12CompatibilityTests(unittest.TestCase):
+    def test_conversion_keeps_plaintext_key_off_disk_and_out_of_arguments_and_logs(self):
+        plaintext = b"secret-marker-plaintext-private-key"
+        original_password = "secret-marker-original-password"
+        captured = []
+        def fake_run(args, **kwargs):
+            captured.append((args, kwargs))
+            if "-export" in args:
+                protected = Path(args[args.index("-in") + 1])
+                self.assertEqual(protected.read_bytes(), b"synthetic-encrypted-pem")
+                self.assertEqual(protected.stat().st_mode & 0o777, 0o600)
+                return b"synthetic-encrypted-p12"
+            return b"synthetic-encrypted-pem"
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(distribution, "run", side_effect=fake_run):
+            root = Path(directory)
+            source = root / "original.p12"
+            source.write_bytes(b"synthetic-original")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                compatible, temporary_password = distribution.compatible_p12(source, root, original_password)
+            self.assertEqual(source.read_bytes(), b"synthetic-original")
+            self.assertEqual(compatible.read_bytes(), b"synthetic-encrypted-p12")
+            self.assertEqual(compatible.stat().st_mode & 0o777, 0o600)
+            self.assertNotEqual(temporary_password, original_password)
+            self.assertTrue(all(plaintext not in file.read_bytes() for file in root.iterdir()))
+            self.assertNotIn("secret-marker", output.getvalue())
+        self.assertTrue(all(original_password not in args and temporary_password not in args for args, _ in captured))
+        self.assertNotIn("-nomacver", captured[0][0])
+        self.assertNotIn("-nodes", captured[0][0])
+        self.assertIn("-aes256", captured[0][0])
+        self.assertEqual(captured[1][0].count("PBE-SHA1-3DES"), 2)
+
+    def test_rejected_input_does_not_write_a_compatible_file_or_print_subprocess_data(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(distribution, "run", side_effect=RuntimeError("secret-marker-output")):
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, "IOS_DISTRIBUTION_P12_PASSWORD") as error:
+                distribution.compatible_p12(root / "original.p12", root, "secret-marker-password")
+            self.assertNotIn("secret-marker", str(error.exception))
+            self.assertEqual(list(root.iterdir()), [])
+
+
 class SigningCleanupTests(unittest.TestCase):
     def test_command_error_reports_only_safe_operation_and_classification(self):
         command = ["security", "import", "secret-marker-file", "-P", "secret-marker-password"]
