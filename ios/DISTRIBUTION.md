@@ -1,7 +1,8 @@
 # iOS 배포 안내
 
-현재 구현된 워크플로는 지인용 Ad Hoc / Firebase 배포다.
-기기 등록 없이 일반 사용자에게 링크를 전달할 때의 TestFlight·App Store 절차는 문서 후반에 정리한다.
+구현된 서명 배포 워크플로는 두 가지다. 지인용 **iOS Ad Hoc Firebase**와 기기 등록 없이 링크로 배포하는
+**iOS TestFlight**(App Store Connect 업로드, [아래](#testflight-업로드-워크플로))다. 두 워크플로는 같은 스크립트
+(`.github/scripts/ios-firebase-distribute.py`)로 archive·서명·IPA 검증을 하고 프로파일과 export 방식만 다르다.
 
 첫 실기기 로그인 확인에는 **publish를 끄고** 생성한 서명 IPA를 사용한다.
 이 모드에서는 Firebase에 업로드하거나 테스터에게 배포하지 않는다.
@@ -130,9 +131,11 @@ Apple 계정 비밀번호나 2단계 인증 코드는 CI에 등록하지 않는�
 ## 검증과 현재 한계
 
 로컬에서 `python3 scripts/test-ios-firebase.py`로 잘못된 프로파일, 배포 종류, 기기 목록 불일치,
-설정 누락, 업로드 파일 변조, 비밀 파일 정리 경로를 합성 데이터로 검사한다. PR에서도 이 검사만 실행한다.
+설정 누락, 업로드 파일 변조, 비밀 파일 정리 경로를 Ad Hoc·App Store 양쪽에 대해 합성 데이터로 검사한다. PR에서도 이 검사만 실행한다.
 내보낸 IPA는 실제 서명 검증, 앱·위젯·공유 확장 존재, embedded profile의 Team ID·Bundle ID·인증서·기기 목록·만료,
-App Group, 디버거 허용 해제, 내장 Codex 설정, 버전 일치와 파일 해시를 확인한 뒤 전달한다.
+App Group, 디버거 허용 해제, 내장 Codex 설정(QuickJS·고정 소스 revision), 버전·빌드 번호 일치,
+앱·확장의 개인정보 매니페스트가 저장소 원본과 같은지, 최종 실행 파일에 제거한 JavaScriptCore 비공개 함수 import가 없는지
+(`check-ios-private-apis.py`), `ITSAppUsesNonExemptEncryption = NO`와 파일 해시를 확인한 뒤 전달한다.
 실제 배포용 인증서·프로파일을 연결한 **macOS 서명·export와 Firebase 업로드는 미검증**이다.
 첫 유료 계정 설정 후 publish를 끄고 실제 빌드를 확인하고, 등록 기기에서 설치·로그인·확장 동작을 확인한다.
 
@@ -141,19 +144,100 @@ App Group, 디버거 허용 해제, 내장 Codex 설정, 버전 일치와 파일
 [Firebase 서비스 계정](https://firebase.google.com/docs/app-distribution/authenticate-service-account?platform=ios),
 [Firebase 기기 추가](https://firebase.google.com/docs/app-distribution/register-additional-devices).
 
+## TestFlight 업로드 워크플로
+
+Apple 화면에서 해야 하는 앱 생성·프로파일·팀 API 키 설정은 [TestFlight 최초 설정](TESTFLIGHT_SETUP.md)을 따른다.
+
+**iOS TestFlight** (`.github/workflows/ios-testflight.yml`)는 Ad Hoc과 같은 native Codex 빌드·Swift Release 테스트·
+Release archive를 거쳐 `app-store-connect` 방식으로 export·검증하고, `upload`를 켠 경우에만 App Store Connect에 올린다.
+Ad Hoc 워크플로와 native 빌드 단계·캐시를 공유한다. 앱 전용(확장 제외) 모드는 없고 앱·위젯·공유 확장을 함께 올린다.
+
+### Apple 쪽 준비 (한 번)
+
+1. **App Store Connect → 앱 → +(새로운 앱)**: 플랫폼 iOS, Bundle ID `kr.snu.etlassistant.ios`, SKU는 임의(`youngmin-ios`).
+   이름은 App Store 전체에서 겹치지 않아야 한다. 만든 앱의 **일반 → 앱 정보 → Apple ID**(숫자)를 `ASC_APP_ID`로 쓴다.
+2. **Certificates, Identifiers & Profiles → Profiles → +**: Distribution의 **App Store Connect**를 고르고
+   앱·위젯·공유 확장 App ID마다 하나씩, 세 개를 만든다. Ad Hoc과 같은 Apple Distribution 인증서를 고르고
+   이름은 `Youngmin AppStore App`/`Widgets`/`Share`처럼 서로 다르게 한다. 세 App ID 모두 App Group
+   `group.kr.snu.etlassistant.ios`가 켜져 있어야 한다. 기기 목록이 없으므로 기기 추가로 다시 만들 필요는 없다.
+3. **App Store Connect → 사용자 및 액세스 → 통합 → App Store Connect API → 팀 키**에서 키를 만든다
+   (현재 CI는 Issuer ID를 사용하는 팀 키로 구성돼 있다). 업로드 용도에는 **Developer** 역할을 사용하고,
+   추가 관리 권한도 필요할 때만 App Manager를 선택한다. `.p8`은 한 번만 내려받을 수 있다. 화면의 Issuer ID와 Key ID를 기록한다.
+
+### GitHub 설정
+
+Ad Hoc 표의 `IOS_TEAM_ID`, `IOS_DISTRIBUTION_P12_BASE64`, `IOS_DISTRIBUTION_P12_PASSWORD`를 그대로 쓰고 아래를 추가한다.
+
+| 종류 | 이름 | 값 |
+| --- | --- | --- |
+| Secret | `IOS_APPSTORE_APP_PROFILE_BASE64` | 앱 App Store Connect `.mobileprovision`의 Base64 |
+| Secret | `IOS_APPSTORE_WIDGETS_PROFILE_BASE64` | 위젯 프로파일의 Base64 |
+| Secret | `IOS_APPSTORE_SHARE_PROFILE_BASE64` | 공유 확장 프로파일의 Base64 |
+| Secret | `ASC_KEY_P8` | `AuthKey_<KeyID>.p8` 파일 **내용 그대로** (Base64 아님) |
+| Variable | `ASC_KEY_ID` | API 키의 Key ID (10자리) |
+| Variable | `ASC_ISSUER_ID` | Issuer ID (UUID) |
+| Variable | `ASC_APP_ID` | 앱의 숫자 Apple ID (Bundle ID 아님) |
+| Variable (선택) | `IOS_TESTFLIGHT_BUILD_OFFSET` | 빌드 번호 기준값, 기본 `1000` |
+
+```bash
+base64 -w 0 /path/to/Youngmin-AppStore-App.mobileprovision | gh secret set IOS_APPSTORE_APP_PROFILE_BASE64 --repo manig235/ETLAssistant
+base64 -w 0 /path/to/Youngmin-AppStore-Widgets.mobileprovision | gh secret set IOS_APPSTORE_WIDGETS_PROFILE_BASE64 --repo manig235/ETLAssistant
+base64 -w 0 /path/to/Youngmin-AppStore-Share.mobileprovision | gh secret set IOS_APPSTORE_SHARE_PROFILE_BASE64 --repo manig235/ETLAssistant
+gh secret set ASC_KEY_P8 --repo manig235/ETLAssistant < /path/to/AuthKey_XXXXXXXXXX.p8
+```
+
+API 키는 업로드 단계에서만 `~/.appstoreconnect/private_keys/AuthKey_<KeyID>.p8`(권한 600)로 만들고 성공·실패와 관계없이 지운다.
+서명 단계에는 API 키를, 업로드 단계에는 p12·프로파일을 넘기지 않는다. 키 내용은 로그·아티팩트에 남기지 않는다.
+
+### 실행
+
+1. 워크플로가 기본 브랜치에 반영된 뒤 **Actions → iOS TestFlight → Run workflow**에서 브랜치를 고른다.
+2. 처음에는 **upload를 끈 채** 실행해 서명·검증만 확인한다. 이때 `ASC_*` 설정은 없어도 된다.
+   빠진 설정은 native 컴파일 전에 항목명만 출력하고 실패한다.
+3. 올릴 때 **upload를 켜고**, **what_to_test**에 테스터 안내를 적는다. 이 문구는 실행 Summary에 표시되며
+   App Store Connect에는 자동으로 넣지 않는다(아래 수동 단계).
+4. Artifacts `youngmin-appstore-<run>-<attempt>`에 IPA·해시·dSYM·`build.json`이 7일 보관된다.
+
+빌드 번호(`CFBundleVersion`)는 `IOS_TESTFLIGHT_BUILD_OFFSET + 실행 번호` 뒤에 재실행 번호를 붙인다(예: `1012.1`).
+앱과 확장에 같은 값이 들어가고, 프로젝트의 `CURRENT_PROJECT_VERSION`보다 작으면 컴파일 전에 실패한다.
+버전 이름은 `MARKETING_VERSION`(현재 0.3.3)을 따른다. App Store Connect는 같은 번호를 다시 받지 않으므로
+워크플로 이름을 바꾸거나 새로 만들어 실행 번호가 처음부터 시작되면 `IOS_TESTFLIGHT_BUILD_OFFSET`을 마지막 업로드 번호보다 크게 올린다.
+
+수출 규정: 앱 `Info.plist`에 `ITSAppUsesNonExemptEncryption = NO`를 넣었다. 앱의 암호화는 eTL·OpenAI 등과의
+HTTPS(TLS; 내장 Codex는 rustls, 앱은 URLSession)와 OS 기능(CryptoKit 해시, Security 서명 검증, Keychain)뿐이고
+자체 암호 알고리즘은 없다는 판단이다. 법적 판단은 개발자 책임이며 암호화 기능을 추가하면 다시 검토한다.
+
+### 업로드 뒤 App Store Connect에서 할 일 (수동)
+
+1. **TestFlight** 탭에서 빌드 처리가 끝나기를 기다린다(보통 수 분~수십 분, 완료 메일).
+   수출 규정 질문이 나오면 위 판단대로 답한다.
+2. 빌드의 **테스트할 내용(What to Test)**에 [테스트 안내](TESTFLIGHT_WHAT_TO_TEST.txt)를 붙여 넣는다. 워크플로의 `what_to_test` 입력에도 같은 내용을 사용해 Summary와 맞춘다.
+3. **내부 테스트** 그룹을 만들고 App Store Connect 팀원(최대 100명)을 추가해 빌드를 배정한다. 심사 없이 바로 설치된다.
+4. **테스트 정보**: 베타 앱 설명, 피드백 이메일, 개인정보처리방침 URL, 베타 앱 심사 연락처와 심사 메모를 입력한다.
+   심사 메모에는 [영문 심사 메모](TESTFLIGHT_REVIEW_NOTES.txt)를 붙여 넣는다. 첫 실행의 **가상 eTL로 테스트하기**로
+   학교 계정 없이 접근한 뒤 심사 담당자 본인 ChatGPT 계정으로 로그인하도록 안내한다. 기기 확인 항목은 [TestFlight 심사 준비](TESTFLIGHT_REVIEW.md)를 따른다.
+5. **외부 테스트** 그룹을 만들고 빌드를 추가해 **베타 앱 심사**에 제출한다.
+6. 승인 뒤 외부 그룹의 **공개 링크**를 켜고(필요하면 인원 제한) 링크를 공유한다.
+
+### 검증 상태
+
+자격 증명 없는 스크립트 테스트(프로파일 종류 판별, export 옵션, 빌드 번호, API 키 파일 권한·삭제, 업로드 파일 변조 거부)와
+워크플로 문법만 확인했다. 실제 App Store 프로파일 서명·export, altool 업로드, App Store Connect 처리는 **미검증**이다.
+첫 실행은 upload를 끄고 서명·검증을 확인한 뒤 upload를 켠다.
+
 ## 기기 등록 없이 일반 사용자에게 링크로 배포하기
 
 아래 두 방법은 사용자 UDID 수집·등록 없이 배포한다. 사용자에게 Mac이나 유료 개발자 계정이 필요하지 않다.
 개발자는 현재 가입한 Apple Developer Program을 사용한다. 가입을 다시 할 필요는 없다.
-아래는 추후 진행할 절차이며, 현재 추가한 Ad Hoc/Firebase 워크플로는 TestFlight·App Store에 업로드하지 않는다.
+업로드는 [TestFlight 업로드 워크플로](#testflight-업로드-워크플로)를 사용한다. Ad Hoc/Firebase 워크플로는 App Store Connect에 업로드하지 않는다.
 
 ### TestFlight 외부 테스트: 정식 출시 전 베타 링크
 
 1. App Store Connect에서 현재 앱의 Bundle ID로 앱 레코드를 만든다.
 2. 앱·위젯·공유 확장의 App ID와 App Group을 맞추고, App Store Connect 배포용 서명을 준비한다.
    Apple Distribution 인증서는 사용할 수 있지만 Ad Hoc 프로파일을 그대로 쓰지 않는다.
-3. GitHub의 macOS 빌드에서 Release archive를 App Store Connect용으로 export·업로드하는 경로를 추가한다.
-   자동 업로드용 App Store Connect API 키 등을 별도로 설정한다. 로컬 Mac 소유는 필수가 아니다.
+3. **iOS TestFlight** 워크플로로 Release archive를 App Store Connect용으로 export·업로드한다.
+   App Store Connect API 키가 필요하다. 로컬 Mac 소유는 필수가 아니다.
 4. App Store Connect의 TestFlight에서 빌드 처리와 수출 규정 질문 등 필요한 입력을 완료한다.
 5. 내부 테스트 그룹을 먼저 만들고, 외부 테스트 그룹을 만든다. 베타 설명·피드백 이메일·연락처·테스트 항목과
    심사자의 접근 방법을 입력하고 첫 외부 빌드를 TestFlight 심사에 제출한다.
@@ -183,13 +267,10 @@ TestFlight를 거치지 않고 정식 심사를 신청할 수도 있다. 업데�
 
 ### 영민이 심사 접근 준비
 
-eTL 계정이 없는 심사자가 기능을 확인할 수 있도록 접근 방법을 준비한다.
-데모 계정을 보안·법적 사유로 제공하기 어려우면 Apple의 사전 승인을 받아 전체 기능을 보여 주는
-내장 데모 모드로 대체할 수 있다는 지침을 확인하고 협의한다. fakeETL 샘플 데이터와 자료로
-실제 UI·처리 흐름을 체험하도록 하는 방안을 검토하되, 가상 데이터 범위와 실제 Canvas 인증이 필요한 부분을
-명시한다. 데모 모드 구현만으로 승인된다고 가정하지 않는다.
-최신 앱은 Release에서도 첫 실행의 **가상 eTL로 테스트하기**로 학교 계정 없이 접근할 수 있다.
-채팅에는 실제 ChatGPT 로그인 또는 OpenAI API 키가 필요하며 가상 모드에서는 캘린더·위젯 연결을 제한한다.
-이 접근만으로 전체 심사 요건을 충족한다고 가정하지 않는다.
-현재 기능, 심사 메모 초안과 남은 확인은 [TestFlight 심사 준비](TESTFLIGHT_REVIEW.md)를 따른다.
+이번 제출은 Release의 **가상 eTL로 테스트하기**와 심사 담당자 본인 **ChatGPT 로그인**을 안내해 먼저 심사 요청한다.
+별도 GPT 서버·대체 AI를 추가하지 않는다. 가상 학교 데이터와 실제 AI 답변을 구분하고,
+캘린더·위젯·외부 LearningX 게시판 제한 및 실제 Canvas 인증이 필요한 부분은 메모에 명시한다.
+Apple은 전체 심사 접근을 요구하며 내장 데모 대체에 관한 지침도 두고 있다. 이번 경로의 사전 승인이나
+심사자의 계정 사용 가능 여부를 확인받았다는 뜻은 아니다. 접근 관련 요청이 오면 해당 심사에서 대응한다.
+심사 메모, 테스트 안내와 기기 확인 항목은 [TestFlight 심사 준비](TESTFLIGHT_REVIEW.md)를 따른다.
 [Apple 심사 지침 2.1(a)](https://developer.apple.com/app-store/review/guidelines/#app-completeness).

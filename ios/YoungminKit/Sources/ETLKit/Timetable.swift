@@ -668,7 +668,7 @@ public enum CatalogClient {
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: TimeInterval(TIMEOUT_MS) / 1000)
         req.httpMethod = "GET"
         req.httpShouldHandleCookies = false
-        let (_, resp) = try await session.data(for: req)
+        let (_, resp) = try await session.bytes(for: req)
         guard let http = resp as? HTTPURLResponse else { return "" }
         var fields: [String: String] = [:]
         for (k, v) in http.allHeaderFields {
@@ -695,6 +695,18 @@ public enum CatalogClient {
         return out
     }
 
+    static let MAX_RESPONSE_BYTES = 1024 * 1024
+
+    static func readResponse<S: AsyncSequence>(_ bytes: S, limit: Int = MAX_RESPONSE_BYTES) async throws -> Data where S.Element == UInt8 {
+        var data = Data()
+        data.reserveCapacity(min(limit, 16 * 1024))
+        for try await byte in bytes {
+            guard data.count < limit else { throw CatalogError("수강편람 응답이 너무 커요") }
+            data.append(byte)
+        }
+        return data
+    }
+
     private static func post(_ path: String, _ ref: [String: String], _ cookie: String) async throws -> JSONObject {
         var pairs: [(String, String)] = TimetableLogic.REF_KEYS.compactMap { k in ref[k].map { (k, $0) } }
         for k in ref.keys.sorted() where !TimetableLogic.REF_KEYS.contains(k) { pairs.append((k, ref[k]!)) }
@@ -709,9 +721,10 @@ public enum CatalogClient {
         req.setValue(SUGANG + SEARCH_PATH, forHTTPHeaderField: "Referer")
         if !cookie.isEmpty { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
         req.httpBody = Data(body.utf8)
-        let (data, resp) = try await session.data(for: req)
+        let (bytes, resp) = try await session.bytes(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if !(200...299).contains(code) { throw CatalogError("수강편람 응답 오류(\(code))") }
+        let data = try await readResponse(bytes)
         do {
             return try JSONObject(String(decoding: data, as: UTF8.self))
         } catch {

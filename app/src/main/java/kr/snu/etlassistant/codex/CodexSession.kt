@@ -606,9 +606,11 @@ object CodexSession {
                 val choice = effectiveChoice()
                 choice.model?.let { turnParams.put("model", it) }
                 choice.effort?.let { turnParams.put("effort", it) }
+                kr.snu.etlassistant.etl.AiWriteApproval.beginTurn()
                 val r = c.request("turn/start", turnParams)
                 currentTurnId = r.optJSONObject("turn")?.optString("id")
             } catch (e: IOException) {
+                kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
                 main.post {
                     model.addNotice("보내지 못했어요: ${e.message}")
                     model.closeStreaming()

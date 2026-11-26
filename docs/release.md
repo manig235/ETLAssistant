@@ -79,6 +79,10 @@
 
 ## 절차
 
+배포할 커밋의 main Android CI(단위 테스트·debug 빌드·Lint·서명 없는 R8)가 모두 통과했는지 확인한다.
+PR에서는 단위 테스트·debug 빌드와 Lint가 별도 작업으로 실행되고 보고서는 7일 보관된다.
+CI에는 배포 서명 키를 넣지 않으며, release APK 서명·업로드는 아래 절차대로 로컬에서 한다.
+
 ```
 ./gradlew testDebugUnitTest assembleRelease
 cp app/build/outputs/apk/release/app-release.apk ~/shared/youngmin-v0.1.8.apk
