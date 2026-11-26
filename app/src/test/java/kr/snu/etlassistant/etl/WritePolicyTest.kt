@@ -93,4 +93,21 @@ class WritePolicyTest {
         gate.detachHost(host)
         try { gate.executeAutomatic { fail("Host was detached") }; fail() } catch (_: WriteApprovalGate.Denied) { }
     }
+
+    @Test fun budgetsAreSeparatePerConversationTurn() {
+        val budget = WriteTurnBudget()
+        budget.beginTurn("thread-a")
+        budget.beginTurn("thread-b")
+        repeat(5) { assertEquals(WritePolicy.Decision.AUTO, budget.claim(WriteMode.AUTO_ADD, WriteKind.ADD, "thread-a").decision) }
+        assertEquals(WritePolicy.Decision.ASK, budget.claim(WriteMode.AUTO_ADD, WriteKind.ADD, "thread-a").decision)
+        val b = budget.claim(WriteMode.AUTO_ADD, WriteKind.ADD, "thread-b")
+        assertEquals(WritePolicy.Decision.AUTO, b.decision)
+        // 대화 A가 끝나도 B의 허가는 그대로.
+        budget.endTurn("thread-a")
+        assertTrue(budget.isCurrent(b))
+        // 스레드를 모르는 호출은 자동으로 쓰지 않는다.
+        assertEquals(WritePolicy.Decision.ASK, budget.claim(WriteMode.AUTO_ADD, WriteKind.ADD, "").decision)
+        budget.endAll()
+        assertFalse(budget.isCurrent(b))
+    }
 }

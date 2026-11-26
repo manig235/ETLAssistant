@@ -103,10 +103,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         val actions = ChatActions(
             onSend = { onSendClicked() },
             onSuggestion = { text -> send(text, clearInput = false) },
-            onNewChat = {
-                if (!CodexSession.newConversation()) toast("답변이 끝난 뒤에 새 대화를 시작할 수 있어요")
-                refreshChats()
-            },
+            onNewChat = { newChat() },
             onSettings = { openSettings() },
             onMyDeadlines = { openMyDeadlines() },
             onTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
@@ -116,7 +113,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
                     BannerAction.SETTINGS -> openSettings()
                     BannerAction.RETRY -> CodexSession.restart()
                     BannerAction.NOTIFICATIONS -> fixNotifications()
-                    BannerAction.NONE -> {}
+                    BannerAction.OPEN_CHAT, BannerAction.NONE -> {}
                 }
             },
             onDismissBanner = {
@@ -132,25 +129,18 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
             },
             onAttach = { source -> attach(source) },
             onDrawerOpened = { refreshChats() },
-            onOpenChat = { id ->
-                if (!CodexSession.openConversation(id)) toast("답변이 끝난 뒤에 다른 대화로 옮길 수 있어요")
-                refreshChats()
-                vm.scrollToBottom()
-            },
+            onOpenChat = { id -> switchChat(id) },
             onRenameChat = { id, title ->
                 CodexSession.renameConversation(id, title)
                 refreshChats()
             },
-            onDrawerBusy = { toast("답변이 끝난 뒤에 바꾸거나 지울 수 있어요") },
-            onDeleteChat = { id ->
-                if (!CodexSession.deleteConversation(id)) toast("답변이 끝난 뒤에 지울 수 있어요")
-                refreshChats()
-            },
+            onDeleteChat = { id -> deleteChat(id) },
             attachments = AttachmentActions(onOpen = { openAttachment(it) }, onShare = { shareAttachment(it) },
                 onRedownload = { vm.setInput(AttachmentLogic.redownloadPrompt(it.name, kr.snu.etlassistant.files.GeneratedFilesLogic.isGeneratedPath(it.shownPath))) },
                 onSaveCopy = { saveAttachmentCopy(it) }, saveCopyLabel = kr.snu.etlassistant.files.SaveCopy.label(this)),
         )
         setContent { ChatRoot(vm, actions) }
+        applyOpenChat(intent)
         applyPrefill(intent)
         shareKey = intent?.getStringExtra(EXTRA_SHARE_KEY)?.also { intent.removeExtra(EXTRA_SHARE_KEY) }
         // 새 버전 확인: 하루 한 번 워커 예약 + 마지막 확인 후 6시간이 지났으면 지금 뒤에서 한 번.
@@ -169,6 +159,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (ready) applyOpenChat(intent)
         if (ready) applyPrefill(intent)
         intent.getStringExtra(EXTRA_SHARE_KEY)?.let { key ->
             intent.removeExtra(EXTRA_SHARE_KEY)
@@ -182,13 +173,54 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
 
     private fun applyShare() {
         val s = ShareInbox.take(shareKey.also { shareKey = null }) ?: return
-        if (CodexSession.newConversation()) refreshChats() else toast("답변 중이라 지금 대화의 입력창에 넣었어요")
+        newChat()
         s.failures.distinct().forEach { toast(it) }
         val room = (AttachmentLogic.MAX_PENDING - vm.pending.size - vm.importing).coerceAtLeast(0)
         vm.pending += s.attachments.take(room)
         if (s.dropped > 0 || s.attachments.size > room) toast("한 번에 ${AttachmentLogic.MAX_PENDING}개까지 첨부할 수 있어요")
         s.text?.let { vm.setInput(it) }
         vm.scrollToBottom()
+    }
+
+    // ---- 대화 옮기기(답하는 중에도 된다) ------------------------------------------------
+
+    /** 다른 대화로 옮긴다. 지금 대화의 입력창 글과 첨부는 그 대화에 남겨 두고, 옮겨 간 대화의 것을 꺼낸다. */
+    private fun switchChat(id: String) {
+        val from = CodexSession.chatId
+        if (id != from) {
+            vm.stashDraft(from)
+            if (CodexSession.openConversation(id)) vm.restoreDraft(CodexSession.chatId) else vm.restoreDraft(from)
+        }
+        if (vm.finishBar?.chatId == CodexSession.chatId) vm.finishBar = null
+        refreshChats()
+        vm.scrollToBottom()
+        showWriteApproval()
+    }
+
+    private fun newChat() {
+        val from = CodexSession.chatId
+        vm.stashDraft(from)
+        CodexSession.newConversation()
+        vm.restoreDraft(CodexSession.chatId)
+        refreshChats()
+        showWriteApproval()
+    }
+
+    private fun deleteChat(id: String) {
+        val wasCurrent = id == CodexSession.chatId
+        CodexSession.deleteConversation(id)
+        if (wasCurrent) vm.restoreDraft(CodexSession.chatId) // 지운 대화의 입력창 글은 버리고 새 대화의 것으로
+        vm.dropDraft(id)
+        if (vm.finishBar?.chatId == id) vm.finishBar = null
+        refreshChats()
+        showWriteApproval()
+    }
+
+    /** 답변 완료 알림을 눌러 들어왔다: 그 대화를 연다. */
+    private fun applyOpenChat(i: Intent?) {
+        val id = i?.getStringExtra(CodexSession.EXTRA_OPEN_CHAT) ?: return
+        i.removeExtra(CodexSession.EXTRA_OPEN_CHAT)
+        if (ChatStore.isSafeId(id)) switchChat(id)
     }
 
     /** 첫 실행 안내에서 고른 추천 질문을 입력창에 채워 둔다(자동으로 보내지는 않는다). */
@@ -205,7 +237,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         vm.syncFromSession()
         vm.bump()
         vm.scrollToBottom()
-        CodexSession.attach(this)
+        CodexSession.attach(this, chatScreen = true)
         CodexSession.ensureStarted()
         updateBanner()
         if (shareKey != null) applyShare()
@@ -248,13 +280,24 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     private var approvalRequestId: String? = null
     private val approvalChanged: () -> Unit = { main.post { showWriteApproval() } }
 
-    /** 모델의 '승인했다'는 글은 쓰지 않고, 현재 화면에서 누른 버튼만 한 번의 변경을 승인한다. */
+    /**
+     * 모델의 '승인했다'는 글은 쓰지 않고, 현재 화면에서 누른 버튼만 한 번의 변경을 승인한다.
+     * 확인 창은 그 요청을 낸 대화를 보고 있을 때만 띄운다. 다른 대화의 요청만 있으면 위쪽 배너로 알리고(누르면 그 대화로),
+     * 대화를 옮겨도 요청은 취소되지 않는다(취소는 화면을 떠날 때, 그 답변이 끝날 때, 90초).
+     */
     private fun showWriteApproval() {
-        val host = approvalHost ?: return
+        val host = approvalHost
+        if (host == null) {
+            vm.approvalElsewhere = null
+            return
+        }
         if (isFinishing || isDestroyed) return
-        val request = kr.snu.etlassistant.etl.AiWriteApproval.pending().firstOrNull()
+        val pending = kr.snu.etlassistant.etl.AiWriteApproval.pending()
+        val ui = TurnLogic.approvalUi(pending.map { it.id to CodexSession.chatForThread(it.origin) }, CodexSession.chatId)
+        vm.approvalElsewhere = (ui as? TurnLogic.ApprovalUi.Elsewhere)?.chatId
+        val request = (ui as? TurnLogic.ApprovalUi.Dialog)?.let { d -> pending.firstOrNull { it.id == d.requestId } }
         if (request?.id == approvalRequestId) return
-        approvalDialog?.dismiss()
+        approvalDialog?.dismiss() // dismiss는 취소로 치지 않는다(다른 대화로 옮기면 창만 닫히고 요청은 남는다)
         approvalDialog = null
         approvalRequestId = request?.id
         if (request == null) return
@@ -279,6 +322,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
         approvalDialog?.dismiss()
         approvalDialog = null
         approvalRequestId = null
+        vm.approvalElsewhere = null
         super.onPause()
     }
 
@@ -476,6 +520,12 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
     override fun onEvent(e: SessionEvent) {
         when (e) {
             is SessionEvent.Busy -> vm.busy = e.busy
+            is SessionEvent.Running -> vm.running = e.chats
+            is SessionEvent.TurnFinished -> if (e.chatId != CodexSession.chatId) vm.finishBar = FinishBarSpec(e.chatId, e.text, System.nanoTime())
+            is SessionEvent.ChatSwitched -> {
+                refreshChats()
+                showWriteApproval()
+            }
             is SessionEvent.Activity -> vm.activity = e.label
             is SessionEvent.Models -> {
                 vm.models = e.models

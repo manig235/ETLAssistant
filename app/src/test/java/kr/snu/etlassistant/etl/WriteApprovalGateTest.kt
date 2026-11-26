@@ -125,4 +125,47 @@ class WriteApprovalGateTest {
             assertEquals(1, result.get(2, TimeUnit.SECONDS))
         } finally { activeGate.cancelAll(); worker.shutdownNow() }
     }
+
+    @Test fun turnBoundaryCancelsOnlyThatConversationsReview() {
+        val gate = WriteApprovalGate()
+        val host = gate.attachHost()
+        val requests = observeRequests(gate)
+        val worker = Executors.newFixedThreadPool(2)
+        val writes = AtomicInteger()
+        try {
+            val a = worker.submit<Boolean> {
+                try { gate.execute("add", "A", origin = "thread-a") { writes.incrementAndGet() }; false }
+                catch (_: WriteApprovalGate.Denied) { true }
+            }
+            val ra = requests.poll(2, TimeUnit.SECONDS)!!
+            val b = worker.submit<Int> { gate.execute("add", "B", origin = "thread-b") { writes.incrementAndGet() } }
+            val rb = requests.poll(2, TimeUnit.SECONDS)!!
+            assertEquals("thread-a", ra.origin)
+            assertEquals("thread-b", rb.origin)
+            // 대화 A의 답변이 끝나거나 새로 시작하면 A의 요청만 거절된다.
+            gate.cancelOrigin("thread-a")
+            assertTrue(a.get(2, TimeUnit.SECONDS))
+            assertEquals(listOf(rb.id), gate.pending().map { it.id })
+            // B의 요청은 남아 있고, 그 요청의 버튼만 실행한다.
+            assertFalse(gate.decide(host, ra.id, true))
+            assertTrue(gate.decide(host, rb.id, true))
+            assertEquals(1, b.get(2, TimeUnit.SECONDS))
+            assertEquals(1, writes.get())
+        } finally { gate.cancelAll(); worker.shutdownNow() }
+    }
+
+    @Test fun unknownOriginIsCancelledByAnyTurnBoundary() {
+        val gate = WriteApprovalGate()
+        gate.attachHost()
+        val requests = observeRequests(gate)
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val denied = worker.submit<Boolean> {
+                try { gate.execute("add", "?") { 1 }; false } catch (_: WriteApprovalGate.Denied) { true }
+            }
+            requests.poll(2, TimeUnit.SECONDS)!!
+            gate.cancelOrigin("some-thread")
+            assertTrue(denied.get(2, TimeUnit.SECONDS))
+        } finally { gate.cancelAll(); worker.shutdownNow() }
+    }
 }

@@ -155,6 +155,12 @@ class ChatModel(file: File?) {
         listener?.onReset()
     }
 
+    /** 대화를 지웠다: 더는 저장하지 않고 화면에도 알리지 않는다(답변 중에 지운 대화의 늦은 변경). */
+    fun discard() {
+        file = null
+        listener = null
+    }
+
     fun clear() {
         messages.clear()
         listener?.onReset()

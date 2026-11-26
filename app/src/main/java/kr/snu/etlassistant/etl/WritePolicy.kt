@@ -40,23 +40,29 @@ object WritePolicy {
     }
 }
 
-/** One shared budget across scopes; attachment changes and retries cannot replenish it. */
+/**
+ * One shared budget across scopes per running turn; attachment changes and retries cannot replenish it.
+ * Since 2026-11-27 several conversations can answer at once, so each turn is keyed by its Codex thread ([key]).
+ * A call whose thread is unknown uses the key "" and, unless a turn began under that key, never gets automatic writes.
+ */
 internal class WriteTurnBudget {
-    data class Permit(val decision: WritePolicy.Decision, val turn: Long)
-    private var turn = 0L
-    private var active = false
-    private var used = 0
+    data class Permit(val decision: WritePolicy.Decision, val key: String, val turn: Long)
+    private class Active(val turn: Long) { var used = 0 }
+    private var seq = 0L
+    private val active = HashMap<String, Active>()
 
-    @Synchronized fun beginTurn() { turn++; active = true; used = 0 }
-    @Synchronized fun endTurn() { turn++; active = false }
+    @Synchronized fun beginTurn(key: String = "") { active[key] = Active(++seq) }
+    @Synchronized fun endTurn(key: String = "") { seq++; active.remove(key) }
+    @Synchronized fun endAll() { seq++; active.clear() }
 
-    @Synchronized fun claim(mode: WriteMode, kind: WriteKind): Permit {
-        val decision = WritePolicy.decide(mode, kind, if (active) used else WritePolicy.MAX_AUTO_PER_TURN)
-        if (decision == WritePolicy.Decision.AUTO) used++
-        return Permit(decision, turn)
+    @Synchronized fun claim(mode: WriteMode, kind: WriteKind, key: String = ""): Permit {
+        val a = active[key]
+        val decision = WritePolicy.decide(mode, kind, a?.used ?: WritePolicy.MAX_AUTO_PER_TURN)
+        if (decision == WritePolicy.Decision.AUTO) a?.let { it.used++ }
+        return Permit(decision, key, a?.turn ?: -1L)
     }
 
-    @Synchronized fun isCurrent(permit: Permit): Boolean = active && turn == permit.turn
+    @Synchronized fun isCurrent(permit: Permit): Boolean = permit.turn >= 0 && active[permit.key]?.turn == permit.turn
 }
 
 /** Parallel additions can be prepared in the same millisecond, before entering the approval gate. */

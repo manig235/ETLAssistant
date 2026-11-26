@@ -16,6 +16,10 @@ import kr.snu.etlassistant.chat.Attachment
 import kr.snu.etlassistant.chat.AttachmentLogic
 import kr.snu.etlassistant.chat.ChatModel
 import kr.snu.etlassistant.chat.ChatStore
+import kr.snu.etlassistant.chat.FinishNotice
+import kr.snu.etlassistant.chat.TurnEnd
+import kr.snu.etlassistant.chat.TurnLogic
+import kr.snu.etlassistant.chat.TurnRegistry
 import kr.snu.etlassistant.etl.ApiKeyStore
 import kr.snu.etlassistant.etl.EtlEvents
 import kr.snu.etlassistant.etl.EtlService
@@ -41,8 +45,15 @@ data class AccountInfo(val kind: Kind, val email: String? = null, val plan: Stri
 sealed class SessionEvent {
     data class State(val state: SessionState, val detail: String?) : SessionEvent()
     data class Account(val info: AccountInfo) : SessionEvent()
+    /** 지금 보는 대화가 답하는 중인가(보내기/멈춤 버튼). 다른 대화의 답변과는 상관없다. */
     data class Busy(val busy: Boolean) : SessionEvent()
-    /** 답변을 만드는 동안 "지금 하는 일" 한 줄(`조회하는 중…` 등). null이면 숨긴다. */
+    /** 답하는 대화 목록이 바뀜(서랍의 돌아가는 표시). */
+    data class Running(val chats: Set<String>) : SessionEvent()
+    /** 지금 보지 않는 대화의 답변이 끝남(채팅 화면 아래 막대, "보기"로 그 대화를 연다). */
+    data class TurnFinished(val chatId: String, val text: String) : SessionEvent()
+    /** 지금 보는 대화가 바뀜. */
+    data class ChatSwitched(val chatId: String) : SessionEvent()
+    /** 지금 보는 대화의 "지금 하는 일" 한 줄(`조회하는 중…` 등). null이면 숨긴다. */
     data class Activity(val label: String?) : SessionEvent()
     /** 선택 가능한 모델 목록이 갱신됨(또는 선택이 바뀜). */
     data class Models(val models: List<ModelInfo>, val loading: Boolean = false) : SessionEvent()
@@ -105,6 +116,9 @@ object AppSettings {
  * Codex 세션(code-mode host + app-server + eTL MCP 서버)을 들고 있는 싱글턴.
  *
  * - **채팅 화면이 열려 있을 때만** 돌린다. 화면이 모두 사라지면 그 자리에서 멈춘다(턴이나 로그인 중이면 그것이 끝날 때 멈춘다).
+ * - 답변(턴)은 대화마다 따로 돈다(2026-11-27, [TurnRegistry]). 대화 A가 답하는 동안 다른 대화를 열거나 새 대화에서 보낼 수 있고
+ *   동시에 도는 답변 수에 제한이 없다. Codex 알림은 `threadId`로, eTL 도구가 알리는 일은 MCP `_meta.threadId`로 그 대화에 붙인다.
+ *   화면이 모두 사라지면 **모든** 답변이 끝난 뒤 멈춘다.
  *   예전에는 2분 뒤에 멈췄는데, 삼성이 그 전에 앱을 얼려 타이머가 돌지 못해 Codex 프로세스가 남았다(2026-11-22 S22 실측).
  *   화면 회전처럼 화면이 다시 만들어질 때만 [CONFIG_CHANGE_STOP_MS] 뒤로 미룬다(새 화면이 곧 붙어 취소된다).
  * - 턴이나 로그인이 진행되는 동안은 포그라운드 서비스를 붙잡는다. 앱이 백그라운드가 되면 앱의 DNS가 막히기 때문이다.
@@ -139,12 +153,27 @@ object CodexSession {
         private set
     @Volatile var account: AccountInfo? = null
         private set
-    @Volatile var busy = false
-        private set
     @Volatile var lastLogin: SessionEvent.LoginPrompt? = null
         private set
-    @Volatile var activity: String? = null
-        private set
+
+    /** 대화마다 따로 도는 답변. */
+    private val turns = TurnRegistry()
+    /** 메모리에 둔 대화(지금 대화, 답하는 대화, 이번 실행에 열어 본 대화). 메인 스레드에서만 만진다. */
+    private val liveModels = HashMap<String, ChatModel>()
+    private val trackers = HashMap<String, ActivityTracker>() // 메인 스레드에서만
+    private val activities = HashMap<String, String>() // 메인 스레드에서만
+
+    /** 지금 보는 대화가 답하는 중인가(보내기 대신 멈춤 버튼). */
+    val busy: Boolean get() = turns.isBusy(chatId)
+    /** 어느 대화든 답하는 중인가(포그라운드 서비스, 자동 정지). */
+    val anyBusy: Boolean get() = !turns.isEmpty()
+    /** 답하는 대화(서랍 표시). */
+    val runningChats: Set<String> get() = turns.running()
+    /** 지금 보는 대화의 "지금 하는 일" 한 줄. 메인 스레드에서 읽는다. */
+    val activity: String? get() = activities[chatId]
+
+    /** 승인 요청을 낸 Codex 스레드 → 대화(모르면 null). */
+    fun chatForThread(threadId: String?): String? = turns.chatForThread(threadId)
 
     /** `model/list` 결과. **스텁**: 모델 담당이 불러오기를 구현한다. */
     @Volatile var models: List<ModelInfo> = emptyList()
@@ -209,11 +238,8 @@ object CodexSession {
         }
     }
 
-    private val tracker = ActivityTracker() // 메인 스레드에서만
-
     @Volatile private var client: AppServerClient? = null
     @Volatile private var proc: Process? = null
-    @Volatile private var currentTurnId: String? = null
     @Volatile private var loginId: String? = null
     private var turnHold = false
     private var loginHold = false
@@ -223,7 +249,7 @@ object CodexSession {
     private val loginStateLock = Any()
     private val idleStop = Runnable { if (isIdle()) stopIfIdle() }
 
-    private fun isIdle() = listeners.isEmpty() && !busy && loginId == null
+    private fun isIdle() = listeners.isEmpty() && turns.isEmpty() && loginId == null
 
     /**
      * 화면이 모두 사라진 뒤의 자동 정지. 정지가 대기열에서 기다리는 사이 화면이 돌아오면 그 화면의
@@ -252,18 +278,30 @@ object CodexSession {
         chatId = current
         AppSettings.currentChatId = current
         model = ChatModel(chats.fileFor(current)).also { it.load() }
-        // 비서가 eTL 파일을 받거나 PDF 쪽 이미지를 만들면 대화에 카드로 붙인다. 답변 중일 때만(개발자 도구의 시험 실행은 제외).
+        liveModels[current] = model
+        // 비서가 eTL 파일을 받거나 PDF 쪽 이미지를 만들면 그 도구를 부른 대화에 카드로 붙인다. 답변 중일 때만(개발자 도구의 시험 실행은 제외).
+        // 어느 대화인지는 도구 호출 순간에 정한다(곧 이어지는 turn/completed보다 먼저 메인 스레드에 올라간다).
         EtlEvents.listener = object : EtlEvents.Listener {
-            override fun onFilesSaved(files: List<EtlEvents.SavedFile>, pagePreview: Boolean) {
-                if (!busy) return
+            override fun onFilesSaved(files: List<EtlEvents.SavedFile>, pagePreview: Boolean, origin: String?) {
+                val target = when (val r = turns.routeTool(origin)) {
+                    is TurnRegistry.ToolRoute.One -> r.chatId
+                    is TurnRegistry.ToolRoute.Ambiguous -> r.latest
+                    TurnRegistry.ToolRoute.None -> return
+                }
                 val atts = files.map { f ->
                     Attachment(f.name, f.mime, f.size, f.file.absolutePath, f.phoneUri, f.shownPath, pagePreview, referenceOnly = pagePreview || f.referenceOnly)
                 }
-                main.post { model.addFiles(atts) }
+                main.post { modelFor(target)?.addFiles(atts) }
             }
 
-            override fun onNotice(text: String) {
-                main.post { model.addNotice(text) }
+            // 바뀐 데이터 알림은 사용자가 꼭 봐야 하므로(프롬프트 인젝션 대책) 대화를 확실히 모르면 답하는 대화 모두에, 답하는 대화가 없으면 지금 대화에 남긴다.
+            override fun onNotice(text: String, origin: String?) {
+                val targets: List<String?> = when (val r = turns.routeTool(origin)) {
+                    is TurnRegistry.ToolRoute.One -> listOf(r.chatId)
+                    is TurnRegistry.ToolRoute.Ambiguous -> r.all
+                    TurnRegistry.ToolRoute.None -> listOf(null)
+                }
+                main.post { targets.forEach { id -> (if (id == null) model else modelFor(id) ?: model).addNotice(text) } }
             }
         }
     }
@@ -272,14 +310,19 @@ object CodexSession {
 
     /** 마지막으로 세션에 붙은 화면의 클래스 이름. 로그인 완료 알림이 이 화면으로 돌아간다. */
     @Volatile private var lastScreen: String? = null
+    /** 보이는 채팅 화면. 없으면 답변이 끝날 때 기기 알림으로 알린다. */
+    private val chatScreens = CopyOnWriteArraySet<Listener>()
 
-    fun attach(l: Listener) {
+    /** [chatScreen]: 채팅 화면이 붙는다(답변이 끝났을 때 막대로 알릴 수 있다). */
+    fun attach(l: Listener, chatScreen: Boolean = false) {
         listeners += l
+        if (chatScreen) chatScreens += l
         if (l is android.app.Activity) lastScreen = l.javaClass.name
         main.removeCallbacks(idleStop)
         l.onEvent(SessionEvent.State(state, stateDetail))
         account?.let { l.onEvent(SessionEvent.Account(it)) }
         l.onEvent(SessionEvent.Busy(busy))
+        l.onEvent(SessionEvent.Running(turns.running()))
         l.onEvent(SessionEvent.Activity(activity))
         l.onEvent(SessionEvent.Models(models, modelsLoading))
         // 진행 중인 로그인이 없어도 알려야 한다. 화면이 꺼져 있는 동안 로그인이 끝나면 LoginDone을 놓치기 때문이다.
@@ -292,6 +335,7 @@ object CodexSession {
      */
     fun detach(l: Listener, changingConfigurations: Boolean = false) {
         listeners -= l
+        chatScreens -= l
         if (listeners.isNotEmpty()) return
         main.removeCallbacks(idleStop)
         if (changingConfigurations) main.postDelayed(idleStop, CONFIG_CHANGE_STOP_MS) else main.post(idleStop)
@@ -410,13 +454,24 @@ object CodexSession {
         proc?.destroy()
         proc = null
         EtlService.stopServer()
-        currentTurnId = null
+        val ended = turns.clear()
         loginId = null
         lastLogin = null
         main.post {
-            model.closeStreaming()
-            setActivity(tracker.turnEnded())
-            setBusy(false)
+            for (t in ended) {
+                trackers.remove(t.chatId)
+                setActivity(t.chatId, null)
+                if (t.deleted) {
+                    t.threadId?.let { queueThreadDelete(it) }
+                    continue
+                }
+                modelFor(t.chatId)?.let {
+                    it.closeStreaming()
+                    it.addNotice("답변이 중간에 끊겼어요")
+                }
+                announceFinish(t.chatId, TurnEnd.FAILED)
+            }
+            turnsChanged()
             releaseLoginHold()
         }
     }
@@ -579,12 +634,16 @@ object CodexSession {
 
     // ---- 대화 ---------------------------------------------------------------
 
-    /** @return 보낼 수 없는 상태면 이유 문구, 보냈으면 null */
+    /**
+     * 지금 보는 대화에서 보낸다. 다른 대화가 답하는 중이어도 보낼 수 있다(동시에 도는 답변 수 제한 없음).
+     * @return 보낼 수 없는 상태면 이유 문구, 보냈으면 null
+     */
     fun send(text: String, attachments: List<Attachment> = emptyList()): String? {
         val c = client
         if (state != SessionState.READY || c == null) return "비서가 아직 준비되지 않았어요"
         if (account?.loggedIn != true) return "먼저 로그인해야 해요"
-        if (busy) return "이전 답변이 끝날 때까지 기다려 주세요"
+        val forChat = chatId
+        if (turns.isBusy(forChat)) return "이전 답변이 끝날 때까지 기다려 주세요"
         val workspace = File(app.filesDir, "workspace")
         val images = attachments.filter { it.isImage && it.path != null }
         val files = (attachments - images.toSet()).filter { it.path != null }.map { a ->
@@ -594,89 +653,123 @@ object CodexSession {
         val input = JSONArray().put(JSONObject().put("type", "text").put("text", prompt).put("text_elements", JSONArray()))
         // 사진은 Codex가 직접 읽어 모델에게 이미지로 보낸다.
         images.forEach { input.put(JSONObject().put("type", "localImage").put("path", it.path)) }
+        // 모델 선택은 보내는 순간의 것으로 이 턴에 묶는다(다른 대화에서 바꿔도 이미 도는 답변은 그대로).
+        val choice = effectiveChoice()
+        val turn = turns.start(forChat, modelChoice.isAuto) ?: return "이전 답변이 끝날 때까지 기다려 주세요"
         model.addUser(text, attachments)
-        val forChat = chatId
         chats.noteUserMessage(forChat, text, attachments, System.currentTimeMillis())
-        setBusy(true)
-        setActivity(tracker.turnStarted())
+        val tracker = ActivityTracker().also { trackers[forChat] = it }
+        setActivity(forChat, tracker.turnStarted())
+        turnsChanged()
         calls.execute {
             try {
-                val thread = ensureThread(c, forChat)
+                val thread = ensureThread(c, forChat, choice)
                 val turnParams = JSONObject().put("threadId", thread).put("input", input)
-                val choice = effectiveChoice()
                 choice.model?.let { turnParams.put("model", it) }
                 choice.effort?.let { turnParams.put("effort", it) }
-                kr.snu.etlassistant.etl.AiWriteApproval.beginTurn()
+                kr.snu.etlassistant.etl.AiWriteApproval.beginTurn(thread)
                 val r = c.request("turn/start", turnParams)
-                currentTurnId = r.optJSONObject("turn")?.optString("id")
+                val started = turns.setTurnId(forChat, r.optJSONObject("turn")?.optString("id")?.takeIf { it.isNotEmpty() })
+                // turn/start 응답 전에 멈춤을 눌렀거나 대화를 지웠으면 지금 멈춘다.
+                if (started === turn && turn.interruptRequested) turns.interruptTarget(forChat)?.let { (th, tu) -> requestInterrupt(c, th, tu) }
             } catch (e: IOException) {
-                kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
-                main.post {
-                    model.addNotice("보내지 못했어요: ${e.message}")
-                    model.closeStreaming()
-                    setActivity(tracker.turnEnded())
-                    setBusy(false)
-                }
+                main.post { endTurn(forChat, turn, TurnEnd.FAILED, "보내지 못했어요: ${e.message}", modelHint = false) }
             }
         }
         return null
     }
 
-    fun interrupt() {
-        kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
+    /** [chatId] 대화(기본: 지금 대화)의 답변만 멈춘다. 다른 대화의 답변과 확인 창은 그대로다. */
+    fun interrupt(chatId: String = this.chatId) {
+        val t = turns.get(chatId) ?: return
+        kr.snu.etlassistant.etl.AiWriteApproval.cancelFor(t.threadId)
+        val target = turns.interruptTarget(chatId) ?: return // 아직 turn/start 응답 전: 응답을 받는 대로 멈춘다
         val c = client ?: return
-        val thread = chats.get(chatId)?.threadId ?: return
-        val turn = currentTurnId ?: return
-        calls.execute {
-            try {
-                c.request("turn/interrupt", JSONObject().put("threadId", thread).put("turnId", turn), 15)
-            } catch (_: IOException) {
-            }
+        calls.execute { requestInterrupt(c, target.first, target.second) }
+    }
+
+    private fun requestInterrupt(c: AppServerClient, thread: String, turn: String) {
+        try {
+            c.request("turn/interrupt", JSONObject().put("threadId", thread).put("turnId", turn), 15)
+        } catch (_: IOException) {
         }
     }
 
     /**
      * 빈 새 대화를 연다. 지금 대화는 목록에 그대로 남는다(아무것도 보내지 않은 대화는 목록에 쌓이지 않는다).
-     * 메인 스레드에서 부른다. 답변 중이면 false.
+     * 답하는 대화가 있어도 열 수 있다(그 답변은 뒤에서 계속된다). 메인 스레드에서 부른다.
      */
     fun newConversation(): Boolean {
-        if (busy) return false
         if (chats.get(chatId) == null && model.messages.isEmpty()) return true // 이미 빈 새 대화
         openChat(chats.newId())
         return true
     }
 
-    /** 목록의 대화를 연다. 메인 스레드에서 부른다. 답변 중이면 false. */
+    /** 목록의 대화를 연다. 메인 스레드에서 부른다. 없는 대화면 false. */
     fun openConversation(id: String): Boolean {
-        if (busy) return false
-        if (!ChatStore.isSafeId(id) || id == chatId) return true
+        if (!ChatStore.isSafeId(id)) return false
+        if (id == chatId) return true
+        if (chats.get(id) == null && !turns.isBusy(id)) return false
         openChat(id)
         return true
     }
 
-    private fun openChat(id: String) {
-        if (chats.get(chatId) != null) model.save() // 아무것도 보내지 않은 빈 대화는 파일을 만들지 않는다
-        chatId = id
-        AppSettings.currentChatId = id
-        model.switchTo(chats.fileFor(id))
-        setActivity(null)
+    /** 메모리에 있는 대화 모델. 없으면 저장된 대화에서 읽는다(지운 대화는 null). 메인 스레드에서만. */
+    private fun modelFor(id: String): ChatModel? {
+        if (id == chatId) return model
+        liveModels[id]?.let { return it }
+        if (chats.get(id) == null) return null
+        return ChatModel(chats.fileFor(id)).also { it.load(); liveModels[id] = it }
     }
 
+    private fun openChat(id: String) {
+        val old = model
+        val oldId = chatId
+        if (chats.get(oldId) != null) old.save() // 아무것도 보내지 않은 빈 대화는 파일을 만들지 않는다
+        else if (!turns.isBusy(oldId)) liveModels.remove(oldId)
+        val l = old.listener
+        old.listener = null
+        chatId = id
+        AppSettings.currentChatId = id
+        model = liveModels.getOrPut(id) { ChatModel(chats.fileFor(id)).also { it.load() } }
+        model.listener = l
+        l?.onReset()
+        cancelFinishNotification(id)
+        emit(SessionEvent.ChatSwitched(id))
+        emit(SessionEvent.Busy(busy))
+        emit(SessionEvent.Activity(activity))
+    }
+
+    /** 답하는 중에도 바꿀 수 있다. */
     fun renameConversation(id: String, title: String) = chats.rename(id, title)
 
     /**
      * 대화를 지운다(색인과 메시지 파일). Codex 쪽 스레드도 `thread/delete`로 지운다(rollout 파일과 Codex 내부 DB의 행).
      * Codex가 꺼져 있거나 실패하면 rollout 파일만 바로 지우고, 스레드 ID를 남겨 다음 시작 때 다시 `thread/delete`한다.
-     * 지금 대화를 지우면 빈 새 대화로 바꾼다. 메인 스레드에서 부른다. 답변 중이면 false.
+     * 지금 대화를 지우면 빈 새 대화로 바꾼다. 답하는 중이면 그 답변을 먼저 멈추고, 스레드는 답변이 끝난 뒤 지운다.
+     * 메인 스레드에서 부른다.
      */
     fun deleteConversation(id: String): Boolean {
-        if (busy) return false
-        val removed = chats.delete(id) ?: return true
+        val running = turns.get(id)
+        if (running != null) {
+            running.deleted = true
+            interrupt(id)
+        }
+        val removed = chats.delete(id)
         if (id == chatId) openChat(chats.newId())
-        val thread = removed.threadId?.takeIf { ThreadPurge.isThreadId(it) } ?: return true
+        liveModels.remove(id)?.discard()
+        cancelFinishNotification(id)
+        if (running == null) turns.forget(id)
+        removed?.threadId?.takeIf { ThreadPurge.isThreadId(it) }?.let { queueThreadDelete(it) }
+        turnsChanged()
+        return true
+    }
+
+    /** 지울 스레드를 기록하고 지운다. 답하는 중인 스레드는 그 답변이 끝날 때까지 미룬다([purgeThreads]). */
+    private fun queueThreadDelete(thread: String) {
+        if (!ThreadPurge.isThreadId(thread)) return
         synchronized(purgeLock) { AppSettings.pendingThreadDeletes = AppSettings.pendingThreadDeletes + thread }
         calls.execute { purgeThreads(client) }
-        return true
     }
 
     private val purgeLock = Any()
@@ -688,7 +781,8 @@ object CodexSession {
      * `thread/delete`가 성공했거나 스레드가 이미 없을 때만 목록에서 뺀다(그 밖의 실패는 다음 시작 때 다시 시도).
      */
     private fun purgeThreads(c: AppServerClient?) {
-        val pending = synchronized(purgeLock) { AppSettings.pendingThreadDeletes }
+        // 답하는 중인 스레드(답변 중에 지운 대화)는 그 답변이 끝난 뒤 지운다.
+        val pending = synchronized(purgeLock) { AppSettings.pendingThreadDeletes } - turns.runningThreads()
         if (pending.isEmpty()) return
         val done = mutableSetOf<String>()
         for (t in pending) {
@@ -738,13 +832,12 @@ object CodexSession {
             "\"~입니다/~습니다\"체는 쓰지 않는다. 짧고 담백하게 쓰고, 과한 이모지·감탄사·인사말은 넣지 않으며, 정확성을 먼저 지킨다."
     }
 
-    @Synchronized
-    private fun ensureThread(c: AppServerClient, forChat: String): String {
+    private fun ensureThread(c: AppServerClient, forChat: String, choice: ModelChoice): String {
         val cwd = File(app.filesDir, "workspace").path
         val saved = chats.get(forChat)?.threadId
-        val choice = effectiveChoice()
         CodexRunner.log.line("[session] 모델: ${choice.model ?: "자동"}, 강도: ${choice.effort ?: "기본"}")
         if (saved != null) {
+            turns.bindThread(forChat, saved)
             try {
                 val resume = JSONObject().put("threadId", saved).put("cwd", cwd)
                     .put("approvalPolicy", "never").put("sandbox", "read-only")
@@ -755,7 +848,7 @@ object CodexSession {
             } catch (e: IOException) {
                 CodexRunner.log.line("[session] 스레드 재개 실패, 새로 시작합니다: ${e.message}")
                 chats.setThread(forChat, null)
-                main.post { if (chatId == forChat) model.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 가요.") }
+                main.post { if (turns.get(forChat)?.deleted != true) modelFor(forChat)?.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 가요.") }
             }
         }
         val start = JSONObject().put("cwd", cwd)
@@ -765,45 +858,55 @@ object CodexSession {
         val r = c.request("thread/start", start)
         val id = r.optJSONObject("thread")?.optString("id")?.takeIf { it.isNotEmpty() }
             ?: throw IOException("스레드를 만들지 못했어요")
+        turns.bindThread(forChat, id)
         chats.setThread(forChat, id)
         return id
     }
 
     // ---- 서버 알림 ------------------------------------------------------------
 
+    /** 알림의 `threadId`로 그 알림이 쓸 대화(답하는 중이고 지우지 않은 대화)를 찾는다. */
+    private fun liveChat(p: JSONObject): String? = turns.liveTurnForThread(p.optString("threadId").takeIf { it.isNotEmpty() })?.chatId
+
     private fun onNotification(method: String, p: JSONObject) {
         when (method) {
             "item/agentMessage/delta" -> {
+                val chat = liveChat(p) ?: return
                 val id = p.optString("itemId")
                 val d = p.optString("delta")
                 main.post {
-                    model.appendAssistant(id, d)
-                    setActivity(tracker.textDelta())
+                    modelFor(chat)?.appendAssistant(id, d)
+                    trackers[chat]?.let { setActivity(chat, it.textDelta()) }
                 }
             }
-            "item/started", "item/completed" -> p.optJSONObject("item")?.let { item(it, method == "item/completed") }
+            "item/started", "item/completed" -> {
+                val chat = liveChat(p) ?: return
+                p.optJSONObject("item")?.let { item(chat, it, method == "item/completed") }
+            }
             "turn/completed" -> {
-                kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
+                val threadId = p.optString("threadId").takeIf { it.isNotEmpty() }
+                val chat = turns.chatForThread(threadId) ?: return
+                val t = turns.get(chat) ?: return
                 val turn = p.optJSONObject("turn")
+                val finishedId = turn?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }
+                if (t.turnId != null && finishedId != null && finishedId != t.turnId) return // 예전 턴의 늦은 알림
+                kr.snu.etlassistant.etl.AiWriteApproval.endTurn(threadId)
                 val status = turn?.optString("status") ?: "?"
                 val err = turn?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() && it != "null" }
-                main.post {
-                    model.closeStreaming()
-                    if (status == "failed") {
-                        model.addNotice(err ?: "답변을 만들지 못했어요")
-                        if (!modelChoice.isAuto) model.addNotice("선택한 모델 설정 때문일 수 있어요. 설정에서 '자동'으로 되돌려 보세요.")
-                    }
-                    if (status == "interrupted") model.addNotice("답변을 멈췄어요")
-                    currentTurnId = null
-                    setActivity(tracker.turnEnded())
-                    setBusy(false)
+                val end = when (status) {
+                    "failed" -> TurnEnd.FAILED
+                    "interrupted" -> TurnEnd.INTERRUPTED
+                    else -> TurnEnd.COMPLETED
                 }
+                main.post { endTurn(chat, t, end, err) }
             }
             "error" -> {
-                kr.snu.etlassistant.etl.AiWriteApproval.cancelAll()
+                val threadId = p.optString("threadId").takeIf { it.isNotEmpty() }
+                kr.snu.etlassistant.etl.AiWriteApproval.cancelFor(threadId)
                 if (!p.optBoolean("willRetry", false)) {
                     val msg = p.optJSONObject("error")?.optString("message").orEmpty()
-                    if (msg.isNotEmpty()) main.post { model.addNotice(msg) }
+                    val chat = liveChat(p)
+                    if (msg.isNotEmpty() && (chat != null || threadId == null)) main.post { (chat?.let { modelFor(it) } ?: model).addNotice(msg) }
                 }
             }
             "account/login/completed" -> {
@@ -824,49 +927,125 @@ object CodexSession {
         }
     }
 
-    private fun item(item: JSONObject, completed: Boolean) {
+    private fun item(chat: String, item: JSONObject, completed: Boolean) {
         val id = item.optString("id")
         when (item.optString("type")) {
             "agentMessage" -> if (completed) {
                 val text = item.optString("text")
                 main.post {
-                    model.finishAssistant(id, text)
-                    setActivity(tracker.messageDone())
+                    modelFor(chat)?.finishAssistant(id, text)
+                    trackers[chat]?.let { setActivity(chat, it.messageDone()) }
                 }
             }
             // 도구 호출은 대화에 남기지 않고, 진행 중인 일을 한 줄로만 알린다.
             "mcpToolCall" -> {
                 val tool = item.optString("tool")
-                main.post { setActivity(if (completed) tracker.toolFinished(id) else tracker.toolStarted(id, tool)) }
+                main.post { trackers[chat]?.let { setActivity(chat, if (completed) it.toolFinished(id) else it.toolStarted(id, tool)) } }
             }
         }
     }
 
-    private fun setActivity(label: String?) {
-        if (activity == label) return
-        activity = label
-        emit(SessionEvent.Activity(label))
+    /** [chat] 대화의 "지금 하는 일". 지금 보는 대화면 화면에 알린다. 메인 스레드에서만. */
+    private fun setActivity(chat: String, label: String?) {
+        val before = activities[chat]
+        if (label == null) activities.remove(chat) else activities[chat] = label
+        if (before != label && chat == chatId) emit(SessionEvent.Activity(label))
     }
 
     private fun onServerRequest(method: String, params: JSONObject?) {
         CodexRunner.log.line("[session] 서버 요청을 거절했습니다: $method")
-        main.post { model.addNotice("지원하지 않는 요청이라 거절했어요: $method") }
+        val chat = params?.let { liveChat(it) }
+        main.post { (chat?.let { modelFor(it) } ?: model).addNotice("지원하지 않는 요청이라 거절했어요: $method") }
+    }
+
+    /**
+     * 한 대화의 답변이 끝났다(메인 스레드). [expected]와 다른 턴이면(이미 끝나고 새로 보낸 경우) 무시한다.
+     * [modelHint]: 실패했을 때 모델 선택 안내를 덧붙일지(보내기 자체가 실패한 경우는 덧붙이지 않는다).
+     */
+    private fun endTurn(chat: String, expected: TurnRegistry.Turn, end: TurnEnd, error: String?, modelHint: Boolean = true) {
+        if (turns.get(chat) !== expected) return
+        turns.finish(chat)
+        kr.snu.etlassistant.etl.AiWriteApproval.endTurn(expected.threadId)
+        trackers.remove(chat)
+        setActivity(chat, null)
+        if (expected.deleted) {
+            turns.forget(chat)
+            expected.threadId?.let { queueThreadDelete(it) }
+        } else {
+            modelFor(chat)?.let { m ->
+                m.closeStreaming()
+                when (end) {
+                    TurnEnd.FAILED -> {
+                        m.addNotice(error ?: "답변을 만들지 못했어요")
+                        if (modelHint && !expected.modelAuto) m.addNotice("선택한 모델 설정 때문일 수 있어요. 설정에서 '자동'으로 되돌려 보세요.")
+                    }
+                    TurnEnd.INTERRUPTED -> m.addNotice("답변을 멈췄어요")
+                    TurnEnd.COMPLETED -> {}
+                }
+            }
+            announceFinish(chat, end)
+        }
+        turnsChanged()
+    }
+
+    /** 지금 보지 않는 대화가 끝나면 채팅 화면 아래 막대로, 채팅 화면이 안 보이면 기기 알림으로 알린다. */
+    private fun announceFinish(chat: String, end: TurnEnd) {
+        val text = TurnLogic.finishText(chats.get(chat)?.title, end == TurnEnd.COMPLETED)
+        when (TurnLogic.finishNotice(chat, chatId, chatScreens.isNotEmpty(), end, deleted = false)) {
+            FinishNotice.NONE -> {}
+            FinishNotice.BAR -> emit(SessionEvent.TurnFinished(chat, text))
+            FinishNotice.NOTIFICATION -> notifyTurnFinished(chat, text)
+        }
     }
 
     // ---- 포그라운드 서비스, 알림 ------------------------------------------------
 
-    private fun setBusy(b: Boolean) {
-        if (busy == b) return
-        busy = b
-        if (b && !turnHold) {
+    /** 답하는 대화가 바뀜(메인 스레드): 포그라운드 서비스는 하나라도 답하는 동안 붙잡는다. 모두 끝나고 화면이 없으면 멈춘다. */
+    private fun turnsChanged() {
+        val any = !turns.isEmpty()
+        if (any && !turnHold) {
             turnHold = true
             runCatching { RunService.acquire(app) }
-        } else if (!b && turnHold) {
+        } else if (!any && turnHold) {
             turnHold = false
             RunService.release(app)
         }
-        emit(SessionEvent.Busy(b))
-        if (!b) stopSoonIfIdle()
+        emit(SessionEvent.Running(turns.running()))
+        emit(SessionEvent.Busy(busy))
+        if (!any) stopSoonIfIdle()
+    }
+
+    private fun finishNotificationId(chat: String) = ("answer:$chat").hashCode()
+
+    /** 채팅 화면이 안 보일 때 끝난 답변. 누르면 그 대화가 열린다. 잠금화면에는 대화 이름을 숨긴다. */
+    private fun notifyTurnFinished(chat: String, text: String) {
+        val nm = app.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(ANSWER_CHANNEL, "답변 완료", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "다른 화면에 있을 때 비서의 답변이 끝나면 알려요"
+        })
+        val intent = Intent().setClassName(app, "kr.snu.etlassistant.chat.ChatActivity")
+            .putExtra(EXTRA_OPEN_CHAT, chat)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val id = finishNotificationId(chat)
+        val pi = PendingIntent.getActivity(app, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val public = android.app.Notification.Builder(app, ANSWER_CHANNEL)
+            .setSmallIcon(kr.snu.etlassistant.phase0.R.drawable.ic_stat_etl)
+            .setContentTitle("영민이 답변이 끝났어요")
+            .build()
+        val n = android.app.Notification.Builder(app, ANSWER_CHANNEL)
+            .setSmallIcon(kr.snu.etlassistant.phase0.R.drawable.ic_stat_etl)
+            .setContentTitle(text)
+            .setContentText("탭하면 대화를 열어요")
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setVisibility(android.app.Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
+            .build()
+        runCatching { nm.notify(id, n) }
+    }
+
+    private fun cancelFinishNotification(chat: String) {
+        runCatching { app.getSystemService(NotificationManager::class.java).cancel(finishNotificationId(chat)) }
     }
 
     private fun acquireLoginHold() {
@@ -903,5 +1082,8 @@ object CodexSession {
 
     /** 화면 회전 등으로 화면이 다시 만들어질 때만 쓰는 유예. 새 화면이 붙으면 취소된다. */
     const val CONFIG_CHANGE_STOP_MS = 5_000L
+    /** 답변 완료 알림을 누르면 열 대화(ChatActivity 인텐트). */
+    const val EXTRA_OPEN_CHAT = "openChat"
+    private const val ANSWER_CHANNEL = "answer_done"
     private const val MODELS_MAX_PAGES = 5
 }

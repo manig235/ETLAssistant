@@ -78,6 +78,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
@@ -379,6 +380,34 @@ fun ActivityLine(label: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 24.dp, vertical = 4.dp)
             .alpha(alpha),
     )
+}
+
+// ---- 다른 대화의 답변이 끝남 ---------------------------------------------------------
+
+/**
+ * "‘{대화 이름}’ 답변이 끝났어요 · 보기". 지금 보지 않는 대화의 답변이 끝나면 입력창 위에 잠깐 보인다(몇 초 뒤 사라짐).
+ * 화면 낭독기가 바로 읽도록 live region으로 둔다.
+ */
+@Composable
+fun FinishBar(text: String, onOpen: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val c = DesignSystemTheme.colors
+    val t = DesignSystemTheme.typography
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surfaceNeutralSecondary)
+            .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }
+            .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = t.body2Medium, color = c.foregroundNeutralPrimary, maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        com.wanted.android.wanted.design.actions.button.textbutton.WantedTextButton(text = "보기", onClick = onOpen)
+        IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Outlined.Close, contentDescription = "닫기", tint = c.foregroundNeutralSecondary, modifier = Modifier.size(18.dp))
+        }
+    }
 }
 
 // ---- 입력창 -------------------------------------------------------------------

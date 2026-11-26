@@ -18,6 +18,7 @@ class McpServerTest {
         override fun tools() = JSONArray().put(JSONObject().put("name", "echo").put("inputSchema", JSONObject().put("type", "object")))
         override fun call(name: String, args: JSONObject): ToolResult = when (name) {
             "echo" -> ToolResult("echo:" + args.optString("x"))
+            "origin" -> ToolResult("origin:" + ToolOrigin.current())
             "image" -> ToolResult("이미지", images = listOf(ToolImage("image/jpeg", "AQID")))
             "failed-image" -> ToolResult("실패했습니다", isError = true, images = listOf(ToolImage("image/jpeg", "AQID")))
             "fail" -> ToolResult("실패했습니다", isError = true)
@@ -270,5 +271,19 @@ class McpServerTest {
             if (b != '\r'.code) sb.append(b.toChar())
         }
         return sb.toString()
+    }
+
+    @Test fun toolCallSeesCallingThreadFromMeta() {
+        fun call(meta: JSONObject?): String {
+            val p = JSONObject().put("name", "origin").put("arguments", JSONObject())
+            if (meta != null) p.put("_meta", meta)
+            return rpc("tools/call", p).getJSONObject("result").getJSONArray("content").getJSONObject(0).getString("text")
+        }
+        assertEquals("origin:019a-thread_1", call(JSONObject().put("threadId", "019a-thread_1").put("sessionId", "s")))
+        assertEquals("origin:null", call(null))
+        assertEquals("origin:null", call(JSONObject().put("threadId", "../../etc")))
+        assertEquals("origin:null", call(JSONObject().put("threadId", 42)))
+        // 도구가 끝나면 스레드 지역 값은 원래대로.
+        assertEquals(null, ToolOrigin.current())
     }
 }

@@ -4,7 +4,8 @@ import kr.snu.etlassistant.chat.MarkdownLite.Kind
 import kr.snu.etlassistant.codex.SessionState
 
 /** 위쪽 배너를 눌렀을 때 할 일. */
-enum class BannerAction { SETTINGS, RETRY, NOTIFICATIONS, NONE }
+/** [OPEN_CHAT]: 다른 대화로 옮긴다(그 대화의 확인 창). */
+enum class BannerAction { SETTINGS, RETRY, NOTIFICATIONS, OPEN_CHAT, NONE }
 
 /** [dismissible]이면 ×(나중에)로 닫을 수 있다. */
 data class BannerSpec(val text: String, val action: BannerAction, val dismissible: Boolean = false)

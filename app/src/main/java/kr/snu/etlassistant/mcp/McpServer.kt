@@ -309,7 +309,8 @@ class McpServer(private val host: ToolHost, private val log: (String) -> Unit = 
                     val name = params.optString("name", "")
                     val args = params.optJSONObject("arguments") ?: JSONObject()
                     val started = System.nanoTime()
-                    val result = host.call(name, args)
+                    val origin = ToolOrigin.fromMeta(params.optJSONObject("_meta"))
+                    val result = ToolOrigin.with(origin) { host.call(name, args) }
                     val detail = result.detail?.takeIf { it.isNotBlank() }?.let { " · ${it.replace('\n', ' ').take(200)}" }.orEmpty()
                     log("[mcp] tools/call $name ${if (result.isError) "error" else "ok"} ${(System.nanoTime() - started) / 1_000_000}ms$detail")
                     ok(id, JSONObject()

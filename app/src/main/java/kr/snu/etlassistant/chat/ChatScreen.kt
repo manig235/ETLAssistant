@@ -72,6 +72,29 @@ class ChatViewModel : ViewModel() {
     /** 내 일정에 아직 넣지 않은 시험·과제 공지(채팅 상단 칩과 하단 시트). */
     var pendingNotices by mutableStateOf<List<kr.snu.etlassistant.notify.PendingNotice>>(emptyList())
     var pendingSheet by mutableStateOf(false)
+    /** 답하는 대화(서랍의 돌아가는 표시). 지금 대화의 답변 여부는 [busy]. */
+    var running by mutableStateOf<Set<String>>(emptySet())
+    /** 다른 대화의 답변이 끝남(아래 막대 "보기"). */
+    var finishBar by mutableStateOf<FinishBarSpec?>(null)
+    /** 다른 대화가 쓰기 확인을 기다림(위쪽 배너, 누르면 그 대화로). */
+    var approvalElsewhere by mutableStateOf<String?>(null)
+
+    /** 대화마다 입력창 글과 보낼 첨부를 따로 둔다(다른 대화로 옮겼다 돌아오면 그대로). */
+    private val drafts = HashMap<String, Pair<TextFieldValue, List<Attachment>>>()
+
+    fun stashDraft(chatId: String) {
+        if (input.text.isEmpty() && pending.isEmpty()) drafts.remove(chatId)
+        else drafts[chatId] = input to pending.toList()
+    }
+
+    fun dropDraft(chatId: String) { drafts.remove(chatId) }
+
+    fun restoreDraft(chatId: String) {
+        val d = drafts.remove(chatId)
+        input = d?.first ?: TextFieldValue("")
+        pending.clear()
+        d?.second?.let { pending.addAll(it) }
+    }
 
     fun bump() { version++ }
 
@@ -82,10 +105,18 @@ class ChatViewModel : ViewModel() {
     /** 세션 싱글턴의 현재 값을 한꺼번에 가져온다(화면이 다시 보일 때). */
     fun syncFromSession() {
         busy = CodexSession.busy
+        running = CodexSession.runningChats
         activity = CodexSession.activity
         models = CodexSession.models
         modelsLoading = CodexSession.modelsLoading
         choice = CodexSession.modelChoice
+    }
+}
+
+/** 다른 대화의 답변이 끝났다는 아래 막대. [seq]로 같은 글이 다시 와도 새로 보인다. */
+data class FinishBarSpec(val chatId: String, val text: String, val seq: Long) {
+    companion object {
+        const val SHOW_MS = 8_000L
     }
 }
 
@@ -107,8 +138,6 @@ class ChatActions(
     val onDrawerOpened: () -> Unit,
     val onOpenChat: (String) -> Unit,
     val onRenameChat: (String, String) -> Unit,
-    /** 답변 중에 대화 이름 바꾸기·삭제를 누름. */
-    val onDrawerBusy: () -> Unit,
     val onDeleteChat: (String) -> Unit,
     /** 서랍의 "내 마감". */
     val onMyDeadlines: () -> Unit,
@@ -163,8 +192,7 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                     onOpen = { id -> a.onOpenChat(id); closeDrawer() },
                     onRename = a.onRenameChat,
                     onDelete = a.onDeleteChat,
-                    busy = vm.busy,
-                    onBusy = a.onDrawerBusy,
+                    running = vm.running,
                     onMyDeadlines = { a.onMyDeadlines(); closeDrawer() },
                     onTimetable = { a.onTimetable(); closeDrawer() },
                     onHistory = { a.onHistory(); closeDrawer() },
@@ -198,6 +226,13 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                 onDismiss = a.onDismissBanner,
             )
         }
+        vm.approvalElsewhere?.let { other ->
+            StatusBanner(
+                BannerSpec(TurnLogic.APPROVAL_ELSEWHERE, BannerAction.OPEN_CHAT),
+                onClick = { a.onOpenChat(other) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
 
         Column(Modifier.weight(1f)) {
             if (messages.isEmpty()) {
@@ -229,6 +264,18 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
             }
         }
 
+        vm.finishBar?.let { bar ->
+            FinishBar(
+                bar.text,
+                onOpen = { vm.finishBar = null; a.onOpenChat(bar.chatId) },
+                onDismiss = { vm.finishBar = null },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            LaunchedEffect(bar) {
+                kotlinx.coroutines.delay(FinishBarSpec.SHOW_MS)
+                if (vm.finishBar == bar) vm.finishBar = null
+            }
+        }
         vm.activity?.let { ActivityLine(it) }
         PendingAttachments(
             items = vm.pending,
