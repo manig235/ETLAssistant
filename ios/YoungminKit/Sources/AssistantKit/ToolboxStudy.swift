@@ -36,7 +36,7 @@ extension ToolSpecs {
 
     /// 안드로이드와 같은 이름·설명·스키마.
     static let studyTools: [ToolSpec] = [
-        studyTool("study_search", "공개 라이선스 기출·연습 문제를 허용된 공개 사이트(지금은 MIT OpenCourseWare)에서 찾는다. 사용자가 시험 자료·기출·연습 문제를 요청했을 때만 쓴다. " +
+        studyTool("study_search", "공개 라이선스 기출·연습 문제를 허용된 공개 사이트(지금은 MIT OpenCourseWare)에서 찾는다. 사용자가 시험 자료·모의고사·기출·연습 문제를 요청했을 때만 쓴다. " +
                   "course_id 없이 부르면 주제로 과목을 찾고(course_id, 과목 번호, 학기, 수준, 있는 자료 종류), course_id를 주면 그 과목의 시험·풀이·문제 세트 자료 목록(url)을 준다. " +
                   "검색어는 과목명이 아니라 다룰 주제를 영어로 쓴다(예: \"Laplace transform convolution\"). 검색어는 그 사이트로 전송된다(eTL 정보·개인 정보는 넣지 않는다). " +
                   "설정 '공개 기출 자료 찾기'가 꺼져 있으면 오류를 돌려준다.",

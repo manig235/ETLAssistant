@@ -117,12 +117,12 @@ struct ChatBanner: View {
     }
 }
 
-/// 빈 화면(Kotlin `EmptyState`): 가운데 원 아이콘 → "무엇을 도와드릴까요?" → 안내 → 추천 카드 6개(누르면 바로 전송).
+/// 빈 화면(Kotlin `EmptyState`): 가운데 원 아이콘 → "무엇을 도와드릴까요?" → 안내 → 추천 카드 7개(누르면 바로 전송).
 struct ChatEmptyState: View {
     let onPick: (String) -> Void
     @State private var suggestions = SuggestionQuestions.shared
 
-    private static let icons = ["calendar", "megaphone", "calendar", "bubble.left", "paperclip", "checkmark.circle"]
+    private static let icons = ["calendar", "megaphone", "calendar", "bubble.left", "paperclip", "checkmark.circle", "doc.text"]
 
     var body: some View {
         GeometryReader { geo in

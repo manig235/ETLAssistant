@@ -1,5 +1,6 @@
 import ETLKit
 import Foundation
+import NotifyKit
 
 /// 첫 실행 안내의 단계(Kotlin `Step`).
 enum OnboardingStep: Int, CaseIterable, Hashable {
@@ -48,6 +49,11 @@ enum OnboardingLogic {
         "최근 과제가 제대로 제출됐는지 확인해줘",
     ]
 
+    /// 확정한 여섯 질문 + 7번째 모의고사 질문(과목 없음, Kotlin `defaultSuggestions`). 과목을 하나도 모를 때와 처음 그릴 때 쓴다.
+    static func defaultSuggestions(_ hint: MockExam.Hint = MockExam.Hint(MockExam.termByWeek(DayDate.today()))) -> [String] {
+        suggestions + [MockExam.question(hint.term, hint.course)]
+    }
+
     /// 추천 질문 후보 과목. 콘텐츠 값 nil = 미확인, false = 확인했는데 없음.
     struct CourseOption: Hashable {
         var course: TimetableLogic.CourseMeetings
@@ -79,7 +85,11 @@ enum OnboardingLogic {
     }
 
     /// 과목 질문 3개(자료 요약, 자료 받기, 과제 제출 확인)에 과목명을 붙인다(Kotlin `personalizedSuggestions`).
-    static func personalizedSuggestions<G: RandomNumberGenerator>(_ courses: [CourseOption], random: inout G) -> [String] {
+    /// 7번째 모의고사 질문은 `mockExam`의 시험 과목(비었으면 제목에 든 이번 학기 과목명)을, 없으면 자료 질문의 가장 좋은 순위 과목 중 앞의 세 질문과 겹치지 않는 과목을 쓴다.
+    static func personalizedSuggestions<G: RandomNumberGenerator>(
+        _ courses: [CourseOption], random: inout G,
+        mockExam: MockExam.Hint = MockExam.Hint(MockExam.termByWeek(DayDate.today()))
+    ) -> [String] {
         let named = courses.filter { $0.course.courseId > 0 }
             .map { (cleanName($0.course.name), $0) }
             .filter { !$0.0.isEmpty }
@@ -118,10 +128,15 @@ enum OnboardingLogic {
         let summary = pick(materialNames, [assignment])
         let download = pick(materialNames, [summary, assignment])
         let picked = [summary, download, assignment]
+        // 모의고사는 자료 질문의 가장 좋은 순위 안에서만 고른다. 겹침을 피하려고 1학점 과목으로 내려가지 않는다.
+        let best = materials.filter { $0.1 == materials.first?.1 }.map(\.0)
+        let mockCourse = mockExam.course
+            ?? MockExam.courseInTitle(mockExam.title, named.map(\.0))
+            ?? best.first { !picked.contains($0) } ?? best.first { $0 != summary } ?? best.first
         return suggestions.enumerated().map { index, question in
             let course = index >= 3 ? picked[index - 3] : nil
             return course.map { "\($0) \(question)" } ?? question
-        }
+        } + [MockExam.question(mockExam.term, mockCourse)]
     }
 }
 
@@ -146,7 +161,7 @@ struct SeededGenerator: RandomNumberGenerator {
 final class SuggestionQuestions {
     static let shared = SuggestionQuestions()
 
-    private(set) var questions: [String] = OnboardingLogic.suggestions
+    private(set) var questions: [String] = OnboardingLogic.defaultSuggestions()
     @ObservationIgnored private let seed = UInt64.random(in: 1...UInt64.max)
     @ObservationIgnored private var settled = false
     @ObservationIgnored private var running = false
@@ -155,11 +170,11 @@ final class SuggestionQuestions {
         if settled || running { return }
         running = true
         defer { running = false }
-        if let offline = await Self.options(online: false), !offline.options.isEmpty { apply(offline.options) }
+        if let offline = await Self.options(online: false) { apply(offline.options, offline.mockExam) }
         let delays: [UInt64] = [10, 30, 60]
         for attempt in 0...delays.count {
             let result = await Self.options(online: true)
-            if let result, !result.options.isEmpty { apply(result.options) }
+            if let result, !result.options.isEmpty { apply(result.options, result.mockExam) }
             if result?.complete == true { settled = true; return }
             guard attempt < delays.count else { return }
             try? await Task.sleep(nanoseconds: delays[attempt] * 1_000_000_000)
@@ -167,12 +182,21 @@ final class SuggestionQuestions {
         }
     }
 
-    private func apply(_ options: [OnboardingLogic.CourseOption]) {
+    private func apply(_ options: [OnboardingLogic.CourseOption], _ mockExam: MockExam.Hint) {
         var g = SeededGenerator(seed: seed)
-        questions = OnboardingLogic.personalizedSuggestions(options, random: &g)
+        questions = OnboardingLogic.personalizedSuggestions(options, random: &g, mockExam: mockExam)
     }
 
-    private struct Result { let options: [OnboardingLogic.CourseOption]; let complete: Bool }
+    /// `mockExam`: 모의고사 질문의 시험 이름·과목(내 일정의 시험 → 학기 주차).
+    private struct Result { let options: [OnboardingLogic.CourseOption]; let complete: Bool; let mockExam: MockExam.Hint }
+
+    /// 내 일정의 시험(완료 표시하지 않은 것)으로 모의고사 질문의 시험 이름·과목을 정한다. 네트워크 없음.
+    nonisolated private static func mockExamHint(now: Date) -> MockExam.Hint {
+        let exams = SchedStores.mine.load()
+            .filter { $0.kind == .EXAM && !$0.done }
+            .map { MockExam.Exam(title: $0.title, course: $0.course, start: $0.due, end: $0.end) }
+        return MockExam.hint(exams, now: now)
+    }
 
     nonisolated private static let STALE_MS: Int64 = 60 * 24 * 3600 * 1000
 
@@ -190,8 +214,9 @@ final class SuggestionQuestions {
                 listed = true
             }
         }
+        let mockExam = mockExamHint(now: Date())
         let courses = OnboardingLogic.knownCourses(timetable, [])
-        if courses.isEmpty { return Result(options: [], complete: false) }
-        return Result(options: courses.map { OnboardingLogic.CourseOption(course: $0) }, complete: listed)
+        if courses.isEmpty { return Result(options: [], complete: false, mockExam: mockExam) }
+        return Result(options: courses.map { OnboardingLogic.CourseOption(course: $0) }, complete: listed, mockExam: mockExam)
     }
 }
