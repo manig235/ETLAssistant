@@ -40,7 +40,7 @@ macOS 실행 환경은 GitHub에서 제공하므로 개인 맥, Apple 계정, �
 실행 페이지 아래 **Artifacts**에서 `ios-simulator-tests-<기기>-…`(`iphone`, `ipad-pro-13-inch`, `ipad-mini`)를 내려받으면 다음 파일을 볼 수 있다. 결과물은 7일간 보관한다.
 
 - `screenshots/`: 단계별 화면 캡처를 이름(`01-welcome`, `ipad-03-chat-landscape` …)으로 모은 것. 크기는 `screenshots.json`.
-- `appstore-ipad-13/`: 13인치 iPad App Store 스크린샷 크기(2064×2752 등)로 찍힌 캡처(iPad Pro 13-inch 실행만).
+- `appstore-ipad-13/`: 13인치 iPad App Store 스크린샷 크기(2064×2752 등)로 찍힌 캡처(iPad Pro 13-inch 실행만). XCTest는 가로 화면을 세로 픽셀 + 회전 태그로 저장하므로, 이 폴더의 가로 캡처는 실제 2752×2064 픽셀(RGB, 메타데이터 없음)로 바로 세워 둔다(`ios-upright-png.swift`). `screenshots/`의 원본 가로 캡처는 회전 태그를 무시하는 뷰어에서 옆으로 누워 보인다.
 - `attachments/`: UI 테스트의 원본 첨부파일과 목록(`manifest.json`).
 - `xcodebuild.log`: 앱·확장·UI 테스트의 빌드 및 실행 로그.
 - `Youngmin.xcresult/`: 전체 Xcode 테스트 결과. macOS에서 Xcode로 열 수 있다.

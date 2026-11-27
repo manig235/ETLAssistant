@@ -8,6 +8,7 @@ on:
       - '.github/scripts/ios-simulator.sh'
       - '.github/scripts/check-ios-device-family.py'
       - '.github/scripts/ios-export-screenshots.py'
+      - '.github/scripts/ios-upright-png.swift'
   push:
     branches: [main, ios-port]
     paths:
@@ -16,6 +17,7 @@ on:
       - '.github/scripts/ios-simulator.sh'
       - '.github/scripts/check-ios-device-family.py'
       - '.github/scripts/ios-export-screenshots.py'
+      - '.github/scripts/ios-upright-png.swift'
   workflow_dispatch:
 
 permissions:
