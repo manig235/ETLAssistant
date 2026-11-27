@@ -126,21 +126,39 @@ object AiWriteApproval {
     fun cancelAll() { gate.cancelAll(); budget.endAll() }
     fun pending() = gate.pending()
     fun decide(hostId: String, requestId: String, approved: Boolean) = gate.decide(hostId, requestId, approved)
-    fun <T> execute(context: Context, scope: WriteScope, kind: WriteKind, operation: String, details: String, action: () -> T): T = try {
+    fun <T> execute(context: Context, scope: WriteScope, kind: WriteKind, operation: String, details: String, action: () -> T): T {
         val settings = WritePolicySettings(context)
-        val origin = kr.snu.etlassistant.mcp.ToolOrigin.current()
-        val permit = budget.claim(settings.mode(scope), kind, origin ?: "")
+        return runner.run(scope, kind, settings::mode, kr.snu.etlassistant.mcp.ToolOrigin.current(), operation, details, action)
+    }
+    private val runner = WriteRunner(gate, budget)
+}
+
+/** [AiWriteApproval.execute]의 판정·실행 순서(Context 없이 시험할 수 있게 뺐다). [modeOf]는 실행 직전에 다시 읽는다. */
+internal class WriteRunner(private val gate: WriteApprovalGate, private val budget: WriteTurnBudget) {
+    private fun requireEnabled(scope: WriteScope, modeOf: (WriteScope) -> WriteMode) {
+        if (modeOf(scope) == WriteMode.OFF) throw EtlException("설정에서 비서의 ${scope.label} 변경이 꺼져 있어요")
+    }
+
+    fun <T> run(scope: WriteScope, kind: WriteKind, modeOf: (WriteScope) -> WriteMode, origin: String?,
+                operation: String, details: String, action: () -> T): T = try {
         val checkedAction = {
             // Settings may have changed while a confirmation was open.
-            settings.requireEnabled(scope)
+            requireEnabled(scope, modeOf)
             action()
         }
-        when (permit.decision) {
-            WritePolicy.Decision.DENY -> { settings.requireEnabled(scope); throw EtlException("변경이 취소되었어요") }
-            WritePolicy.Decision.ASK -> gate.execute(operation, details, destructive = kind != WriteKind.ADD, origin = origin, action = checkedAction)
-            WritePolicy.Decision.AUTO -> gate.executeAutomatic {
-                if (!budget.isCurrent(permit) || settings.mode(scope) != WriteMode.AUTO_ADD) throw WriteApprovalGate.Denied()
-                checkedAction()
+        val mode = modeOf(scope)
+        if (WritePolicy.direct(scope, kind, mode)) {
+            // A new user-requested phone-local file: no dialog, no foreground host, no automatic budget (2026-11-28).
+            checkedAction()
+        } else {
+            val permit = budget.claim(mode, kind, origin ?: "")
+            when (permit.decision) {
+                WritePolicy.Decision.DENY -> { requireEnabled(scope, modeOf); throw EtlException("변경이 취소되었어요") }
+                WritePolicy.Decision.ASK -> gate.execute(operation, details, destructive = kind != WriteKind.ADD, origin = origin, action = checkedAction)
+                WritePolicy.Decision.AUTO -> gate.executeAutomatic {
+                    if (!budget.isCurrent(permit) || modeOf(scope) != WriteMode.AUTO_ADD) throw WriteApprovalGate.Denied()
+                    checkedAction()
+                }
             }
         }
     } catch (e: WriteApprovalGate.Denied) {

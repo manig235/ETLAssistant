@@ -51,7 +51,8 @@ class MakePdfTool(private val context: Context, private val workspace: File) {
     }
 
     private fun create(title: String, markdown: String, name: String): JSONObject {
-        // Rendering may take time. Prepare privately, then hold the foreground approval lock only to publish.
+        // Rendering may take time. Prepare privately, then publish through the write policy. Files are a direct scope
+        // (WriteScope.FILES.reviewed = false): no dialog or foreground chat, only "off" in settings refuses (2026-11-28).
         val stored = File.createTempFile("assistant-pdf-", ".pdf", context.cacheDir)
         val today = LocalDate.now(EtlLogic.KST)
         val made = try {

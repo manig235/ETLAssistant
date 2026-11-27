@@ -303,3 +303,16 @@ AI 없이 앱 코드(WorkManager)만으로 마감·공지를 알린다. 코드�
 - #5: Android PR에서 단위 테스트·debug 빌드와 Lint를 별도 작업으로 돌리고, main push에는 서명 없는 R8도 검사한다. 고정 Codex 바이너리·Gradle 캐시, 선택적 GitHub API 인증, 중복 실행 취소, 7일 보고서 보관을 추가했다. 배포 키나 자동 배포는 포함하지 않는다. 실제 CI 실행 시간과 캐시 효과는 첫 실행에서 측정해야 한다.
 - 검증: 서명 설정 파일이 없는 상태에서 `testDebugUnitTest assembleDebug lintDebug :app:minifyReleaseWithR8` 성공. 단위 테스트 707개 통과·기존 제외 1개, Lint 오류 0개. Android 워크플로 actionlint, 다운로드 스크립트 bash 문법 검사도 통과했다.
 - 회귀 테스트: 상한 이하·정확히 상한·초과·짧은 읽기, 실제 로컬 HTTP 다운로드의 401 분류와 민감값 비반사, 여러 저장소의 동시 추가·오래된 변경 거절·한 번의 ID 교체·콜백 잠금 해제, 쓰기 모드·동시 자동 한도·턴 종료·채팅 화면 부재를 검증한다. iOS에는 상한 경계 테스트를 추가했으며 Linux에서는 실행하지 못했다. 기기에서 설정 화면·실제 캘린더 쓰기와 eTL 응답을 확인하는 작업도 별도다.
+
+## 2026-11-28: PDF 만들기가 "승인하지 않아 실행하지 않았어요"로 거절되던 문제
+
+- 증상(사용자 폰, 0.3.5/0.3.6, GPT-6-Luna·max): 모의고사 PDF를 요청했더니 "PDF 생성 도구 실행이 자동 승인 검토에서 거절돼 파일은 만들어지지 않았어요. 도구가 다시 실행하려면 새 요청이 필요하다고 반환했어요."
+- 원인: 0.3.4(14d4921, 이슈 #8)에서 `make_pdf`도 `AiWriteApproval.execute(…, WriteScope.FILES, WriteKind.ADD, …)`를 거치게 됐다. 기본 모드는 ASK라 확인 창이 필요하고, 확인 창은 채팅 화면이 붙어 있을 때만 뜬다.
+  답이 오래 걸리는 동안 화면이 꺼지거나 다른 앱으로 가면 `onPause`의 `detachHost`로 곧바로, 화면에 있어도 90초 안에 누르지 않으면 `WriteApprovalGate.Denied`가 난다. 그 문구
+  "변경을 승인하지 않아 실행하지 않았어요. 다시 실행하려면 사용자가 새로 요청해야 해요."(AiWriteApproval.kt)를 모델이 "자동 승인 검토에서 거절… 새 요청이 필요"로 옮겼다. "추가는 자동"이어도 채팅 화면이 필요해 같은 결과다.
+- Codex 쪽 승인은 아니다: 고정 소스(rust-v0.170.0) `codex-mcp/src/mcp/mod.rs`의 `mcp_permission_prompt_is_auto_approved`는 도구 승인 모드가 `approve`면 바로 참이고, `strict_auto_review`는 권한 요청 응답으로만 켜지는데 앱은 그런 요청을 모두 거절한다.
+- 수정: `WriteScope.FILES.reviewed=false`. `WritePolicy.direct(scope, kind, mode)`가 참(끔이 아닌 파일 추가)이면 확인 창·채팅 화면·자동 한도 없이 바로 실행한다(`WriteRunner`). 끔은 그대로 숨김·거절.
+  설정의 파일 만들기는 "끔(읽기만)"/"켬(바로 만들기)" 두 칩(켬은 ASK로 저장, 예전 AUTO_ADD도 켬으로 보임). 다른 범위와 수정·삭제는 그대로.
+- 테스트: `WritePolicyTest`에 화면·턴 없이 PDF가 바로 실행되고 자동 한도를 쓰지 않음, 끔이면 거절, 일정 범위는 화면 없거나 시간 초과면 거절, 설정 칩 판정.
+- 기기 확인 남음: 채팅 화면을 끈 채 PDF 요청이 끝까지 만들어지는지, 설정 칩 표시.
+

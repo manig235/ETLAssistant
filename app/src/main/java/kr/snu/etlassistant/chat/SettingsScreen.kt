@@ -266,14 +266,14 @@ private fun WritePermissionsSection() {
     }
     Section("비서 쓰기 권한") {
         SettingsCard {
-            Caption("비서가 요청받은 변경을 처리하는 방식을 정해요. 수정·삭제는 항상 확인해요. 캘린더는 캘린더 연동 설정도 켜져 있어야 해요.")
+            Caption("비서가 요청받은 변경을 처리하는 방식을 정해요. 수정·삭제는 항상 확인해요. 캘린더는 캘린더 연동 설정도 켜져 있어야 해요. 파일 만들기는 새 파일만 만들고 다른 것을 바꾸지 않아 켜 두면 확인 없이 바로 만들어요.")
             for (scope in WriteScope.entries) {
                 Spacer(Modifier.height(16.dp))
                 Text(scope.label, style = DesignSystemTheme.typography.body1Medium, color = DesignSystemTheme.colors.foregroundNeutralPrimary)
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (mode in WriteMode.entries) {
-                        WantedChip(text = mode.label, isActive = modes[scope] == mode, onClick = {
+                    for (mode in WritePolicy.choices(scope)) {
+                        WantedChip(text = WritePolicy.label(scope, mode), isActive = modes[scope]?.let { WritePolicy.shown(scope, it) } == mode, onClick = {
                             if (mode == WriteMode.AUTO_ADD && modes[scope] != mode) consenting = scope
                             else if (mode != WriteMode.AUTO_ADD) save(scope, mode)
                         })

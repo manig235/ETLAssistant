@@ -110,4 +110,71 @@ class WritePolicyTest {
         budget.endAll()
         assertFalse(budget.isCurrent(b))
     }
+
+    // 2026-11-28: make_pdf가 확인 창 없이(채팅 화면이 꺼졌거나 확인 창이 사라져) "변경을 승인하지 않아 실행하지 않았어요"로 거절되던 문제.
+    @Test fun fileCreationRunsDirectlyWithoutHostDialogOrBudget() {
+        val gate = WriteApprovalGate(timeoutMillis = 50)
+        val budget = WriteTurnBudget()
+        val runner = WriteRunner(gate, budget)
+        for (mode in listOf(WriteMode.ASK, WriteMode.AUTO_ADD)) {
+            // 채팅 화면이 붙어 있지 않아도, 턴을 몰라도, 확인 요청 없이 바로 만든다.
+            assertEquals("pdf", runner.run(WriteScope.FILES, WriteKind.ADD, { mode }, null, "PDF 만들기", "") { "pdf" })
+            assertEquals("pdf", runner.run(WriteScope.FILES, WriteKind.ADD, { mode }, "thread-a", "PDF 만들기", "") { "pdf" })
+            assertTrue(gate.pending().isEmpty())
+        }
+        // PDF는 다른 범위의 자동 추가 한도를 쓰지 않는다.
+        budget.beginTurn("thread-a")
+        repeat(10) { runner.run(WriteScope.FILES, WriteKind.ADD, { WriteMode.AUTO_ADD }, "thread-a", "PDF 만들기", "") { } }
+        repeat(5) { assertEquals(WritePolicy.Decision.AUTO, budget.claim(WriteMode.AUTO_ADD, WriteKind.ADD, "thread-a").decision) }
+    }
+
+    @Test fun fileCreationStillRefusedWhenOffAndSettingIsReadBeforeRunning() {
+        val runner = WriteRunner(WriteApprovalGate(timeoutMillis = 50), WriteTurnBudget())
+        var ran = false
+        val off = try { runner.run(WriteScope.FILES, WriteKind.ADD, { WriteMode.OFF }, null, "PDF 만들기", "") { ran = true }; null } catch (e: EtlException) { e.message }
+        assertEquals("설정에서 비서의 파일 만들기 변경이 꺼져 있어요", off)
+        assertFalse(ran)
+    }
+
+    @Test fun scheduleWritesStillNeedTheForegroundConfirmation() {
+        val gate = WriteApprovalGate(timeoutMillis = 50)
+        val runner = WriteRunner(gate, WriteTurnBudget())
+        for (scope in listOf(WriteScope.DEADLINES, WriteScope.TIMETABLE, WriteScope.CALENDAR)) {
+            for (mode in listOf(WriteMode.ASK, WriteMode.AUTO_ADD)) {
+                var ran = false
+                // 채팅 화면이 없으면 확인할 수 없으므로 거절(턴을 모르면 자동 추가도 없음).
+                try { runner.run(scope, WriteKind.ADD, { mode }, null, "추가", "") { ran = true }; fail() } catch (_: EtlException) { }
+                assertFalse(ran)
+            }
+        }
+        // 화면이 있어도 아무도 승인하지 않으면 시간 초과로 거절.
+        gate.attachHost()
+        var ran = false
+        try { runner.run(WriteScope.DEADLINES, WriteKind.ADD, { WriteMode.ASK }, null, "추가", "") { ran = true }; fail() } catch (_: EtlException) { }
+        assertFalse(ran)
+    }
+
+    @Test fun onlyAdditionsInUnreviewedScopesAreDirect() {
+        assertTrue(WritePolicy.direct(WriteScope.FILES, WriteKind.ADD, WriteMode.ASK))
+        assertTrue(WritePolicy.direct(WriteScope.FILES, WriteKind.ADD, WriteMode.AUTO_ADD))
+        assertFalse(WritePolicy.direct(WriteScope.FILES, WriteKind.ADD, WriteMode.OFF))
+        assertFalse(WritePolicy.direct(WriteScope.FILES, WriteKind.UPDATE, WriteMode.ASK))
+        assertFalse(WritePolicy.direct(WriteScope.FILES, WriteKind.DELETE, WriteMode.AUTO_ADD))
+        for (scope in listOf(WriteScope.DEADLINES, WriteScope.TIMETABLE, WriteScope.CALENDAR)) {
+            assertTrue(scope.reviewed)
+            for (kind in WriteKind.entries) for (mode in WriteMode.entries) assertFalse(WritePolicy.direct(scope, kind, mode))
+        }
+    }
+
+    @Test fun settingsOfferOnOffForFilesAndAllModesElsewhere() {
+        assertEquals(listOf(WriteMode.OFF, WriteMode.ASK), WritePolicy.choices(WriteScope.FILES))
+        assertEquals("켬(바로 만들기)", WritePolicy.label(WriteScope.FILES, WriteMode.ASK))
+        assertEquals(WriteMode.OFF.label, WritePolicy.label(WriteScope.FILES, WriteMode.OFF))
+        // 예전에 "추가는 자동"으로 저장한 파일 만들기는 켬으로 보인다.
+        assertEquals(WriteMode.ASK, WritePolicy.shown(WriteScope.FILES, WriteMode.AUTO_ADD))
+        assertEquals(WriteMode.OFF, WritePolicy.shown(WriteScope.FILES, WriteMode.OFF))
+        assertEquals(WriteMode.entries, WritePolicy.choices(WriteScope.CALENDAR))
+        assertEquals(WriteMode.AUTO_ADD, WritePolicy.shown(WriteScope.DEADLINES, WriteMode.AUTO_ADD))
+        assertEquals(WriteMode.ASK.label, WritePolicy.label(WriteScope.TIMETABLE, WriteMode.ASK))
+    }
 }
