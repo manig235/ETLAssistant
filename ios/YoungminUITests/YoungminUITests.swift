@@ -164,7 +164,9 @@ final class YoungminUITests: XCTestCase {
             XCTAssertTrue(cancel.waitForExistence(timeout: 5))
             capture("ipad-09-schedule-edit-sheet-landscape")
             cancel.tap()
-            XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
+            // 시트가 막 뜬 뒤 첫 탭이 먹지 않은 적이 있어(iPad mini CI) 한 번 더 누른다.
+            if !cancel.waitForNonExistence(timeout: 3), cancel.exists, cancel.isHittable { cancel.tap() }
+            XCTAssertTrue(cancel.waitForNonExistence(timeout: 5), "Edit sheet must close")
         }
         app.buttons["시간표"].firstMatch.tap()
         XCTAssertTrue(app.buttons["수업 직접 추가"].waitForExistence(timeout: 10))
