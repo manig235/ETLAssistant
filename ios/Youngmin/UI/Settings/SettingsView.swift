@@ -81,6 +81,7 @@ private struct SettingsContent: View {
                 miscSection
                 aboutSection
             }
+            .ymReadableWidth(YMLayout.formWidth - 48)
             .padding(.horizontal, 24)
             .padding(.top, 8)
             .padding(.bottom, 40)

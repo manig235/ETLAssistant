@@ -13,7 +13,7 @@ struct WidgetGuideView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 32) {
                     VStack(alignment: .leading, spacing: 12) {
-                        SettingsCaption("iPhone에서는 앱이 위젯을 대신 추가할 수 없어요. 아래 순서대로 직접 추가해 주세요.")
+                        SettingsCaption("iPhone·iPad에서는 앱이 위젯을 대신 추가할 수 없어요. 아래 순서대로 직접 추가해 주세요.")
                         if StudyDataProfile.isDemo {
                             SettingsStatusBanner(text: "가상 eTL 테스트 중이에요. 위젯에는 가상 자료가 나오지 않고 실제 eTL 자료만 보여요.",
                                                  tone: .caution)
@@ -38,6 +38,7 @@ struct WidgetGuideView: View {
                         SettingsCaption("잠금 화면 위젯은 잠긴 상태에서도 내용이 보여요.")
                     }
                 }
+                .ymReadableWidth(YMLayout.formWidth - 48)
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
                 .padding(.bottom, 40)

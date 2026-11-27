@@ -3,8 +3,10 @@ import SwiftUI
 
 /// 왼쪽에서 밀려 들어오는 서랍(Material3 `ModalNavigationDrawer`의 iOS 판). 사이드바가 아니라 내용 위를 덮는 오버레이.
 /// 폭 min(360, 화면×0.85), 오른쪽 모서리 16, 뒤 막 검정 32%. 왼쪽 가장자리에서 끌어 열고, 막을 누르거나 왼쪽으로 끌어 닫는다.
+/// regular 폭(iPad)에서는 `overlayEnabled = false`로 서랍을 그리지 않고 내용만 보인다(대화 목록은 `ChatView`가 옆에 붙인다).
 struct ChatDrawerContainer<Content: View, Drawer: View>: View {
     @Binding var isOpen: Bool
+    var overlayEnabled = true
     @ViewBuilder var content: Content
     @ViewBuilder var drawer: Drawer
     @State private var closeDrag: CGFloat = 0
@@ -23,12 +25,12 @@ struct ChatDrawerContainer<Content: View, Drawer: View>: View {
             ZStack(alignment: .leading) {
                 content
                     .frame(width: geo.size.width, height: geo.size.height)
-                    .accessibilityHidden(isOpen)
+                    .accessibilityHidden(isOpen && overlayEnabled)
                     // 내용 위에 띠를 덮으면 메뉴·첨부 버튼의 탭을 가로채므로, 함께 인식되는 끌기로 가장자리 시작만 받는다.
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 10, coordinateSpace: .local)
                             .onChanged { v in
-                                guard !isOpen else { return }
+                                guard overlayEnabled, !isOpen else { return }
                                 if !edgeActive {
                                     guard v.startLocation.x <= Self.edgeWidth,
                                           abs(v.translation.width) > abs(v.translation.height) else { return }
@@ -46,14 +48,14 @@ struct ChatDrawerContainer<Content: View, Drawer: View>: View {
                                 }
                             }
                     )
-                if progress > 0.001 {
+                if overlayEnabled && progress > 0.001 {
                     Color.black.opacity(0.32 * progress)
                         .ignoresSafeArea()
                         .onTapGesture { close() }
                         .accessibilityLabel("대화 목록 닫기")
                         .accessibilityAddTraits(.isButton)
                 }
-                if progress > 0.001 || isOpen {
+                if overlayEnabled && (progress > 0.001 || isOpen) {
                     drawer
                         .frame(width: width)
                         .frame(maxHeight: .infinity)
@@ -93,10 +95,14 @@ struct ChatDrawerContainer<Content: View, Drawer: View>: View {
 }
 
 /// 서랍 내용(Kotlin `ChatDrawer`): "대화" → 진입 행(새 대화·내 일정·시간표·알림 기록) → 날짜 묶음별 대화 목록.
+/// `sidebar`면 regular 폭에서 채팅 옆에 늘 붙어 있는 목록이다: 열고 닫기가 없고, 대화가 바뀌면 바로 목록을 새로 읽는다.
 struct ChatDrawer: View {
     let controller: ChatController
     @Binding var isOpen: Bool
+    var sidebar = false
     let navigate: (AppRoute) -> Void
+    /// 대화를 열거나 새 대화를 만든 뒤 채팅 화면을 보이게 한다(옆 목록에서 설정 등을 보던 중일 때).
+    var showChat: () -> Void = {}
 
     @State private var menuTarget: ChatMeta?
     @State private var renameTarget: ChatMeta?
@@ -146,6 +152,11 @@ struct ChatDrawer: View {
         .padding(.top, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: isOpen) { _, open in if open { controller.refreshConversations() } }
+        // 옆 목록은 늘 보이므로 처음 보일 때와 대화가 바뀔 때(새 대화 저장·답변 시작/끝) 다시 읽는다.
+        .onAppear { if sidebar { controller.refreshConversations() } }
+        .onChange(of: controller.chatId) { _, _ in if sidebar { controller.refreshConversations() } }
+        .onChange(of: controller.items.count) { _, _ in if sidebar { controller.refreshConversations() } }
+        .onChange(of: controller.runningChats) { _, _ in if sidebar { controller.refreshConversations() } }
         // 길게 누르기 메뉴(Kotlin AlertDialog: 이름 바꾸기 / 삭제 / 닫기).
         .confirmationDialog(menuTarget?.title ?? "", isPresented: Binding(get: { menuTarget != nil }, set: { if !$0 { menuTarget = nil } }),
                             titleVisibility: .visible, presenting: menuTarget) { meta in
@@ -174,11 +185,15 @@ struct ChatDrawer: View {
     }
 
     private func close() {
+        if sidebar {
+            showChat()
+            return
+        }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { isOpen = false }
     }
 
     private func go(_ route: AppRoute) {
-        close()
+        if !sidebar { close() }
         navigate(route)
     }
 

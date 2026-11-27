@@ -41,24 +41,29 @@ struct MyScheduleView: View {
                 }
                 SchedIconButton(systemName: "plus", label: "내 마감·시험 추가", tint: YMColor.brandPrimary, size: 24) { adding = true }
             }
-            Text(model.statusText)
-                .font(YMFont.caption1Regular)
-                .foregroundStyle(YMColor.labelSecondary)
-                .padding(.horizontal, 24)
-            Spacer().frame(height: 8)
-            YMFlowLayout(spacing: 8, lineSpacing: 8) {
-                ForEach(Agenda.Filter.allCases, id: \.self) { f in
-                    if f != .CALENDAR || model.calendarOn {
-                        YMChip(f.label, isActive: model.filter == f) { model.filter = f }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(model.statusText)
+                    .font(YMFont.caption1Regular)
+                    .foregroundStyle(YMColor.labelSecondary)
+                    .padding(.horizontal, 24)
+                Spacer().frame(height: 8)
+                YMFlowLayout(spacing: 8, lineSpacing: 8) {
+                    ForEach(Agenda.Filter.allCases, id: \.self) { f in
+                        if f != .CALENDAR || model.calendarOn {
+                            YMChip(f.label, isActive: model.filter == f) { model.filter = f }
+                        }
+                    }
+                    YMChip(model.hideDone ? "제출·완료 숨김" : "제출·완료 보기", isActive: !model.hideDone) { model.hideDone.toggle() }
+                    // 과목별 알림에서 숨긴 과목의 과제는 여기 보이지 않는다. 누르면 과목별 알림 화면으로 간다.
+                    if model.courseFilter.hiddenCount > 0 && (model.filter == .ALL || model.filter == .ASSIGNMENT) {
+                        YMChip("숨긴 과목 \(model.courseFilter.hiddenCount)개") { showCourseAlerts = true }
                     }
                 }
-                YMChip(model.hideDone ? "제출·완료 숨김" : "제출·완료 보기", isActive: !model.hideDone) { model.hideDone.toggle() }
-                // 과목별 알림에서 숨긴 과목의 과제는 여기 보이지 않는다. 누르면 과목별 알림 화면으로 간다.
-                if model.courseFilter.hiddenCount > 0 && (model.filter == .ALL || model.filter == .ASSIGNMENT) {
-                    YMChip("숨긴 과목 \(model.courseFilter.hiddenCount)개") { showCourseAlerts = true }
-                }
+                .padding(.horizontal, 20)
             }
-            .padding(.horizontal, 20)
+            // 넓은 화면에서는 아래 목록과 같은 폭으로 가운데에 모은다(아이폰은 그대로).
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .ymReadableWidth()
             Spacer().frame(height: 8)
             list(schedule)
         }
@@ -153,6 +158,7 @@ struct MyScheduleView: View {
                 section(upcoming: false, schedule)
                 Spacer().frame(height: 24)
             }
+            .ymReadableWidth(YMLayout.formWidth - 32)
             .padding(.horizontal, 16)
         }
     }

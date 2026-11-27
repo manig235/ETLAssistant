@@ -12,7 +12,9 @@ struct ChatMessageList: View {
 
     var body: some View {
         GeometryReader { geo in
-            let maxBubble = max(120, (geo.size.width - 32) * 0.86)
+            // 넓은 화면(iPad)에서는 말풍선 줄을 가운데 [YMLayout.chatWidth] 폭으로 모은다. 스크롤은 화면 전체 폭에서 된다.
+            let column = min(geo.size.width, YMLayout.chatWidth)
+            let maxBubble = max(120, (column - 32) * 0.86)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 8) {
@@ -28,6 +30,7 @@ struct ChatMessageList: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
+                    .ymReadableWidth(YMLayout.chatWidth)
                 }
                 .defaultScrollAnchor(.bottom)
                 .scrollDismissesKeyboard(.interactively)

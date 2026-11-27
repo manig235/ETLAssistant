@@ -43,6 +43,7 @@ struct NotifyHistoryView: View {
                         ForEach(Array(items.enumerated()), id: \.offset) { _, e in card(e) }
                         Spacer().frame(height: 24)
                     }
+                    .ymReadableWidth(YMLayout.formWidth - 32)
                     .padding(.horizontal, 16)
                 }
             }

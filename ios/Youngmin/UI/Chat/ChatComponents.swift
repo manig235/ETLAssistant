@@ -6,17 +6,22 @@ struct ChatTopBar: View {
     let onMenu: () -> Void
     let onNewChat: () -> Void
     let onSettings: () -> Void
+    /// regular 폭(iPad)에서는 옆 대화 목록 숨기기/보이기 버튼이 된다.
+    var menuSymbol = "line.3.horizontal"
+    var menuLabel = "대화 목록"
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
-            iconButton("line.3.horizontal", "대화 목록", action: onMenu)
+            iconButton(menuSymbol, menuLabel, action: onMenu)
+                .accessibilityIdentifier("chat-menu")
             Text("영민이")
                 .font(YMFont.title2Bold)
                 .foregroundStyle(YMColor.label)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
             iconButton("square.and.pencil", "새 대화", action: onNewChat)
+                .keyboardShortcut("n", modifiers: .command)
             if colorScheme == .dark {
                 iconButton("sun.max", "라이트 모드로 전환") { AppAppearanceStore.shared.mode = .light }
             } else {
@@ -152,6 +157,7 @@ struct ChatEmptyState: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
+                .ymReadableWidth(YMLayout.onboardingWidth)
                 .frame(minHeight: geo.size.height)
             }
             .scrollDismissesKeyboard(.interactively)
@@ -255,6 +261,7 @@ struct ChatInputBar: View {
                 .lineLimit(1...5)
                 .textInputAutocapitalization(.sentences)
                 .focused($focused)
+                .accessibilityIdentifier("chat-input")
                 .padding(.leading, 4)
                 .padding(.trailing, 8)
                 .padding(.vertical, 14)
@@ -283,6 +290,8 @@ struct ChatInputBar: View {
         }
         .buttonStyle(YMPressStyle())
         .disabled(mode == .disabled)
+        // 하드웨어 키보드(iPad): ⌘↩로 보낸다. 리턴만 누르면 줄바꿈이다. 답변 중단에는 단축키를 걸지 않는다.
+        .keyboardShortcut(mode == .send ? KeyboardShortcut(.return, modifiers: .command) : nil)
         .accessibilityLabel(mode == .stop ? "답변 중단" : "보내기")
     }
 }

@@ -34,10 +34,14 @@ final class ShareViewController: UIViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
         view.addSubview(card)
+        // iPad의 넓은 공유 창에서도 카드가 지나치게 넓어지지 않게 최대 420pt로 둔다(아이폰은 폭의 78% 그대로).
+        let preferredWidth = card.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.78)
+        preferredWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            card.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.78),
+            preferredWidth,
+            card.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
             stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 20),
             stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),

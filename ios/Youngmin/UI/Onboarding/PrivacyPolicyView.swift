@@ -13,6 +13,7 @@ struct PrivacyPolicyView: View {
                 if let onClose { onClose() } else { dismiss() }
             }
             YMSelectableText(text: text, scrollable: true, insets: UIEdgeInsets(top: 16, left: 24, bottom: 16, right: 24))
+                .ymReadableWidth()
         }
         .background(YMColor.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)

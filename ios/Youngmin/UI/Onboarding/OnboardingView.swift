@@ -51,6 +51,7 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 56)
+        .ymReadableWidth(YMLayout.onboardingWidth + 64)
     }
 }
 
@@ -86,11 +87,13 @@ struct OnboardingStepFrame<Header: View, Content: View, Buttons: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
+            .ymReadableWidth(YMLayout.onboardingWidth)
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 6) { buttons }
                 .padding(.horizontal, 24)
+                .ymReadableWidth(YMLayout.onboardingWidth)
                 .padding(.vertical, 16)
                 .background(YMColor.background)
         }

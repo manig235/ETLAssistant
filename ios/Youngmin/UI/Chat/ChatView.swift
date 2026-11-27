@@ -7,11 +7,15 @@ import SwiftUI
 
 /// 채팅 화면(Kotlin `ChatRoot`/`ChatScreen`). 앱의 홈이자 NavigationStack 뿌리.
 /// 구조: 상단바 → 칩 줄 → 배너 → 메시지 영역 → 활동 줄 → 보낼 첨부 줄 → 입력 바. 서랍은 전체를 덮는 커스텀 오버레이.
+/// 가로 폭이 regular(iPad 전체 화면·넓은 Split View)이면 서랍 대신 대화 목록을 왼쪽에 붙이고(상단 메뉴 버튼으로 숨기기/보이기),
+/// 본문은 가운데 읽기 좋은 폭으로 모은다. compact 폭(아이폰, iPad Slide Over·좁은 Split View)은 원래 오버레이 서랍 그대로다.
 struct ChatView: View {
     @Bindable var controller: ChatController
     @Environment(AppState.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.displayScale) private var displayScale
 
     @State private var path: [AppRoute] = []
     @State private var drawerOpen = false
@@ -33,10 +37,40 @@ struct ChatView: View {
     /// 받은 파일 정리 기간 묻기(`chat-cleanup-prompt`). "저장" 없이 닫으면 닫은 횟수를 센다.
     @State private var showCleanupPrompt = false
     @State private var cleanupSaved = false
+    /// regular 폭에서 옆 대화 목록을 보이는가(창마다 기억).
+    @SceneStorage("chat.sidebarVisible") private var sidebarVisible = true
+
+    /// 옆에 붙는 대화 목록을 쓰는 폭인가(regular). 아이폰은 항상 아니다.
+    private var wide: Bool { sizeClass == .regular }
 
     var body: some View {
+        // 옆 목록이 생기고 없어져도 NavigationStack이 같은 자리에 있어 열어 둔 화면(path)이 유지된다.
+        HStack(spacing: 0) {
+            if wide && sidebarVisible {
+                ChatDrawer(controller: controller, isOpen: .constant(true), sidebar: true, navigate: { route in
+                    // 옆 목록에서 고르면 지금 열린 화면을 바꾼다(쌓지 않음).
+                    path = [route]
+                }, showChat: { path = [] })
+                .frame(width: YMLayout.sidebarWidth)
+                .background(YMColor.background.ignoresSafeArea())
+                .transition(.move(edge: .leading))
+                Rectangle()
+                    .fill(YMColor.line)
+                    .frame(width: 1 / displayScale)
+                    .ignoresSafeArea()
+            }
+            navigationStack
+        }
+        .animation(.easeOut(duration: 0.25), value: wide && sidebarVisible)
+        .onChange(of: wide) { _, isWide in
+            // 폭이 바뀌면(멀티태스킹 창 크기 변경) 열려 있던 오버레이 서랍을 닫는다.
+            if isWide { drawerOpen = false }
+        }
+    }
+
+    private var navigationStack: some View {
         NavigationStack(path: $path) {
-            ChatDrawerContainer(isOpen: $drawerOpen) {
+            ChatDrawerContainer(isOpen: $drawerOpen, overlayEnabled: !wide) {
                 content
             } drawer: {
                 ChatDrawer(controller: controller, isOpen: $drawerOpen) { route in
@@ -157,17 +191,28 @@ struct ChatView: View {
     private var content: some View {
         VStack(spacing: 0) {
             ChatTopBar(
-                onMenu: { withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { drawerOpen = true } },
+                onMenu: {
+                    if wide {
+                        sidebarVisible.toggle()
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { drawerOpen = true }
+                    }
+                },
                 onNewChat: { controller.newConversation() },
-                onSettings: { path.append(.settings) }
+                onSettings: { path.append(.settings) },
+                menuSymbol: wide ? "sidebar.left" : "line.3.horizontal",
+                menuLabel: wide ? (sidebarVisible ? "대화 목록 숨기기" : "대화 목록 보기") : "대화 목록"
             )
             chipRow
+                .ymReadableWidth(YMLayout.chatWidth)
             if let banner = controller.banner {
                 ChatBanner(spec: banner, onTap: { handleBanner(banner) }, onDismiss: { controller.snoozeNotifyBanner() })
+                    .ymReadableWidth(YMLayout.chatWidth)
             }
             if let other = controller.approvalElsewhere {
                 // 다른 대화의 쓰기 확인: 누르면 그 대화로 옮겨 확인 창을 띄운다.
                 ChatBanner(spec: BannerSpec(TurnLogic.APPROVAL_ELSEWHERE, .openChat), onTap: { controller.openConversation(other) }, onDismiss: {})
+                    .ymReadableWidth(YMLayout.chatWidth)
             }
             if controller.items.isEmpty {
                 ChatEmptyState { q in controller.send(q) }
@@ -179,6 +224,7 @@ struct ChatView: View {
                     controller.finishBar = nil
                     controller.openConversation(bar.chatId)
                 }, onDismiss: { controller.finishBar = nil })
+                .ymReadableWidth(YMLayout.chatWidth)
                 .task(id: bar.id) {
                     try? await Task.sleep(nanoseconds: 8_000_000_000)
                     if controller.finishBar?.id == bar.id { controller.finishBar = nil }
@@ -186,9 +232,11 @@ struct ChatView: View {
             }
             if let activity = controller.activity {
                 ChatActivityLine(text: activity)
+                    .ymReadableWidth(YMLayout.chatWidth)
             }
             if !controller.pending.isEmpty || controller.importing > 0 {
                 ChatPendingAttachments(controller: controller, onOpen: open)
+                    .ymReadableWidth(YMLayout.chatWidth)
             }
             ChatInputBar(
                 controller: controller,
@@ -196,6 +244,7 @@ struct ChatView: View {
                 onPickFiles: { showFileImporter = true },
                 onTakePhoto: ChatCameraPicker.isAvailable ? { showCamera = true } : nil
             )
+            .ymReadableWidth(YMLayout.chatWidth)
         }
         .background(YMColor.background.ignoresSafeArea())
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItems,

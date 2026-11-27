@@ -52,6 +52,7 @@ struct CourseAlertsView: View {
                         ForEach(rows, id: \.course.id) { r in card(r) }
                         Spacer().frame(height: 24)
                     }
+                    .ymReadableWidth(YMLayout.formWidth - 32)
                     .padding(.horizontal, 16)
                 }
             }

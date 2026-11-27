@@ -15,6 +15,8 @@ struct CalendarSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @State private var model = CalendarSettingsModel()
+    /// "공유하기" 버튼 위치(창 좌표). iPad 공유 팝오버가 여기에 붙는다.
+    @State private var shareAnchor: CGRect?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +30,7 @@ struct CalendarSettingsView: View {
                     readSection
                     advancedSection
                 }
+                .ymReadableWidth(YMLayout.formWidth - 48)
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
                 .padding(.bottom, 40)
@@ -48,7 +51,11 @@ struct CalendarSettingsView: View {
                                  onChoose: { model.chooseAccount($0) }, onDismiss: { model.dismissAccountPicker() },
                                  onSettings: openAppSettings, onRetry: { model.loadAccountCalendars(enableAfter: model.pendingEnable) })
         }
-        .sheet(item: $model.shareFile) { f in IcsShareSheet(items: [f.url]).ignoresSafeArea() }
+        .onChange(of: model.shareFile?.id) { _, id in
+            guard id != nil, let f = model.shareFile else { return }
+            model.shareFile = nil
+            YMShareSheet.present([f.url], anchor: shareAnchor)
+        }
         .fileExporter(isPresented: $model.exporting, document: model.exportDocument, contentType: .calendarEvent,
                       defaultFilename: model.exportName) { result in
             if case .success = result { ToastCenter.shared.show("저장했어요") }
@@ -235,6 +242,7 @@ struct CalendarSettingsView: View {
                         .padding(.top, 4)
                     YMFlowLayout(spacing: 8, lineSpacing: 8) {
                         SettingsSoftButton("공유하기", enabled: !model.busy) { Task { await model.shareIcs() } }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { shareAnchor = $0 }
                         SettingsSoftButton("파일로 저장", enabled: !model.busy) { Task { await model.saveIcs() } }
                     }
                     .padding(.top, 10)
@@ -619,15 +627,6 @@ struct IcsDocument: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
     }
-}
-
-/// 공유 시트(Kotlin `Intent.createChooser("일정 파일 보내기")`).
-private struct IcsShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - 고르기 창

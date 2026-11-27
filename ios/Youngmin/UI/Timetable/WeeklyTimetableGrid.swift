@@ -128,6 +128,7 @@ struct WeeklyTimetableGrid: View {
     var onEditCustom: ((TimetableLogic.CourseMeetings) -> Void)?
 
     @ScaledMetric(relativeTo: .body) private var fontUnit: CGFloat = 1
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var width: CGFloat = 0
     @State private var selected: SelectedCourse?
 
@@ -138,7 +139,8 @@ struct WeeklyTimetableGrid: View {
 
     var body: some View {
         let grid = TimetableGridLogic.build(weekly.courses)
-        let hourHeight = 46 * scale
+        // 넓은 화면(iPad regular 폭)에서는 요일 칸이 넓어지므로 시간 칸도 키워 블록이 납작해 보이지 않게 한다.
+        let hourHeight = 46 * scale * (sizeClass == .regular ? 1.3 : 1)
         let gridHeight = hourHeight * CGFloat(grid.endHour - grid.startHour)
         let dayWidth = max((max(width, 200) - axisWidth) / CGFloat(grid.days.count), 64 * scale)
         VStack(alignment: .leading, spacing: 0) {
