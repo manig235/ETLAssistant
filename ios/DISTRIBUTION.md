@@ -295,6 +295,18 @@ HTTPS(TLS; 내장 Codex는 rustls, 앱은 URLSession)와 OS 기능(CryptoKit 해
    사용자는 App Store에서 설치하며 TestFlight나 기기 등록용 프로파일을 사용하지 않는다.
 
 TestFlight를 거치지 않고 정식 심사를 신청할 수도 있다. 업데이트도 App Store Connect로 제출한다.
+
+### iPad 정식 지원 (2026-11-27부터 빌드)
+
+0.3.3(빌드 1010.1)까지 올린 빌드는 **아이폰 전용**(`UIDeviceFamily` [1])이고, iPad에서는 아이폰 호환 모드로 돈다.
+그 뒤 커밋부터 앱·위젯·공유 확장이 iPhone+iPad(`TARGETED_DEVICE_FAMILY = 1,2`)이고, **다음 업로드부터** 반영된다.
+- iPad는 네 방향과 Split View·Slide Over·Stage Manager를 지원한다(`UIRequiresFullScreen` 없음, 창은 하나). 아이폰은 세로만.
+- **App Store 버전 페이지에 13인치 iPad 스크린샷이 필요하다**(2064×2752 또는 2048×2732, 가로도 가능).
+  `iOS` 워크플로 `simulator-tests (iPad Pro 13-inch)` 아티팩트의 `appstore-ipad-13/`에 이 크기로 찍힌 샘플 화면이 있다(디버그 샘플 데이터라 쓸지는 따로 판단).
+- **한 번 iPad 지원으로 출시하면 되돌리기 어렵다.** 같은 앱의 업데이트에서 iPad 지원을 빼는 빌드는 App Store Connect가 받지 않는다.
+  iPad 지원 빌드를 심사에 내기 전에 실제 iPad에서 확인한다(`ios/Docs/screens/chat-onboarding.md` 0.6).
+- 심사는 iPad에서도 이뤄질 수 있다. 심사 메모·테스트 안내는 기기 구분 없이 그대로 쓴다.
+- `check-ios-device-family.py`가 CI에서 빌드된 앱·확장의 기기군과 iPad 방향을 검사한다.
 [App Store Connect 전체 절차](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-workflow/),
 [공개 배포 설정](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/set-distribution-methods/).
 

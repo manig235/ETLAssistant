@@ -56,6 +56,15 @@ DeleteOutline→`trash` · Add→`plus` · CalendarViewWeek→`calendar.day.time
 EditNote→`square.and.pencil` · Event→`calendar` · EventAvailable→`calendar.badge.plus` · FactCheck→`checklist` · PersonOutline→`person` ·
 LocationOn→`mappin.and.ellipse` · Schedule→`clock` · ExpandMore/ExpandLess→`chevron.down`/`chevron.up`.
 
+### 0.4 iPad(넓은 화면, 2026-11-27)
+가로 size class·실제 폭 기준이며 아이폰 화면은 그대로다(규칙 전체는 `chat-onboarding.md` 0.6).
+- `settings`·`calendar-settings`·`settings-widget-picker-dialog`(위젯 안내)·`course-alerts`·`notify-history`·`my-schedule`(상태 줄·칩·목록)·`privacy-policy`:
+  상단바는 전체 폭, 본문은 가운데 최대 720pt(`ymReadableWidth`). regular 폭에서는 왼쪽에 대화 목록이 붙은 채로 오른쪽에 열린다.
+- `timetable`: 격자는 전체 폭을 쓰고, regular 폭에서는 시간 칸 높이를 1.3배로 키운다.
+- 편집 시트(`my-schedule-edit`, `timetable-custom-course`, `timetable-change-edit` 등)와 날짜·시각 고르기는 폼 시트로 뜬다(detent 무시). 가운데 카드 대화상자는 원래대로 최대 560pt.
+- `.ics` 공유는 "공유하기" 버튼에 붙는 팝오버(iPad는 앵커 없으면 종료됨).
+- 위젯은 iPad의 아주 크게(`systemExtraLarge`)까지 이미 있다. 위젯 안내 문구는 "iPhone·iPad에서는".
+
 ---
 
 ## settings — 설정

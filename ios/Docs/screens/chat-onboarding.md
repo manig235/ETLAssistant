@@ -73,6 +73,16 @@ Menu→`line.3.horizontal`, AddComment→`square.and.pencil`(또는 `plus.bubble
 
 Android `Toast`(화면 아래 검은 알약, 약 2초/LONG 3.5초)는 iOS에 없다. 공용 `ToastOverlay`(하단 safe area 위 24pt, 캡슐, surfaceNeutralInverse 배경 + 흰 글씨 body2Medium, 2초 페이드)를 만들어 아래 표의 문구를 그대로 띄운다.
 
+### 0.6 iPad(넓은 화면, 2026-11-27)
+
+Android 원본에는 없는 iOS 전용 규칙. 기기 종류가 아니라 **가로 size class**로 나눈다. compact(아이폰, iPad Slide Over·좁은 Split View)는 아래 명세 그대로다.
+- 기기군 iPhone+iPad, iPad는 네 방향·Split View·Slide Over·Stage Manager 창 크기 변화를 따른다(`UIRequiresFullScreen` 없음, 창은 하나). 아이폰은 세로만.
+- 기준 폭 `Common/CommonLayout.swift` `YMLayout`: 채팅 본문 760pt, 글·카드 화면 720pt(좌우 여백 포함), 첫 실행 안내 640pt, 옆 대화 목록 320pt. `ymReadableWidth()`로 가운데에 모은다. 상단바는 화면 전체 폭.
+- `chat`(regular): `chat-drawer` 내용을 왼쪽 320pt 목록으로 늘 붙이고(1px `line` 구분선), 상단 메뉴 버튼은 `sidebar.left` "대화 목록 숨기기"/"대화 목록 보기"(창마다 기억). 목록에서 내 일정·시간표·알림 기록을 고르면 열린 화면을 **바꾼다**(쌓지 않음), 대화·새 대화를 고르면 채팅으로 돌아온다. 말풍선 줄·칩·배너·활동 줄·입력창은 가운데 760pt, 말풍선 최대 폭은 그 줄의 86%. 메시지 스크롤은 화면 전체 폭.
+- 하드웨어 키보드: ⌘↩ 보내기(리턴은 줄바꿈), ⌘N 새 대화.
+- 시트·대화상자는 iPad에서 폼 시트로 뜨고 detent는 무시된다. 내용은 모두 스크롤 안에 있어 잘리지 않는다. 공유 시트는 버튼에 붙는 팝오버(`ShareLink`, `.ics`는 `YMShareSheet` 앵커).
+- 화면 캡처는 CI `simulator-tests`의 iPad Pro 13-inch·iPad mini 실행(`testWideLayoutOnIPad`) 아티팩트 `screenshots/`.
+
 ---
 
 ## splash — 시작 화면 (런치 스크린)
@@ -423,6 +433,7 @@ Android `Toast`(화면 아래 검은 알약, 약 2초/LONG 3.5초)는 iOS에 없
   - "내 일정" → `my-schedule`; "시간표" → `timetable`; "알림 기록" → `notify-history` (모두 서랍 닫고 새 화면).
   - 연필 → `chat-drawer-rename`; 휴지통 → `chat-drawer-delete`; 길게 → `chat-drawer-menu`. 답변 중이면 토스트 "답변이 끝난 뒤에 바꾸거나 지울 수 있어요".
   - 막/뒤로 → `chat`.
+- iPad regular 폭: 오버레이 대신 채팅 왼쪽에 붙는 목록(0.6). 열고 닫기·막이 없고, 대화가 바뀌면 바로 다시 읽는다.
 - SwiftUI 메모: **커스텀 슬라이드 서랍**: `ZStack(alignment: .leading)` 안에 `Color.black.opacity(0.32 * progress)` 막 + 폭 `min(360, w*0.85)` 패널 `.offset(x: (progress-1)*panelWidth)`, `UnevenRoundedRectangle(topTrailing:16, bottomTrailing:16)`. 왼쪽 가장자리 20pt `DragGesture`로 열기, 패널 위 왼쪽 드래그로 닫기, `.spring(response: 0.3)`. 내비게이션 대상은 서랍을 닫은 뒤 `NavigationStack` path에 push. 목록은 `ScrollView+LazyVStack`(List의 inset 스타일 쓰지 말 것 — 원본 행 모양 유지). 길게 누르기는 `.contextMenu`가 아니라 원본처럼 대화상자로(또는 `.contextMenu`도 허용 — 원본 의미 같음).
 
 ### chat-drawer-menu — 대화 길게 누르기 메뉴 (dialog)

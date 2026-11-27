@@ -26,19 +26,22 @@ cd ios && xcodebuild -project Youngmin.xcodeproj -scheme Youngmin -destination '
 
 ## 맥 없이 GitHub Actions에서 테스트
 
-저장소의 **Actions → iOS**에서 로직 테스트와 iPhone 시뮬레이터 UI 테스트 결과를 확인한다.
+저장소의 **Actions → iOS**에서 로직 테스트와 iPhone·iPad 시뮬레이터 UI 테스트 결과를 확인한다.
 macOS 실행 환경은 GitHub에서 제공하므로 개인 맥, Apple 계정, 서명 인증서, Apple Developer Program 가입은 필요 없다.
 
 - `ios/` 변경 PR과 `main`, `ios-port` 브랜치의 push에서 자동 실행한다. 작업 브랜치에서는 PR 검사로 실행해 push와 PR의 중복 검사를 피한다.
 - 수동 실행은 **Actions → iOS → Run workflow**에서 브랜치를 선택한다. 버튼은 워크플로가 기본 브랜치(`main`)에도 있어야 나타난다. 머지 전에는 PR의 **Checks**에서 자동 실행 결과를 본다.
 - 자동 실행과 수동 실행은 서로 취소하지 않는다. 같은 종류·같은 브랜치에서 다시 실행하면 최신 실행을 남기고 이전 실행을 취소하므로, `Canceling since a higher priority waiting request…` / `The operation was canceled` 표시는 코드 테스트 실패와 구분해서 본다. macOS 대기 시간 안내는 GitHub 실행 환경의 용량 안내다.
 - `logic-tests`: `YoungminKit`의 전체 Swift 테스트를 실행한다.
-- `simulator-tests`: 설치된 최신 iOS 런타임의 iPhone을 골라 앱·위젯·공유 확장을 빌드하고 앱의 UI 테스트를 실행한다.
+- `simulator-tests`: 설치된 최신 iOS 런타임에서 iPhone, iPad Pro 13-inch, iPad mini를 각각 골라(매트릭스) 앱·위젯·공유 확장을 빌드하고 앱의 UI 테스트를 실행한다. 빌드된 앱·확장의 기기군(iPhone+iPad)과 iPad 방향도 검사한다(`check-ios-device-family.py`).
+- iPad 실행은 `testWideLayoutOnIPad`로 세로·가로, 옆 대화 목록, 다크 모드, 설정·내 일정(편집 시트)·시간표·알림 기록을 찍는다. 아이폰에서는 건너뛴다.
 - UI 테스트는 새 시뮬레이터에서 환영 화면 → **샘플 데이터로 둘러보기** → 채팅 → 다크/라이트 전환 → 설정 → 내 일정 → 시간표 → 알림 기록을 확인한다. 실제 eTL/OpenAI 계정이나 네트워크 응답을 검증하는 테스트는 아니다.
 
-실행 페이지 아래 **Artifacts**에서 `ios-simulator-tests-…`를 내려받으면 다음 파일을 볼 수 있다. 결과물은 7일간 보관한다.
+실행 페이지 아래 **Artifacts**에서 `ios-simulator-tests-<기기>-…`(`iphone`, `ipad-pro-13-inch`, `ipad-mini`)를 내려받으면 다음 파일을 볼 수 있다. 결과물은 7일간 보관한다.
 
-- `attachments/`: UI 테스트의 단계별 화면 캡처와 진단 첨부파일. `01-welcome`~`07-notifications` 이름은 첨부파일 목록(`manifest.json`)에도 기록된다.
+- `screenshots/`: 단계별 화면 캡처를 이름(`01-welcome`, `ipad-03-chat-landscape` …)으로 모은 것. 크기는 `screenshots.json`.
+- `appstore-ipad-13/`: 13인치 iPad App Store 스크린샷 크기(2064×2752 등)로 찍힌 캡처(iPad Pro 13-inch 실행만).
+- `attachments/`: UI 테스트의 원본 첨부파일과 목록(`manifest.json`).
 - `xcodebuild.log`: 앱·확장·UI 테스트의 빌드 및 실행 로그.
 - `Youngmin.xcresult/`: 전체 Xcode 테스트 결과. macOS에서 Xcode로 열 수 있다.
 - `last-screen.png`: 테스트가 끝난 순간의 화면(수집 가능한 경우). 단계별 캡처는 `attachments/`를 본다.
