@@ -108,7 +108,12 @@ class EtlLoginLogicTest {
         assertEquals(full, EtlLoginLogic.parseIssuedToken("""{"id":5,"purpose":"영민이","token":"$full","visible_token":"1234~aaaa"}"""))
         assertEquals(full, EtlLoginLogic.parseIssuedToken("""while(1);{"token":"$full"}"""))
         // 만든 뒤 다시 조회하면 축약본만 온다.
-        assertNull(EtlLoginLogic.parseIssuedToken("""{"id":5,"visible_token":"1234~aaaa"}"""))
+        assertNull(EtlLoginLogic.parseIssuedToken("""{"id":5,"visible_token":"1234~aaaa..."}"""))
+        assertNull(EtlLoginLogic.parseIssuedToken("""{"id":5,"visible_token":"1234~aaaa"}""")) // 짧으면 축약본으로 본다
+        // 옛 Canvas 웹 경로(/profile/tokens)는 만들 때만 visible_token에 전체 값을 준다.
+        assertEquals(full, EtlLoginLogic.parseIssuedToken("""{"id":5,"app_name":null,"visible_token":"$full"}"""))
+        assertEquals(full, EtlLoginLogic.parseIssuedToken("""{"access_token":{"id":5,"visible_token":"$full"}}"""))
+        assertEquals(full, EtlLoginLogic.parseIssuedToken("""{"token":null,"full_token":"$full","visible_token":"1234~aaaa..."}"""))
         assertNull(EtlLoginLogic.parseIssuedToken("""{"token":"1234~aaaa…"}"""))
         assertNull(EtlLoginLogic.parseIssuedToken("""{"token":"1234~aaaa...xxxxxxxxxxxx"}"""))
         assertNull(EtlLoginLogic.parseIssuedToken("""{"token":"1234~aaaa","visible_token":"1234~aaaa"}"""))
@@ -117,6 +122,15 @@ class EtlLoginLogicTest {
         assertNull(EtlLoginLogic.parseIssuedToken("<html>login</html>"))
         assertNull(EtlLoginLogic.parseIssuedToken(""))
         assertNull(EtlLoginLogic.parseIssuedToken(null))
+    }
+
+    @Test fun profileRouteFormAndCookieNames() {
+        assertEquals("https://myetl.snu.ac.kr/profile/tokens", EtlLoginLogic.PROFILE_TOKENS_URL)
+        val form = EtlLoginLogic.profileTokenForm("영민이 (SM-S901N)")
+        assertTrue(form.startsWith("access_token%5Bpurpose%5D="))
+        assertEquals("영민이 (SM-S901N)", java.net.URLDecoder.decode(form.substringAfter('='), "UTF-8"))
+        assertEquals(listOf("a", "_csrf_token", "_normandy_session"), EtlLoginLogic.cookieNames("a=1; _csrf_token=x%2B; _normandy_session=secret"))
+        assertEquals(emptyList<String>(), EtlLoginLogic.cookieNames(null))
     }
 
     @Test fun selfResponseNeedsUserId() {

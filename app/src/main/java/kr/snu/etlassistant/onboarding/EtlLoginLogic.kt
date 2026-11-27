@@ -19,6 +19,8 @@ object EtlLoginLogic {
     const val START_URL = "$ORIGIN/login"
     const val SELF_URL = "$ORIGIN/api/v1/users/self"
     const val TOKENS_URL = "$ORIGIN/api/v1/users/self/tokens"
+    /** 토큰 API가 없는 옛 Canvas(서울대 eTL)에서 웹 설정의 "새 액세스 토큰"이 쓰는 경로. */
+    const val PROFILE_TOKENS_URL = "$ORIGIN/profile/tokens"
     const val CSRF_COOKIE = "_csrf_token"
 
     /** 로그인 화면(WebView)이 어떤 주소로 이동하려 할 때 할 일. */
@@ -81,6 +83,10 @@ object EtlLoginLogic {
         return null
     }
 
+    /** 로그용: 쿠키 이름만(값 없이). */
+    fun cookieNames(cookieHeader: String?): List<String> =
+        cookieHeader.orEmpty().split(';').mapNotNull { p -> p.substringBefore('=', "").trim().takeIf { it.isNotEmpty() && it.length <= 64 } }
+
     /**
      * Canvas가 비GET 요청에 요구하는 `X-CSRF-Token` 값: `_csrf_token` 쿠키를 URL 디코딩한 것(웹 화면의 `decodeURIComponent`와 같게,
      * `+`는 공백으로 바꾸지 않는다). 없거나 이상하면 null.
@@ -120,22 +126,34 @@ object EtlLoginLogic {
     /** 토큰 만들기 요청 본문(form). 만료일은 넣지 않는다. */
     fun tokenForm(purpose: String): String = "token%5Bpurpose%5D=" + URLEncoder.encode(purpose, "UTF-8")
 
+    /** 웹 설정 경로([PROFILE_TOKENS_URL])용 본문. 옛 Canvas는 `access_token[...]`로 받는다. */
+    fun profileTokenForm(purpose: String): String = "access_token%5Bpurpose%5D=" + URLEncoder.encode(purpose, "UTF-8")
+
     private val XSSI = Regex("^\\s*while\\(1\\);")
 
     /**
-     * 토큰 만들기 응답에서 전체 토큰을 꺼낸다. Canvas는 만들 때 한 번만 `token`에 전체 값을 주고,
-     * `visible_token`은 앞부분만 보이는 축약본이라 쓰지 않는다. 전체 값이 없으면 null.
+     * 토큰 만들기 응답에서 전체 토큰을 꺼낸다. 최신 Canvas API는 만들 때 한 번만 `token`에 전체 값을 준다.
+     * 옛 Canvas 웹 경로는 만들 때만 `visible_token`에 전체 값을 주고, 그 뒤에는 앞부분 + "..." 축약본을 준다.
+     * 그래서 `token` → `full_token` → `visible_token` 순으로 보되 축약본("…", "...")이나 짧은 값은 쓰지 않는다. 없으면 null.
      */
     fun parseIssuedToken(body: String?): String? {
         if (body.isNullOrBlank()) return null
         val json = try { JSONObject(XSSI.replace(body, "").trim()) } catch (_: JSONException) { return null }
-        val token = json.optString("token", "").trim()
-        if (token.isEmpty() || token == "null") return null
-        val visible = json.optString("visible_token", "")
-        if (token == visible && visible.isNotEmpty()) return null
-        if ("…" in token || "..." in token || "*" in token) return null
-        return token.takeIf { OnboardingLogic.isPlausibleEtlToken(it) && it.length in 16..512 }
+        val obj = json.optJSONObject("access_token") ?: json
+        for (key in listOf("token", "full_token", "visible_token")) {
+            if (obj.isNull(key)) continue
+            val v = obj.optString(key, "").trim()
+            if (isFullToken(v)) return v
+        }
+        return null
     }
+
+    private fun isFullToken(v: String): Boolean =
+        v.isNotEmpty() && "…" !in v && "..." !in v && "*" !in v &&
+            OnboardingLogic.isPlausibleEtlToken(v) && v.length in MIN_FULL_TOKEN..512
+
+    /** 전체 토큰의 최소 길이. Canvas 토큰은 "숫자~64자"라 이보다 길고, 축약본("1234~abcd...")은 이보다 짧다. */
+    private const val MIN_FULL_TOKEN = 32
 
     /** 세션 확인 응답이 로그인한 사용자인가(`id`가 있음). */
     fun isSelf(body: String?): Boolean {

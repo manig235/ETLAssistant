@@ -353,3 +353,23 @@
 - 테스트: `ChatTurnsTest`(대화별 상태·라우팅·멈춤 경쟁·끝남 알림 판정·승인 배너 판정), `WriteApprovalGateTest`(대화별 취소),
   `WritePolicyTest`(스레드별 한도), `McpServerTest`(`_meta.threadId` 전달). `./gradlew testDebugUnitTest assembleDebug` 통과.
 - 기기 확인: 아직. 작업 때 adb에 연결된 기기가 없어 긴 답변 중 다른 대화로 옮기기·두 대화 동시 답변·서랍 표시·끝남 막대·알림을 실측하지 못했다.
+
+## 서울대 로그인으로 eTL 연결 (2026-11-27, 사용자 승인)
+
+토큰을 직접 만들어 붙여넣는 대신, 앱 안 로그인 화면(`onboarding/EtlLoginActivity`, WebView)에서 서울대 SSO로 로그인하면 영민이가 eTL 토큰을 만들어 저장한다.
+첫 실행 안내 TOKEN 단계의 기본 버튼과 설정 → eTL 토큰의 "서울대 로그인으로 (다시) 연결". 붙여넣기는 보조로 남겼다(설정에 "붙여넣기" 버튼 추가, 설정 저장도 eTL 확인 후 저장).
+
+흐름: 시작 때 쿠키·저장소·캐시 삭제 → `myetl.snu.ac.kr/login` → `etl.snu.ac.kr/passni/sso/spLogin.php` → `nsso.snu.ac.kr/sso/usr/snu/mfa/login/view`(모바일 인증/패스키/아이디 탭)
+→ `nsso…/login/link` → `myetl.snu.ac.kr/`에서 세션 쿠키로 `GET /api/v1/users/self`(200, id) → 토큰 만들기 → 바로 삭제 → Bearer `users/self`로 확인 후 Keystore 저장.
+
+S22(SM-S908N, WebView 158) 실측:
+- SSO 페이지 표시, 세 탭 전환, 키보드가 올라오면 화면이 줄어듦, 서울대 밖 도움말 링크는 브라우저로 열림.
+- 로그인 완료 직후 `myetl.snu.ac.kr/`를 정확히 잡았다. 쿠키 이름: `_normandy_session`, `_legacy_normandy_session`, `log_session_id`, `_csrf_token`, `xn_api_token`, `pni_token`, `laravel_session`, `XSRF-TOKEN` 등.
+- **`POST /api/v1/users/self/tokens`는 404**(서울대 eTL의 Canvas가 오래돼 이 API가 없다. 아무것도 만들어지지 않음). 그래서 404일 때만 웹 설정의 "새 액세스 토큰"이 쓰는
+  `POST /profile/tokens`(`access_token[purpose]`)로 한 번 보내게 했다(사용자 승인). 옛 Canvas는 만들 때만 `visible_token`에 전체 토큰을 준다.
+- 그 뒤 사용자 로그인: `session: ok, csrf=true` → `token issue: ok` → `token check: ok` → 설정 "저장됨", "지금 확인"(과목·과제 조회) 성공.
+- 로그인 화면을 다시 열면 아이디 칸이 빈 SSO 로그인부터 나온다(쿠키·저장소 삭제 확인). 닫으면 `wiped`.
+- 모바일 인증은 Pass-Ni 앱 푸시(번호 선택) 또는 QR이라 URL로 앱을 넘기지 않는다(`passnismartloginapp://`은 QR 내용). 아이디 로그인 2단계(SMS)도 화면 안에서 동작했다.
+- 확인 못 함: 패스키(WebAuthn은 androidx.webkit 없이 WebView에서 안 될 가능성이 높다), 첫 실행 안내 화면에서의 연결(설정에서만 실측), 클립보드 자동 채우기, 401/403 문구.
+- 주의(개발): 워크트리에는 gitignore된 `app/src/main/assets/cacert.pem`·`codex-version.txt`와 jniLibs가 없다. 빠진 채 빌드하면 Codex가
+  `workspace routing discovery failed`로 시작하지 못한다(phase0 표의 3번과 같은 증상). `scripts/fetch-codex.sh`를 돌리거나 메인 체크아웃에서 복사한다.

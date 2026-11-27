@@ -257,14 +257,14 @@ class EtlLoginActivity : AppCompatActivity() {
             if (phase !is Phase.Browsing || issued) return@launch
             issued = true
             phase = Phase.Connecting
-            log("session: ok")
+            log("session: ok, cookies=${EtlLoginLogic.cookieNames(cookie)}, csrf=${EtlLoginLogic.csrfToken(cookie) != null}")
             val purpose = EtlLoginLogic.tokenPurpose(Build.MODEL)
             val created = withContext(Dispatchers.IO) { EtlTokenIssuer.create(cookie, purpose) }
             // 세션은 더 쓰지 않는다. 성공·실패와 관계없이 바로 지운다.
             wipe()
             when (created) {
                 is EtlTokenIssuer.Result.Issued -> {
-                    log("token issue: ok")
+                    log("token issue: ok (${created.where})")
                     val saved = withContext(Dispatchers.IO) { EtlTokenCheck.verifyAndSave(applicationContext, created.token) }
                     when (saved) {
                         is EtlTokenCheck.Result.Saved -> {
@@ -279,7 +279,7 @@ class EtlLoginActivity : AppCompatActivity() {
                     }
                 }
                 is EtlTokenIssuer.Result.Failed -> {
-                    log(if (created.code < 0) "token issue: network" else "token issue: http ${created.code}")
+                    log(if (created.code < 0) "token issue: network (${created.where})" else "token issue: http ${created.code} (${created.where})")
                     phase = Phase.Error(created.message, created.suggestPaste)
                 }
                 is EtlTokenIssuer.Result.NotLoggedIn -> {
