@@ -13,6 +13,15 @@ import java.util.Base64
 
 /** ttokttok-pet의 etl-board / timetable 테스트 픽스처를 옮긴 것. */
 class BoardTimetableTest {
+    @Test fun boardBodyFileLinksRemainDiscoverableWithoutLeakingSignedUrls() {
+        val post = JSONObject().put("id", 7)
+            .put("content", "<a href='/courses/1/files?preview=42&amp;verifier=private-value'>성적.xlsx</a>")
+        val result = BoardLogic.postResult(1, 2, 7, post, "${BoardLogic.BASE}/courses/1")
+        val linked = result.getJSONArray("linked_files").getJSONObject(0)
+        assertEquals(42L, linked.getLong("file_id"))
+        assertEquals("성적.xlsx", linked.getString("name"))
+        assertFalse(result.toString().contains("private-value"))
+    }
     private val base = EtlClient.BASE_URL
 
     // ---- 게시판 -------------------------------------------------------------

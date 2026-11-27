@@ -94,6 +94,28 @@ class ChatTurnsTest {
         assertTrue(r.isEmpty())
     }
 
+    @Test fun retryKeepsLogicalQuestionBusyAndPreservesOtherConversations() {
+        val r = TurnRegistry()
+        val first = r.start("A")!!
+        val other = r.start("B")!!
+        r.bindThread("A", "thread-a")
+        r.setTurnId("A", "rejected-turn")
+        assertTrue(r.retry("A", first))
+        assertSame(first, r.get("A"))
+        assertNull(first.turnId)
+        assertEquals("thread-a", first.threadId)
+        assertSame(other, r.get("B"))
+        assertTrue(r.isBusy("A"))
+        first.interruptRequested = true
+        assertFalse(r.retry("A", first))
+        first.interruptRequested = false
+        first.deleted = true
+        assertFalse(r.retry("A", first))
+        r.finish("A")
+        r.start("A")
+        assertFalse(r.retry("A", first))
+    }
+
     @Test fun finishNoticeDecision() {
         // 다른 대화가 끝남, 채팅 화면이 보임 → 아래 막대.
         assertEquals(FinishNotice.BAR, TurnLogic.finishNotice("A", "B", true, TurnEnd.COMPLETED, false))

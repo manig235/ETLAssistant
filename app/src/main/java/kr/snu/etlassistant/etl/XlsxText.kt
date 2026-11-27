@@ -19,6 +19,11 @@ object XlsxText {
 
     fun isXlsx(name: String): Boolean = name.substringAfterLast('.', "").equals("xlsx", true)
 
+    /** 본문 링크로 받아 파일 이름이 없을 때도 실제 xlsx 내용을 읽을 수 있다. */
+    fun hasWorkbook(file: File): Boolean = try {
+        ZipFile(file).use { it.getEntry("xl/workbook.xml") != null }
+    } catch (_: Exception) { false }
+
     fun read(file: File, query: String? = null, maxChars: Int = EtlFiles.DEFAULT_TEXT_CHARS): Result {
         val limit = maxChars.coerceIn(1, EtlFiles.MAX_TEXT_CHARS)
         val needle = query?.trim().orEmpty()

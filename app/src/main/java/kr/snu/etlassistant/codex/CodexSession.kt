@@ -30,6 +30,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 enum class SessionState { STOPPED, STARTING, READY, FAILED }
@@ -158,6 +159,16 @@ object CodexSession {
 
     /** 대화마다 따로 도는 답변. */
     private val turns = TurnRegistry()
+    private class PendingInput(
+        val client: AppServerClient,
+        val turn: TurnRegistry.Turn,
+        val input: String,
+        val attempt: ModelFallback.Attempt,
+    ) {
+        @Volatile var actualModel: String? = null
+    }
+    private val pendingInputs = ConcurrentHashMap<String, PendingInput>()
+    private val modelFallback = ModelFallback()
     /** 메모리에 둔 대화(지금 대화, 답하는 대화, 이번 실행에 열어 본 대화). 메인 스레드에서만 만진다. */
     private val liveModels = HashMap<String, ChatModel>()
     private val trackers = HashMap<String, ActivityTracker>() // 메인 스레드에서만
@@ -195,7 +206,7 @@ object CodexSession {
     @Volatile private var modelsClient: AppServerClient? = null // 지금 목록을 불러오는 중인 클라이언트
 
     /** 요청을 만들 때 쓰는 유효한 선택. 저장값은 건드리지 않고, 목록에 없는 모델/강도는 이번 요청에서만 뺀다. */
-    private fun effectiveChoice(): ModelChoice = ModelCatalog.sanitize(modelChoice, models)
+    private fun effectiveChoice(): ModelChoice = modelFallback.choice(ModelCatalog.sanitize(modelChoice, models), models)
 
     /** 모델 목록을 (다시) 불러온다. 세션이 없거나 이미 불러오는 중이면 아무것도 하지 않는다. */
     fun refreshModels() {
@@ -455,6 +466,8 @@ object CodexSession {
         proc = null
         EtlService.stopServer()
         val ended = turns.clear()
+        pendingInputs.clear()
+        modelFallback.clear()
         loginId = null
         lastLogin = null
         main.post {
@@ -511,7 +524,10 @@ object CodexSession {
         emit(SessionEvent.Account(info))
         // 계정이 바뀌면 쓸 수 있는 모델도 달라질 수 있다(처음 읽을 때는 시작 과정에서 불러온다).
         // 같은 ChatGPT라도 플랜(Plus→Free 등)이나 계정이 바뀌면 쓸 수 있는 모델이 달라진다.
-        if (before != null && before != info) refreshModels()
+        if (before != null && before != info) {
+            modelFallback.clear()
+            refreshModels()
+        }
     }
 
     fun loginBrowser() = startLogin(LoginKind.BROWSER)
@@ -655,28 +671,62 @@ object CodexSession {
         images.forEach { input.put(JSONObject().put("type", "localImage").put("path", it.path)) }
         // 모델 선택은 보내는 순간의 것으로 이 턴에 묶는다(다른 대화에서 바꿔도 이미 도는 답변은 그대로).
         val choice = effectiveChoice()
-        val turn = turns.start(forChat, modelChoice.isAuto) ?: return "이전 답변이 끝날 때까지 기다려 주세요"
+        val turn = turns.start(forChat, modelChoice.model == null) ?: return "이전 답변이 끝날 때까지 기다려 주세요"
         model.addUser(text, attachments)
         chats.noteUserMessage(forChat, text, attachments, System.currentTimeMillis())
         val tracker = ActivityTracker().also { trackers[forChat] = it }
         setActivity(forChat, tracker.turnStarted())
         turnsChanged()
+        val request = PendingInput(c, turn, input.toString(), ModelFallback.Attempt(turn.modelAuto, choice))
+        pendingInputs[forChat] = request
+        startAttempt(request)
+        return null
+    }
+
+    private fun currentAttempt(request: PendingInput, generation: Int): Boolean =
+        client === request.client && pendingInputs[request.turn.chatId] === request &&
+            turns.get(request.turn.chatId) === request.turn && request.attempt.generation == generation
+
+    /** 같은 질문을 재시도해도 사용자 메시지와 첨부 카드는 한 번만 추가한다. */
+    private fun startAttempt(request: PendingInput) {
+        val forChat = request.turn.chatId
+        val turn = request.turn
+        val generation = request.attempt.generation
+        val choice = request.attempt.choice
+        val c = request.client
         calls.execute {
             try {
-                val thread = ensureThread(c, forChat, choice)
-                val turnParams = JSONObject().put("threadId", thread).put("input", input)
+                if (!currentAttempt(request, generation)) return@execute
+                if (turn.interruptRequested || turn.deleted) {
+                    main.post { if (currentAttempt(request, generation)) finishAttempt(request, TurnEnd.INTERRUPTED, null) }
+                    return@execute
+                }
+                val (thread, resolvedModel) = ensureThread(c, forChat, choice)
+                request.actualModel = resolvedModel ?: choice.model
+                if (!currentAttempt(request, generation)) return@execute
+                if (turn.interruptRequested || turn.deleted) {
+                    main.post { if (currentAttempt(request, generation)) finishAttempt(request, TurnEnd.INTERRUPTED, null) }
+                    return@execute
+                }
+                val turnParams = JSONObject().put("threadId", thread).put("input", JSONArray(request.input))
                 choice.model?.let { turnParams.put("model", it) }
                 choice.effort?.let { turnParams.put("effort", it) }
                 kr.snu.etlassistant.etl.AiWriteApproval.beginTurn(thread)
                 val r = c.request("turn/start", turnParams)
-                val started = turns.setTurnId(forChat, r.optJSONObject("turn")?.optString("id")?.takeIf { it.isNotEmpty() })
-                // turn/start 응답 전에 멈춤을 눌렀거나 대화를 지웠으면 지금 멈춘다.
-                if (started === turn && turn.interruptRequested) turns.interruptTarget(forChat)?.let { (th, tu) -> requestInterrupt(c, th, tu) }
+                main.post {
+                    // 빠른 실패 후 재시도가 시작됐다면 이전 turn/start 응답으로 새 턴 ID를 덮지 않는다.
+                    if (!currentAttempt(request, generation)) return@post
+                    val started = turns.setTurnId(forChat, r.optJSONObject("turn")?.optString("id")?.takeIf { it.isNotEmpty() })
+                    if (started === turn && turn.interruptRequested) turns.interruptTarget(forChat)?.let { (th, tu) ->
+                        calls.execute { requestInterrupt(c, th, tu) }
+                    }
+                }
             } catch (e: IOException) {
-                main.post { endTurn(forChat, turn, TurnEnd.FAILED, "보내지 못했어요: ${e.message}", modelHint = false) }
+                main.post {
+                    if (currentAttempt(request, generation)) finishAttempt(request, TurnEnd.FAILED, "보내지 못했어요: ${e.message}", modelHint = false)
+                }
             }
         }
-        return null
     }
 
     /** [chatId] 대화(기본: 지금 대화)의 답변만 멈춘다. 다른 대화의 답변과 확인 창은 그대로다. */
@@ -832,7 +882,7 @@ object CodexSession {
             "\"~입니다/~습니다\"체는 쓰지 않는다. 짧고 담백하게 쓰고, 과한 이모지·감탄사·인사말은 넣지 않으며, 정확성을 먼저 지킨다."
     }
 
-    private fun ensureThread(c: AppServerClient, forChat: String, choice: ModelChoice): String {
+    private fun ensureThread(c: AppServerClient, forChat: String, choice: ModelChoice): Pair<String, String?> {
         val cwd = File(app.filesDir, "workspace").path
         val saved = chats.get(forChat)?.threadId
         CodexRunner.log.line("[session] 모델: ${choice.model ?: "자동"}, 강도: ${choice.effort ?: "기본"}")
@@ -843,9 +893,11 @@ object CodexSession {
                     .put("approvalPolicy", "never").put("sandbox", "read-only")
                     .put("developerInstructions", toneInstructions())
                 choice.model?.let { resume.put("model", it) }
-                c.request("thread/resume", resume)
-                return saved
+                val r = c.request("thread/resume", resume)
+                return saved to r.optJSONObject("thread")?.optString("model")?.takeIf { it.isNotBlank() && it != "null" }
             } catch (e: IOException) {
+                // 모델 거절은 대화 이력 손상이 아니다. 같은 스레드에서 다른 모델로 재개한다.
+                if (ModelFallback.unavailableModel(e.message) != null) throw e
                 CodexRunner.log.line("[session] 스레드 재개 실패, 새로 시작합니다: ${e.message}")
                 chats.setThread(forChat, null)
                 main.post { if (turns.get(forChat)?.deleted != true) modelFor(forChat)?.addNotice("이전 대화의 맥락은 이어지지 않아요. 여기서부터 새로 이어 가요.") }
@@ -860,13 +912,20 @@ object CodexSession {
             ?: throw IOException("스레드를 만들지 못했어요")
         turns.bindThread(forChat, id)
         chats.setThread(forChat, id)
-        return id
+        return id to r.optJSONObject("thread")?.optString("model")?.takeIf { it.isNotBlank() && it != "null" }
     }
 
     // ---- 서버 알림 ------------------------------------------------------------
 
     /** 알림의 `threadId`로 그 알림이 쓸 대화(답하는 중이고 지우지 않은 대화)를 찾는다. */
     private fun liveChat(p: JSONObject): String? = turns.liveTurnForThread(p.optString("threadId").takeIf { it.isNotEmpty() })?.chatId
+
+    /** 이전 모델의 늦은 항목·오류를 새 재시도에 붙이지 않는다. 메인 스레드에서 사용한다. */
+    private fun acceptsEvent(chat: String, p: JSONObject): Boolean {
+        val request = pendingInputs[chat] ?: return false
+        val turnId = p.optString("turnId").takeIf { it.isNotBlank() && it != "null" }
+        return turns.get(chat) === request.turn && request.attempt.accepts(turnId)
+    }
 
     private fun onNotification(method: String, p: JSONObject) {
         when (method) {
@@ -875,13 +934,22 @@ object CodexSession {
                 val id = p.optString("itemId")
                 val d = p.optString("delta")
                 main.post {
+                    if (!acceptsEvent(chat, p)) return@post
+                    pendingInputs[chat]?.attempt?.hasProgress = true
                     modelFor(chat)?.appendAssistant(id, d)
                     trackers[chat]?.let { setActivity(chat, it.textDelta()) }
                 }
             }
             "item/started", "item/completed" -> {
                 val chat = liveChat(p) ?: return
-                p.optJSONObject("item")?.let { item(chat, it, method == "item/completed") }
+                p.optJSONObject("item")?.let { value ->
+                    main.post {
+                        if (!acceptsEvent(chat, p)) return@post
+                        // 도구·답변이 시작됐다면 다시 보내서 일정 추가 등을 중복 실행하지 않는다.
+                        if (value.optString("type") !in setOf("reasoning", "userMessage")) pendingInputs[chat]?.attempt?.hasProgress = true
+                        item(chat, value, method == "item/completed")
+                    }
+                }
             }
             "turn/completed" -> {
                 val threadId = p.optString("threadId").takeIf { it.isNotEmpty() }
@@ -889,8 +957,6 @@ object CodexSession {
                 val t = turns.get(chat) ?: return
                 val turn = p.optJSONObject("turn")
                 val finishedId = turn?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }
-                if (t.turnId != null && finishedId != null && finishedId != t.turnId) return // 예전 턴의 늦은 알림
-                kr.snu.etlassistant.etl.AiWriteApproval.endTurn(threadId)
                 val status = turn?.optString("status") ?: "?"
                 val err = turn?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() && it != "null" }
                 val end = when (status) {
@@ -898,15 +964,26 @@ object CodexSession {
                     "interrupted" -> TurnEnd.INTERRUPTED
                     else -> TurnEnd.COMPLETED
                 }
-                main.post { endTurn(chat, t, end, err) }
+                main.post {
+                    val request = pendingInputs[chat] ?: return@post
+                    if (request.turn !== t || !request.attempt.accepts(finishedId)) return@post
+                    if (t.turnId != null && finishedId != null && t.turnId != finishedId) return@post
+                    finishAttempt(request, end, err, finishedId)
+                }
             }
             "error" -> {
                 val threadId = p.optString("threadId").takeIf { it.isNotEmpty() }
-                kr.snu.etlassistant.etl.AiWriteApproval.cancelFor(threadId)
                 if (!p.optBoolean("willRetry", false)) {
                     val msg = p.optJSONObject("error")?.optString("message").orEmpty()
                     val chat = liveChat(p)
-                    if (msg.isNotEmpty() && (chat != null || threadId == null)) main.post { (chat?.let { modelFor(it) } ?: model).addNotice(msg) }
+                    if (msg.isNotEmpty() && (chat != null || threadId == null)) main.post {
+                        if (chat != null) {
+                            if (!acceptsEvent(chat, p)) return@post
+                            kr.snu.etlassistant.etl.AiWriteApproval.cancelFor(threadId)
+                            // turn/completed에도 같은 오류가 온다. 거기서 재시도하거나 한 번만 표시한다.
+                            pendingInputs[chat]?.attempt?.error = msg
+                        } else model.addNotice(msg)
+                    }
                 }
             }
             "account/login/completed" -> {
@@ -958,12 +1035,44 @@ object CodexSession {
         main.post { (chat?.let { modelFor(it) } ?: model).addNotice("지원하지 않는 요청이라 거절했어요: $method") }
     }
 
+    /** 모델 거절만 같은 논리 턴 안에서 재시도한다. 완료/알림/사용자 메시지를 중복 만들지 않는다. */
+    private fun finishAttempt(
+        request: PendingInput,
+        end: TurnEnd,
+        error: String?,
+        finishedTurnId: String? = null,
+        modelHint: Boolean = true,
+    ) {
+        val turn = request.turn
+        val chat = turn.chatId
+        if (pendingInputs[chat] !== request || turns.get(chat) !== turn) return
+        val finalEnd = if (turn.interruptRequested) TurnEnd.INTERRUPTED else end
+        val detail = error ?: request.attempt.error
+        if (finalEnd == TurnEnd.FAILED && !turn.deleted) {
+            val next = modelFallback.next(request.attempt, detail, models)
+            val previousTurnId = finishedTurnId ?: turn.turnId
+            if (next != null && turns.retry(chat, turn)) {
+                kr.snu.etlassistant.etl.AiWriteApproval.endTurn(turn.threadId)
+                request.attempt.retry(next, previousTurnId)
+                request.actualModel = null
+                val name = models.firstOrNull { it.model == next.model }?.displayName ?: next.model
+                modelFor(chat)?.addNotice("선택된 모델을 사용할 수 없어 ${name}로 다시 시도할게요.")
+                trackers[chat]?.let { setActivity(chat, it.turnStarted()) }
+                startAttempt(request)
+                return
+            }
+        }
+        if (finalEnd == TurnEnd.COMPLETED) modelFallback.succeeded(request.actualModel ?: request.attempt.choice.model)
+        endTurn(chat, turn, finalEnd, detail, modelHint)
+    }
+
     /**
      * 한 대화의 답변이 끝났다(메인 스레드). [expected]와 다른 턴이면(이미 끝나고 새로 보낸 경우) 무시한다.
      * [modelHint]: 실패했을 때 모델 선택 안내를 덧붙일지(보내기 자체가 실패한 경우는 덧붙이지 않는다).
      */
     private fun endTurn(chat: String, expected: TurnRegistry.Turn, end: TurnEnd, error: String?, modelHint: Boolean = true) {
         if (turns.get(chat) !== expected) return
+        pendingInputs.remove(chat)
         turns.finish(chat)
         kr.snu.etlassistant.etl.AiWriteApproval.endTurn(expected.threadId)
         trackers.remove(chat)

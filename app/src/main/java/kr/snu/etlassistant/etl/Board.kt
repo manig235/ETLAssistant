@@ -220,6 +220,10 @@ object BoardLogic {
     fun postResult(courseId: Long, boardId: Long, postId: Long, p: JSONObject, url: String): JSONObject {
         val atts = JSONArray()
         p.optJSONArray("attachments")?.let { arr -> for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { atts.put(attachmentRow(it)) } }
+        val linked = JSONArray(Queries.linkedFiles(p.s("content"), courseId).map { fileId ->
+            JSONObject().put("file_id", fileId)
+                .put("name", Queries.linkedFileName(p.s("content"), fileId, courseId) ?: JSONObject.NULL)
+        })
         val comments = JSONArray()
         p.optJSONArray("comments")?.let { arr -> for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { comments.put(commentRow(it)) } }
         val id = p.optLong("id").takeIf(::validId) ?: postId
@@ -235,11 +239,12 @@ object BoardLogic {
             .put("views", if (p.has("view_count")) p.optInt("view_count") else JSONObject.NULL)
             .put("text", EtlLogic.htmlToText(p.s("content"), POST_LIMIT))
             .put("attachments", atts)
+            .put("linked_files", linked)
             .put("comments", comments)
             .put("previous", neighbour(p.optJSONObject("prev_post")))
             .put("next", neighbour(p.optJSONObject("next_post")))
             .put("url", postLink(p, url))
-        if (atts.length() > 0) {
+        if (atts.length() > 0 || linked.length() > 0) {
             out.put("attachment_note", "첨부파일은 etl_download에 file_id와 함께 course_id=$courseId, board_id=$boardId, post_id=$id 를 넘겨 받는다.")
         }
         return out
@@ -331,6 +336,25 @@ class BoardClient(private val etl: EtlClient, private val owner: String, private
             throw EtlException("이 게시글에 파일 ID $fileId 인 첨부가 없습니다. etl_board_post의 attachments에서 file_id를 확인하세요.")
         }
         return if (p.has("title") && !p.isNull("title")) p.optString("title") else null
+    }
+
+    /** Canvas 메타 경로가 막혀도 LearningX가 실제 첨부로 제공한 링크로 시도할 수 있다. */
+    fun attachmentMetadata(courseId: Long, boardId: Long, postId: Long, fileId: Long): JSONObject {
+        val c = open(courseId)
+        val p = api(c, "/courses/${c.id}/boards/$boardId/posts/$postId") as? JSONObject
+            ?: throw EtlException("게시판 응답을 해석할 수 없습니다", "parse")
+        val attachments = p.optJSONArray("attachments")
+        if (attachments != null) for (i in 0 until attachments.length()) {
+            val a = attachments.optJSONObject(i) ?: continue
+            if (a.optLong("canvas_file_id") == fileId) {
+                FileDownloadResolver.attachmentMetadata(a, fileId)?.let { return it }
+            }
+        }
+        Queries.linkedFileUrls(p.optString("content"), courseId)[fileId]?.let { url ->
+            return JSONObject().put("id", fileId).put("url", url)
+                .put("display_name", Queries.linkedFileName(p.optString("content"), fileId, courseId) ?: "file-$fileId")
+        }
+        throw EtlException("이 게시글에 해당 파일의 다운로드 링크가 없습니다. 다른 공지·게시판의 연결도 확인하세요.")
     }
 
     // ---- LearningX API --------------------------------------------------------

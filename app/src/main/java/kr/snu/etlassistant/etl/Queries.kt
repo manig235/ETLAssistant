@@ -280,19 +280,39 @@ object Queries {
     // ---- 강의자료 목록 ---------------------------------------------------------
 
     /** HTML 안의 eTL 파일 링크(이 과목 또는 전역 /files/<id>)의 파일 ID들. HTML은 읽기만 한다. */
-    fun linkedFiles(html: String?, courseId: Long): List<Long> {
-        val ids = linkedSetOf<Long>()
+    fun linkedFiles(html: String?, courseId: Long): List<Long> = linkedFileUrls(html, courseId).keys.toList()
+
+    /** 서명 URL은 다운로드에만 내부적으로 사용하고 도구 결과에는 파일 ID만 노출한다. */
+    fun linkedFileUrls(html: String?, courseId: Long): Map<Long, String> {
+        val urls = linkedMapOf<Long, String>()
         val attrs = Regex("\\b(?:href|src|data-api-endpoint)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+))", RegexOption.IGNORE_CASE)
-        for (m in attrs.findAll(html ?: return emptyList())) {
-            val raw = (m.groups[1]?.value ?: m.groups[2]?.value ?: m.groups[3]?.value ?: continue).replace("&amp;", "&", ignoreCase = true)
+        for (m in attrs.findAll(html ?: return emptyMap())) {
+            val raw = BoardLogic.decodeAttr(m.groups[1]?.value ?: m.groups[2]?.value ?: m.groups[3]?.value ?: continue).trim()
             val url = try { URL(URL(EtlClient.BASE_URL + "/"), raw) } catch (_: Exception) { continue }
             if ("${url.protocol}://${url.authority}" != EtlClient.BASE_URL || url.userInfo != null) continue
             val scoped = Regex("^/(?:api/v1/)?courses/(\\d+)/files/(\\d+)(?:/(?:download|preview))?/?$").find(url.path)
             val global = Regex("^/(?:api/v1/)?files/(\\d+)(?:/(?:download|preview))?/?$").find(url.path)
-            val id = if (scoped != null && scoped.groupValues[1].toLongOrNull() == courseId) scoped.groupValues[2] else global?.groupValues?.get(1)
-            id?.toLongOrNull()?.takeIf { it > 0 }?.let { ids += it }
+            val previewCourse = Regex("^/courses/(\\d+)/files/?$").find(url.path)
+            val preview = if ((previewCourse?.groupValues?.get(1)?.toLongOrNull() == courseId) || url.path == "/files") {
+                url.query?.split('&')?.firstOrNull { it.substringBefore('=') == "preview" }?.substringAfter('=')
+            } else null
+            val id = if (scoped != null && scoped.groupValues[1].toLongOrNull() == courseId) scoped.groupValues[2] else global?.groupValues?.get(1) ?: preview
+            id?.toLongOrNull()?.takeIf { it > 0 }?.let { fid ->
+                val query = url.query?.let { "?$it" }.orEmpty()
+                urls.putIfAbsent(fid, "${EtlClient.BASE_URL}/files/$fid/download$query")
+            }
         }
-        return ids.toList()
+        return urls
+    }
+
+    fun linkedFileName(html: String?, fileId: Long, courseId: Long): String? {
+        for (anchor in Regex("<a\\b([^>]*)>([\\s\\S]*?)</a>", RegexOption.IGNORE_CASE).findAll(html.orEmpty())) {
+            if (fileId !in linkedFileUrls("<a ${anchor.groupValues[1]}>", courseId)) continue
+            val text = EtlLogic.htmlToText(anchor.groupValues[2], 200).trim()
+            val name = Regex("^(.+\\.(?:xlsx|xls|csv|tsv|pdf|docx|pptx|hwp|hwpx|txt|zip))\\b", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
+            if (name != null) return EtlLogic.safeName(name, "file-$fileId")
+        }
+        return null
     }
 
     data class FileRef(val id: Long, val meta: JSONObject?, val source: String, val labels: Map<String, String>, val title: String? = null, val sourceId: Long? = null) {
@@ -342,14 +362,13 @@ object Queries {
         f.optLong("id") to full.replace(Regex("^course files/?"), "").ifEmpty { null }
     }
 
-    /** 숨김은 목록 노출 설정이다. 실제로 연결된 출처가 있으면 다운로드 때 출처를 재확인한다. 잠금은 항상 지킨다. */
-    fun skipReason(f: JSONObject?, linked: Boolean = false): String? {
+    /** 파일 탭의 숨김은 다운로드 거부 사유가 아니다. 실제 열람 잠금·동영상만 건너뛴다. */
+    fun skipReason(f: JSONObject?): String? {
         if (f == null) return "파일 정보를 읽지 못했습니다. 받기 요청 때 다시 확인합니다."
         val type = (f.str("content-type") ?: f.str("content_type") ?: "").lowercase()
         return when {
             type.startsWith("video/") || f.optString("mime_class") == "video" -> "동영상은 받지 않습니다. eTL에서 보세요."
             f.optBoolean("locked_for_user", false) -> "잠긴 파일입니다. 열리는 시각 이후에 받을 수 있습니다."
-            f.optBoolean("hidden_for_user", false) && !linked -> "파일 탭에서 숨겨진 파일입니다. 공지·과제·모듈 또는 게시판에서 첨부 출처를 확인하세요."
             else -> null
         }
     }
@@ -413,7 +432,7 @@ object Queries {
                 val r = rows.getValue(ref.id)
                 r.put("download_args", args)
                 val f = listedById[ref.id] ?: details[ref.id] ?: ref.meta
-                val skip = skipReason(f, linked = true)
+                val skip = skipReason(f)
                 r.remove("skip")
                 if (skip != null) r.put("skip", skip)
                 r.put("downloaded", skip == null && ref.id in saved)

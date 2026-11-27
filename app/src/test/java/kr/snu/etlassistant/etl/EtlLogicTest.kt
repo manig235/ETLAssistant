@@ -168,6 +168,8 @@ class EtlLogicTest {
         assertEquals(123L, EtlLogic.fileId("123"))
         assertEquals(456L, EtlLogic.fileId("/courses/9/files/456"))
         assertEquals(789L, EtlLogic.fileId("https://myetl.snu.ac.kr/courses/9/files/789/download?x=1"))
+        assertEquals(789L, EtlLogic.fileId("https://myetl.snu.ac.kr/courses/9/files?preview=789"))
+        assertEquals(789L, EtlLogic.fileId("/files?preview=789"))
         try {
             EtlLogic.fileId("abc")
             fail()

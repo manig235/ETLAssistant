@@ -83,7 +83,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("days", "integer", "최근 며칠(1~60). 기본 7"), Triple("course_id", "integer", "이 과목만(선택)"))))
         .put(tool("etl_grades", "과목별 현재 점수·등급과 채점된 과제(점수/배점, 마감순).",
             schema(Triple("course_id", "integer", "이 과목만(선택, 지난 학기도 가능)"))))
-        .put(tool("etl_files", "과목의 강의자료·내 제출 파일 목록(받지 않는다). 파일 탭, 모듈, 과제·공지 첨부와 본문 링크, 내 제출 첨부를 합친다. downloaded=true면 작업 폴더에 이미 있다. download_args가 있으면 그 인자를 etl_download에 넘긴다(파일 탭에서 숨겨진 첨부도 출처를 확인해 받을 수 있다). skip은 제한 또는 출처 확인 안내다. 게시판 첨부는 여기 나오지 않는다(etl_board_post).",
+        .put(tool("etl_files", "과목의 강의자료·내 제출 파일 목록(받지 않는다). 파일 탭, 모듈, 과제·공지 첨부와 본문 링크, 내 제출 첨부를 합친다. downloaded=true면 작업 폴더에 이미 있다. download_args가 있으면 그 인자를 etl_download에 넘긴다. 파일 탭의 숨김은 받기 거부 사유가 아니다. 정보 미확인도 실제 받기 요청으로 다시 확인한다. 게시판 첨부는 etl_board_post로 찾는다.",
             schema(Triple("course_id", "integer", "과목 ID"), required = listOf("course_id"))))
         .put(tool("etl_assignment", "과제 하나의 상세(마감, 제출 유형, 설명, 내 제출 상태).",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("assignment_id", "integer", "과제 ID"),
@@ -91,10 +91,10 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         .put(tool("etl_search_files", "강의 파일 탭에서 이름으로 검색한다. 파일 탭이 숨겨져 실패하거나 결과가 없으면 etl_files로 공지·과제·모듈 첨부를 찾고, LearningX 게시판은 etl_boards로 찾는다. 검색 실패만으로 파일을 읽을 수 없다고 단정하지 않는다.",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("term", "string", "검색어(2글자 이상)"),
                 required = listOf("course_id", "term"))))
-        .put(tool("etl_download", "eTL 파일을 내려받아 ① 비서가 읽을 수 있는 작업 폴더(etl-files/)에 저장하고 ② 기본적으로 폰의 Download/etl/에도 사본을 저장한다. 읽기·채점·요약만 할 때는 save_to_phone=false. workspace_path를 etl_read_file, etl_render_pages 또는 etl_view_image에 넘긴다. 파일 탭의 숨김은 열람 금지와 다르다. 공지·과제·모듈에 연결된 파일은 etl_files의 download_args 또는 course_id, source_type, source_id로 출처를 확인해 받는다. LearningX 게시판 첨부는 file_id_or_url과 course_id, board_id, post_id를 넘긴다. 잠긴 파일은 받을 수 없다.",
+        .put(tool("etl_download", "eTL 파일을 비서 작업 폴더와 기본적으로 폰 Download/etl/에 저장한다. 읽기·채점·요약만 할 때 save_to_phone=false. workspace_path를 읽기 도구에 넘긴다. 파일 탭의 숨김만으로 거부하지 않으며 파일 단건 → 과목 파일 → 공지·게시판 첨부/본문 링크 경로를 확인한다. course_id와 etl_files의 download_args 또는 게시판의 board_id, post_id를 함께 넘기면 대체 경로를 찾을 수 있다. 한 경로 실패로 포기하지 말고 공지·게시판도 조회해 다시 시도한다. 실제 잠긴 파일은 받을 수 없다.",
             schema(Triple("file_id_or_url", "string", "파일 ID 또는 eTL 파일 URL(…/files/<id>)"),
                 Triple("save_to_phone", "boolean", "폰의 Download/etl/에도 저장할지. 기본 true"),
-                Triple("course_id", "integer", "숨김 첨부의 출처를 확인할 과목 ID"),
+                Triple("course_id", "integer", "과목 ID. 단건 조회가 막혔을 때 과목·공지 경로도 확인하려면 함께 넘긴다"),
                 Triple("source_type", "string", "Canvas 출처: announcement(공지), assignment(과제·내 제출), module(모듈)"),
                 Triple("source_id", "integer", "source_type에 해당하는 공지·과제·모듈 ID"),
                 Triple("board_id", "integer", "게시판 첨부일 때만: 게시판 ID"),
@@ -901,26 +901,21 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     private val workspace: File get() = File(context.filesDir, "workspace")
 
-    /** 숨김은 파일 탭 노출 설정이므로 공지·과제·모듈·게시판에서 열람 가능한 첨부인지 재확인한다. */
+    /** 숨김을 열람 권한으로 해석하지 않고, 서버가 제공하는 여러 다운로드 경로를 확인한다. */
     private fun downloadFile(c: EtlClient, ref: String, saveToPhone: Boolean = true, args: JSONObject = JSONObject()): JSONObject {
         val fid = EtlLogic.fileId(ref)
-        val meta = c.getObject("/api/v1/files/$fid")
-        val type = (meta.str("content-type") ?: "").lowercase()
-        if (type.startsWith("video/") || meta.optString("mime_class") == "video") {
-            throw EtlException("동영상은 받지 않습니다. eTL에서 보세요: ${EtlClient.BASE_URL}/files/$fid")
+        val cid = optId(args, "course_id") ?: Regex("/courses/(\\d+)/files").find(ref)?.groupValues?.get(1)?.toLongOrNull()
+        val resolver = FileDownloadResolver(c::getObject, c::getAll) { course, boardId, postId, fileId ->
+            board().attachmentMetadata(course, boardId, postId, fileId)
         }
-        var post: String? = null
-        if (meta.optBoolean("hidden_for_user", false)) {
-            if (meta.optBoolean("locked_for_user")) throw EtlException("파일 $fid 은(는) 잠겨 있습니다")
-            if (args.has("source_type")) {
-                LinkedFileAccess.verify(fid, id(args, "course_id"), args.optString("source_type"), id(args, "source_id"), c::getObject, c::getAll)
-            } else if (args.has("board_id") && args.has("post_id") && args.has("course_id")) {
-                post = board().attachmentTitle(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"), fid) ?: "게시글"
-            } else {
-                throw EtlException("파일 탭에서 숨겨진 파일입니다. 열람 금지로 단정하지 말고 etl_files의 download_args를 사용하세요. 공지·과제·모듈 첨부는 course_id, source_type, source_id를, 게시판 첨부는 course_id, board_id, post_id를 함께 넘기세요.")
+        return resolver.retrieve(fid, FileDownloadResolver.Context(cid, args.str("source_type"), optId(args, "source_id"), optId(args, "board_id"), optId(args, "post_id"))) { meta ->
+            val name = meta.str("display_name") ?: meta.str("filename").orEmpty()
+            val type = (meta.str("content-type") ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()).orEmpty()).lowercase()
+            if (type.startsWith("video/") || meta.optString("mime_class") == "video") {
+                throw EtlException("동영상은 받지 않습니다. eTL에서 보세요: ${EtlClient.BASE_URL}/files/$fid")
             }
+            saveAttachment(c, meta, saveToPhone)
         }
-        return saveAttachment(c, meta, saveToPhone).also { r -> post?.let { r.put("post", it) } }
     }
 
     /**
@@ -999,7 +994,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         val rel = EtlFiles.relPath(workspace, f)
         val o = JSONObject().put("path", rel).put("size", f.length())
         return when {
-            XlsxText.isXlsx(f.name) -> {
+            XlsxText.isXlsx(f.name) || (f.extension.isEmpty() && XlsxText.hasWorkbook(f)) -> {
                 val result = XlsxText.read(f, query, maxChars)
                 o.put("kind", "text").put("truncated", result.truncated).put("text", result.text)
                     .put("matched_rows", result.matchedRows)

@@ -70,7 +70,7 @@ fun ModelPickerContent(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OptionCard(
                 title = "자동 (권장)",
-                description = "Codex가 정한 기본 모델을 써요",
+                description = "사용 가능한 모델을 고르고, 이용할 수 없으면 다른 모델로 다시 시도해요",
                 selected = choice.model == null,
                 onClick = { onChoice(ModelChoice(null, choice.effort)) },
                 extra = { EffortPicker(target, choice.effort, auto = true) { onChoice(choice.copy(effort = it)) } },

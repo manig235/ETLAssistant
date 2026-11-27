@@ -144,8 +144,15 @@ object EtlLogic {
     fun fileId(ref: String): Long {
         val s = ref.trim()
         if (s.isNotEmpty() && s.all { it.isDigit() }) return s.toLong()
-        val m = Regex("/files/(\\d+)").find(s) ?: throw EtlException("파일 ID나 eTL 파일 URL(…/files/<id>)을 주세요")
-        return m.groupValues[1].toLong()
+        Regex("/files/(\\d+)").find(s)?.let { return it.groupValues[1].toLong() }
+        // Canvas가 본문 링크에 쓰는 파일 탭 미리보기 주소도 파일 참조다.
+        val url = runCatching { java.net.URL(java.net.URL(EtlClient.BASE_URL + "/"), s) }.getOrNull()
+        if (url != null && EtlClient.sameOrigin(url.toString(), EtlClient.BASE_URL) &&
+            Regex("^/(?:courses/\\d+/)?files/?$").matches(url.path)) {
+            url.query?.split('&')?.firstOrNull { it.substringBefore('=') == "preview" }
+                ?.substringAfter('=')?.toLongOrNull()?.takeIf { it > 0 }?.let { return it }
+        }
+        throw EtlException("파일 ID나 eTL 파일 URL(…/files/<id> 또는 files?preview=<id>)을 주세요")
     }
 
     private val SAFE_PATH = Regex("^/api/v1/[\\w\\-./?=&\\[\\]%:,]*$")

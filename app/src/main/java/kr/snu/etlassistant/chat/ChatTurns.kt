@@ -58,6 +58,14 @@ class TurnRegistry {
         return t
     }
 
+    /** 같은 사용자 질문의 모델 재시도. 멈춤·삭제·새 질문으로 교체된 뒤에는 시작하지 않는다. */
+    @Synchronized
+    fun retry(chatId: String, expected: Turn): Boolean {
+        if (turns[chatId] !== expected || expected.interruptRequested || expected.deleted) return false
+        expected.turnId = null
+        return true
+    }
+
     @Synchronized
     fun get(chatId: String): Turn? = turns[chatId]
 

@@ -5,7 +5,6 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -150,9 +149,8 @@ class QueriesTest {
             assertEquals(7L, args.getLong("source_id"))
             assertFalse(row.toString().contains("verifier"))
         }
-        assertNotNull(Queries.skipReason(hidden))
-        assertNull(Queries.skipReason(hidden, linked = true))
-        assertTrue(Queries.skipReason(JSONObject(hidden.toString()).put("locked_for_user", true), linked = true)!!.contains("잠긴"))
+        assertNull(Queries.skipReason(hidden))
+        assertTrue(Queries.skipReason(JSONObject(hidden.toString()).put("locked_for_user", true))!!.contains("잠긴"))
     }
 
     @Test fun timetableChanges() {

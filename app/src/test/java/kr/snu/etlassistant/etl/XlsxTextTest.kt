@@ -22,6 +22,7 @@ class XlsxTextTest {
                     zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry()
                 }
             }
+            assertTrue(XlsxText.hasWorkbook(file))
             return XlsxText.read(file, query, max)
         } finally { file.delete() }
     }

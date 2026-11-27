@@ -14,7 +14,8 @@ internal data class SuggestionContent(val hasMaterials: Boolean?, val hasRecentA
 
 internal object SuggestionContentLogic {
     fun readableMaterial(file: JSONObject): Boolean {
-        if (file.optLong("id") <= 0 || Queries.skipReason(file) != null) return false
+        // 첫 화면 추천은 실제 다운로드 없이 고른다. 숨김 자료를 자동 추천하는 기준은 보수적으로 유지한다.
+        if (file.optLong("id") <= 0 || file.optBoolean("hidden_for_user") || Queries.skipReason(file) != null) return false
         return listOfNotNull(file.str("display_name"), file.str("filename")).any { name ->
             EtlFiles.isPdf(name) || EtlFiles.isOoxml(name) || HwpText.isHwp(name) || EtlFiles.isTextLike(name)
         }
