@@ -73,6 +73,14 @@ class SnapshotCache(context: Context) {
         val kept = load()?.assignments.orEmpty().filter { old -> old.courseName in failedCourses && items.none { it.courseId == old.courseId } }
         prefs.edit().putString("snapshot", SnapshotCacheLogic.toJson(CachedSnapshot(s.takenAt.toEpochMilli(), items + kept))).apply()
         kr.snu.etlassistant.widget.HomeWidgets.dataChanged(app)
+        // 새로 받은 점수 분포는 성적 통계에 저장한다(받아 둔 옛 저장본에는 분포가 없어 건드리지 않는다).
+        runCatching {
+            kr.snu.etlassistant.etl.ScoreStatsStore(app).syncEtl(items.mapNotNull {
+                kr.snu.etlassistant.etl.ScoreStats.fromEtl(it.courseId, it.courseName, it.assignmentId, it.name, it.stats, it.score, it.points, s.takenAt.toEpochMilli())
+            })
+        }
+        // 성적 공지에서 기기 안에서 깔끔하게 읽은 분포도 저장한다(공지 알림의 "통계 저장됨" 줄과 같은 결과).
+        runCatching { ScoreStatsAuto.store(kr.snu.etlassistant.etl.ScoreStatsStore(app), s.announcements, items, s.takenAt.toEpochMilli()) }
     }
 }
 

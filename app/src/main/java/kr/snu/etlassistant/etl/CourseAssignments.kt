@@ -14,8 +14,12 @@ object CourseAssignments {
 
     const val COURSES_PATH = "/api/v1/courses?enrollment_state=active&include[]=total_scores&include[]=term&per_page=100"
 
+    /**
+     * 과제 목록. `score_statistics`(점수 분포: 서울대 eTL은 최저·최고·평균)도 같이 받는다(2026-11-28, 성적 통계).
+     * 교수가 분포를 숨겼거나 채점 인원이 적으면 eTL이 빼고 보낸다. 요청 수는 그대로다.
+     */
     fun assignmentsPath(courseId: Long) =
-        "/api/v1/courses/$courseId/assignments?include[]=submission&order_by=due_at&per_page=100"
+        "/api/v1/courses/$courseId/assignments?include[]=submission&include[]=score_statistics&order_by=due_at&per_page=100"
 
     /** 강의 하나의 결과. 조회에 실패하면 [assignments]는 비고 [error]에 짧은 이유가 들어간다. */
     data class CourseResult(

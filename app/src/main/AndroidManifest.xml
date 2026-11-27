@@ -164,6 +164,9 @@
         <activity
             android:name="kr.snu.etlassistant.chat.NotifyHistoryActivity"
             android:exported="false" />
+        <activity
+            android:name="kr.snu.etlassistant.chat.ScoreStatsActivity"
+            android:exported="false" />
 
         <!-- 알림·위젯·채팅·일정·설정의 eTL 링크 → LearningX. 앱이 없으면 웹 원문으로 연결한다. -->
         <activity

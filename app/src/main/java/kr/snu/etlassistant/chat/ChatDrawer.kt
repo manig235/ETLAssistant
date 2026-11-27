@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EventNote
@@ -67,6 +68,7 @@ fun ChatDrawer(
     onMyDeadlines: () -> Unit = {},
     onTimetable: () -> Unit = {},
     onHistory: () -> Unit = {},
+    onScoreStats: () -> Unit = {},
 ) {
     val c = DesignSystemTheme.colors
     val t = DesignSystemTheme.typography
@@ -105,6 +107,7 @@ fun ChatDrawer(
         }
         for ((icon, label, action) in listOf(
             Triple(Icons.Outlined.CalendarViewWeek, "시간표", onTimetable),
+            Triple(Icons.Outlined.BarChart, "성적 통계", onScoreStats),
             Triple(Icons.Outlined.NotificationsNone, "알림 기록", onHistory),
         )) {
             Row(

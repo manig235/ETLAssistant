@@ -295,7 +295,7 @@ object NotificationPlanner {
                     url = NoticeText.announcementUrl(a),
                     tag = "ann:${a.id}",
                     firedKeys = listOf("ann:${a.id}"),
-                ).withExamAction(listOf(a))
+                ).withExamAction(listOf(a)).withScoreStatsAction(listOf(a), snapshot)
             }
         }
         val lines = fresh.map { a ->
@@ -311,7 +311,7 @@ object NotificationPlanner {
                 url = NoticeText.collectionUrl(fresh.map { it.courseId }) ?: NoticeText.ETL_PREFIX,
                 tag = "ann:summary",
                 firedKeys = fresh.map { "ann:${it.id}" },
-            ).withExamAction(fresh),
+            ).withExamAction(fresh).withScoreStatsAction(fresh, snapshot),
         )
     }
 
@@ -322,6 +322,25 @@ object NotificationPlanner {
         // 시험·과제 공지면 버튼 하나 "내 일정에 등록"(초안을 채운 추가 창, AI 없음). 비서에게 맡기기는 그 창의 링크로 한다
         // (2026-11-24 사용자 결정: 예전 "일정 정리 부탁" 버튼을 합침). 묶음이면 첫 시험·과제 공지로.
         ScheduleDrafts.firstOf(items)?.let { copy(draft = it.toJson()) } ?: this
+
+    /**
+     * 점수 분포가 실린 성적 공지면 "통계 저장" 버튼(2026-11-28). 누르면 채팅 입력창에 요청만 채운다(보내지 않음, 공지 내용은 이때만 비서로).
+     * 일정 등록 버튼이 이미 있으면 달지 않는다(버튼 수 제한). 묶음이면 첫 성적 공지로.
+     */
+    private fun Notice.withScoreStatsAction(items: List<AnnouncementItem>, snapshot: Snapshot): Notice {
+        // 기기 안에서 깔끔하게 읽힌 통계는 확인 작업이 이미 저장했다([ScoreStatsAuto]): 본문 앞에 한 줄씩 붙인다.
+        val saved = ScoreStatsAuto.lines(items.flatMap { ScoreStatsAuto.entries(it, snapshot.assignments, snapshot.takenAt.toEpochMilli()) })
+        val withLines = if (saved.isEmpty()) this else copy(bigText = (saved + listOfNotNull(bigText ?: text.takeIf { items.size > 1 })).joinToString("\n"))
+        if (withLines.draft != null || withLines.prefill != null) return withLines
+        val a = items.firstOrNull { (it.scoreStats || Queries.isScoreStatsAnnouncement(it.title, it.text)) && it.parsedStats?.confident != true } ?: return withLines
+        return withLines.copy(prefill = scoreStatsPrefill(a), prefillAction = SCORE_STATS_ACTION)
+    }
+
+    const val SCORE_STATS_ACTION = "통계 저장"
+
+    /** `{과목} ‘{제목}’ 공지(그림 포함) 보고 점수 분포(평균·사분위 등) 성적 통계에 저장해줘 (공지 ID N)`. */
+    fun scoreStatsPrefill(a: AnnouncementItem): String =
+        "${NoticeText.course(a.courseName)} ‘${NoticeText.safe(a.title, 60)}’ 공지(그림 포함) 보고 점수 분포(평균·사분위 등) 성적 통계에 저장해줘 (공지 ID ${a.id})"
 
     /** `{과목} ‘{제목}’ 공지 보고 과제 마감(날짜·시간·제출 방법) 내 일정에 넣어줘`. */
     fun assignmentPrefill(items: List<AnnouncementItem>): String {

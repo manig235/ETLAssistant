@@ -143,6 +143,8 @@ class ChatActions(
     val onMyDeadlines: () -> Unit,
     val onTimetable: () -> Unit,
     val onHistory: () -> Unit,
+    /** 서랍의 "성적 통계"(2026-11-28). */
+    val onScoreStats: () -> Unit = {},
 )
 
 @Composable
@@ -196,6 +198,7 @@ private fun ChatScreen(vm: ChatViewModel, a: ChatActions) {
                     onMyDeadlines = { a.onMyDeadlines(); closeDrawer() },
                     onTimetable = { a.onTimetable(); closeDrawer() },
                     onHistory = { a.onHistory(); closeDrawer() },
+                    onScoreStats = { a.onScoreStats(); closeDrawer() },
                 )
             }
         },

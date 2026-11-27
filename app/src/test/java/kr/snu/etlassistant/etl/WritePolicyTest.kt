@@ -44,9 +44,10 @@ class WritePolicyTest {
             WriteScope.TIMETABLE to listOf("timetable_change_add", "timetable_change_delete"),
             WriteScope.CALENDAR to listOf("calendar_add", "calendar_update", "calendar_delete"),
             WriteScope.FILES to listOf("make_pdf"),
+            WriteScope.SCORES to listOf("score_stats_save", "score_stats_delete"),
         )
         names.forEach { (scope, tools) -> tools.forEach { assertEquals(scope, WritePolicy.operation(it)!!.scope) } }
-        listOf("my_deadlines", "etl_timetable", "calendar_events", "etl_download").forEach { assertNull(WritePolicy.operation(it)) }
+        listOf("my_deadlines", "etl_timetable", "calendar_events", "etl_download", "score_stats", "etl_grades").forEach { assertNull(WritePolicy.operation(it)) }
     }
 
     @Test fun concurrentClaimsCannotExceedFiveAutomaticWrites() {
@@ -139,7 +140,7 @@ class WritePolicyTest {
     @Test fun scheduleWritesStillNeedTheForegroundConfirmation() {
         val gate = WriteApprovalGate(timeoutMillis = 50)
         val runner = WriteRunner(gate, WriteTurnBudget())
-        for (scope in listOf(WriteScope.DEADLINES, WriteScope.TIMETABLE, WriteScope.CALENDAR)) {
+        for (scope in listOf(WriteScope.DEADLINES, WriteScope.TIMETABLE, WriteScope.CALENDAR, WriteScope.SCORES)) {
             for (mode in listOf(WriteMode.ASK, WriteMode.AUTO_ADD)) {
                 var ran = false
                 // 채팅 화면이 없으면 확인할 수 없으므로 거절(턴을 모르면 자동 추가도 없음).
@@ -160,7 +161,7 @@ class WritePolicyTest {
         assertFalse(WritePolicy.direct(WriteScope.FILES, WriteKind.ADD, WriteMode.OFF))
         assertFalse(WritePolicy.direct(WriteScope.FILES, WriteKind.UPDATE, WriteMode.ASK))
         assertFalse(WritePolicy.direct(WriteScope.FILES, WriteKind.DELETE, WriteMode.AUTO_ADD))
-        for (scope in listOf(WriteScope.DEADLINES, WriteScope.TIMETABLE, WriteScope.CALENDAR)) {
+        for (scope in listOf(WriteScope.DEADLINES, WriteScope.TIMETABLE, WriteScope.CALENDAR, WriteScope.SCORES)) {
             assertTrue(scope.reviewed)
             for (kind in WriteKind.entries) for (mode in WriteMode.entries) assertFalse(WritePolicy.direct(scope, kind, mode))
         }

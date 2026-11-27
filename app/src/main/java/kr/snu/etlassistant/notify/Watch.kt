@@ -16,7 +16,11 @@ import java.time.ZonedDateTime
  */
 
 /** 과제 하나에 대해 지난 확인에서 본 것. [submittedAt]은 제출 직후 점검이 이미 본 제출 시각(epoch millis). */
-data class WatchRecord(val name: String, val course: String, val due: Long?, val score: Double?, val submittedAt: Long? = null)
+data class WatchRecord(
+    val name: String, val course: String, val due: Long?, val score: Double?, val submittedAt: Long? = null,
+    /** 점수 분포(eTL score_statistics)를 본 적이 있는가(2026-11-28). 한 번 보면 계속 true(받아 둔 옛 저장본에는 분포가 없다). */
+    val statsSeen: Boolean = false,
+)
 
 /**
  * [initialized]가 false인 첫 확인은 기준선만 잡고 알리지 않는다.
@@ -27,16 +31,20 @@ data class WatchState(
     val initialized: Boolean = false,
     val records: Map<String, WatchRecord> = emptyMap(),
     val submitInitialized: Boolean = false,
+    /** 점수 분포를 기록하기 시작했는가(2026-11-28). 업데이트 뒤 첫 확인에서 이미 있던 분포가 "성적 통계" 알림으로 몰려오지 않게. */
+    val statsInitialized: Boolean = false,
 ) {
     fun toJson(): String = JSONObject()
         .put("version", 2)
         .put("initialized", initialized)
         .put("submitInitialized", submitInitialized)
+        .put("statsInitialized", statsInitialized)
         .put("records", JSONObject().also { o ->
             records.forEach { (k, r) ->
                 o.put(k, JSONObject().put("name", r.name).put("course", r.course)
                     .put("due", r.due ?: JSONObject.NULL).put("score", r.score ?: JSONObject.NULL)
-                    .put("sub", r.submittedAt ?: JSONObject.NULL))
+                    .put("sub", r.submittedAt ?: JSONObject.NULL)
+                    .apply { if (r.statsSeen) put("stats", true) })
             }
         }).toString()
 
@@ -52,10 +60,11 @@ data class WatchState(
                         if (x.isNull("due") || !x.has("due")) null else x.optLong("due"),
                         if (x.isNull("score") || !x.has("score")) null else x.optDouble("score"),
                         if (x.isNull("sub") || !x.has("sub")) null else x.optLong("sub"),
+                        x.optBoolean("stats", false),
                     )
                 }
             }
-            WatchState(o.optBoolean("initialized", false), recs, o.optBoolean("submitInitialized", false))
+            WatchState(o.optBoolean("initialized", false), recs, o.optBoolean("submitInitialized", false), o.optBoolean("statsInitialized", false))
         } catch (_: Exception) {
             WatchState()
         }
@@ -83,6 +92,8 @@ object AssignmentWatch {
 
     /**
      * 지난 상태와 이번 조회를 비교해 새 과제, 마감 변경, 성적 등록([changes]), 제출 직후 점검([submits]) 알림을 만든다.
+     * 성적 알림에는 점수 분포가 있으면 한 줄(`평균 71 · 내 점수 78 · 평균보다 7점 높아요`)을 붙이고, 이미 알린 점수에 분포가 나중에
+     * 처음 나타나면 "성적 통계" 알림을 따로 보낸다(2026-11-28, 업데이트 뒤 첫 확인은 기준선만).
      * 내 마감(강의 ID −1)은 보지 않는다. 이번에 못 본 과제(조회 실패한 강의 등)는 기록을 남겨 다음에 "새 과제"가 되지 않게 한다.
      * 과제가 하나도 오지 않고 오류만 있으면 상태를 바꾸지 않는다(빈 결과로 기준선을 다시 잡지 않는다).
      * [muted]인 과목(과목별 알림 끄기)은 알리지 않지만 기록은 갱신한다(다시 켰을 때 그동안의 변경이 몰려오지 않게).
@@ -105,7 +116,7 @@ object AssignmentWatch {
         if (items.isEmpty() && snapshot.errors.isNotEmpty()) return prev to emptyList()
         val first = !prev.initialized
         val records = mutableMapOf<String, WatchRecord>()
-        data class Event(val kind: String, val item: AssignmentItem, val line: String, val tag: String)
+        data class Event(val kind: String, val item: AssignmentItem, val line: String, val tag: String, val extra: String? = null)
         val events = mutableListOf<Event>()
         val submitEvents = mutableListOf<AssignmentItem>()
         for (a in items) {
@@ -117,7 +128,8 @@ object AssignmentWatch {
                 isNewSubmission(prev, a) && submits && !muted(a.courseId) && a.check?.attachmentsKnown == false -> old?.submittedAt
                 else -> a.submittedAt?.toEpochMilli()
             }
-            val rec = WatchRecord(a.name, a.courseName, a.due?.toEpochMilli(), a.score, subAt)
+            val rec = WatchRecord(a.name, a.courseName, a.due?.toEpochMilli(), a.score, subAt, statsSeen = old?.statsSeen == true || a.stats != null)
+            val statsLine = a.stats?.takeIf { rec.score != null }?.let { kr.snu.etlassistant.etl.ScoreStats.summaryLine(it, rec.score) }
             val course = NoticeText.course(a.courseName)
             val name = NoticeText.name(a.name)
             if (old == null) {
@@ -132,7 +144,9 @@ object AssignmentWatch {
                 }
                 if (rec.score != null && old.score != rec.score) {
                     val pts = a.points?.let { " / ${scoreText(it)}" } ?: ""
-                    events += Event("성적", a, "$name · ${scoreText(rec.score)}$pts", "grade:$key:${rec.score}")
+                    events += Event("성적", a, "$name · ${scoreText(rec.score)}$pts", "grade:$key:${rec.score}", statsLine)
+                } else if (statsLine != null && prev.statsInitialized && !old.statsSeen) {
+                    events += Event("성적 통계", a, "$name · $statsLine", "stats:$key")
                 }
             }
             if (submits && isNewSubmission(prev, a) && rec.submittedAt == a.submittedAt?.toEpochMilli() && !muted(a.courseId) &&
@@ -141,13 +155,13 @@ object AssignmentWatch {
             records[key] = rec
         }
         for ((k, r) in prev.records) if (k !in records) records[k] = r
-        val state = WatchState(true, records, submitInitialized = true)
+        val state = WatchState(true, records, submitInitialized = true, statsInitialized = true)
         if (!changes) events.clear()
         events.removeAll { muted(it.item.courseId) }
         val submitNotices = submitEvents.sortedBy { it.submittedAt }.map { if (it.check?.problems.isNullOrEmpty()) submitOkNotice(it) else submitNotice(it) }
         if (events.isEmpty()) return state to submitNotices
 
-        val order = mapOf("마감 변경" to 0, "새 과제" to 1, "성적" to 2)
+        val order = mapOf("마감 변경" to 0, "새 과제" to 1, "성적" to 2, "성적 통계" to 3)
         val sorted = events.sortedWith(compareBy({ order[it.kind] ?: 9 }, { it.item.due ?: Instant.MAX }))
         if (sorted.size <= INDIVIDUAL_MAX) {
             return state to sorted.map { e ->
@@ -155,12 +169,13 @@ object AssignmentWatch {
                     channel = Channel.CHANGE,
                     title = NoticeText.cut("${e.kind} · ${NoticeText.clean(e.item.courseName)}", NoticeText.TITLE_MAX),
                     text = NoticeText.cut(e.line, NoticeText.LINE_MAX),
+                    bigText = e.extra?.let { NoticeText.cut(e.line, NoticeText.LINE_MAX) + "\n" + it },
                     url = NoticeText.assignmentUrl(e.item),
                     tag = e.tag,
                 )
             } + submitNotices
         }
-        val lines = sorted.map { "• [${it.kind}] ${NoticeText.course(it.item.courseName)} — ${it.line}" }
+        val lines = sorted.map { "• [${it.kind}] ${NoticeText.course(it.item.courseName)} — ${it.line}" + (it.extra?.let { x -> " ($x)" } ?: "") }
         val counts = sorted.groupingBy { it.kind }.eachCount().entries.sortedBy { order[it.key] ?: 9 }.joinToString(" · ") { "${it.key} ${it.value}" }
         return state to listOf(
             Notice(

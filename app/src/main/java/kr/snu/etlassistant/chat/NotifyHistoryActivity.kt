@@ -52,6 +52,8 @@ class NotifyHistoryActivity : AppCompatActivity() {
     private var items by mutableStateOf<List<HistoryEntry>>(emptyList())
     /** 같은 공지로 이미 넣은 내 마감(공지 ID → 내 마감 ID). "등록됨"으로 보인다. */
     private var registered by mutableStateOf<Map<Long, Long>>(emptyMap())
+    /** 성적 통계로 이미 저장한 공지 ID("통계 저장됨"). */
+    private var statsSaved by mutableStateOf<Set<Long>>(emptySet())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +74,14 @@ class NotifyHistoryActivity : AppCompatActivity() {
                     }
                     runCatching { startActivity(i) }
                 },
+                statsSaved = statsSaved,
+                // 성적 공지의 "통계 저장": 채팅 입력창에 요청만 채운다(보내지 않음). 이미 저장했으면 성적 통계 화면.
+                onPrefill = { entry ->
+                    val i = if (entry.announcementId?.let { it in statsSaved } == true) Intent(this, ScoreStatsActivity::class.java)
+                        else Intent(this, ChatActivity::class.java).putExtra(ChatActivity.EXTRA_PREFILL, entry.prefill)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    runCatching { startActivity(i) }
+                },
             )
         }
     }
@@ -86,6 +96,7 @@ class NotifyHistoryActivity : AppCompatActivity() {
         // 공지 ID → 내 마감 ID(양수) 또는 -1(시간표 보강·휴강으로 반영됨).
         registered = kr.snu.etlassistant.etl.TimetableChangeStore(this).load().mapNotNull { c -> c.sourceAnnouncementId?.let { it to -1L } }.toMap() +
             kr.snu.etlassistant.notify.MyDeadlineStore(this).load().mapNotNull { d -> d.sourceAnnouncementId?.let { it to d.id } }.toMap()
+        statsSaved = kr.snu.etlassistant.etl.ScoreStatsStore(this).load().mapNotNull { it.sourceAnnouncementId }.toSet()
     }
 }
 
@@ -93,6 +104,7 @@ class NotifyHistoryActivity : AppCompatActivity() {
 private fun HistoryScreen(
     items: List<HistoryEntry>, onBack: () -> Unit, onOpen: (String) -> Unit, onClear: () -> Unit,
     registered: Map<Long, Long> = emptyMap(), onRegister: (String, Long?) -> Unit = { _, _ -> },
+    statsSaved: Set<Long> = emptySet(), onPrefill: (HistoryEntry) -> Unit = {},
 ) {
     DesignSystemTheme {
         val c = DesignSystemTheme.colors
@@ -135,6 +147,11 @@ private fun HistoryScreen(
                                         else -> parsed?.actionLabel ?: kr.snu.etlassistant.notify.ScheduleDrafts.ACTION
                                     }
                                     WantedTextButton(text = label, onClick = { onRegister(draft, existing) },
+                                        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label })
+                                }
+                                if (e.action != null && e.prefill != null) {
+                                    val label = if (e.announcementId?.let { it in statsSaved } == true) "통계 저장됨 · 보기" else e.action
+                                    WantedTextButton(text = label, onClick = { onPrefill(e) },
                                         modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label })
                                 }
                                 if (open && e.url != null && e.url.startsWith("https://myetl.snu.ac.kr/")) {

@@ -120,13 +120,22 @@ object Queries {
         val rows = courses.map { c ->
             courseRow(c).put("graded_assignments", JSONArray((byCourse[c.optLong("id")] ?: emptyList()).map { (_, a) ->
                 val s = summary(a, c, now)
-                JSONObject().put("name", s.opt("name")).put("score", s.opt("score")).put("points", s.opt("points")).put("due", s.opt("due"))
+                JSONObject().put("assignment_id", s.opt("assignment_id")).put("name", s.opt("name")).put("score", s.opt("score"))
+                    .put("points", s.opt("points")).put("due", s.opt("due"))
+                    .also { row -> scoreStatsFields(a)?.let { (st, pos) -> row.put("stats", st); pos?.let { row.put("position", it) } } }
             }))
         }
         val out = JSONObject().put("courses", JSONArray(rows))
         val errors = results.mapNotNull { r -> r.error?.let { "${r.courseName}: $it" } }
         if (errors.isNotEmpty()) out.put("errors", JSONArray(errors))
         return out
+    }
+
+    /** 채점된 과제의 점수 분포(eTL score_statistics)와 내 점수 위치 어림. 분포가 없으면 null. */
+    private fun scoreStatsFields(a: JSONObject): Pair<JSONObject, String?>? {
+        val st = ScoreStats.parse(a.obj("score_statistics")) ?: return null
+        val my = a.obj("submission")?.takeIf { isGraded(a) }?.optDouble("score")?.takeIf { it.isFinite() }
+        return ScoreStats.statsJson(st) to ScoreStats.position(st, my)?.label
     }
 
     // ---- 공지 ---------------------------------------------------------------
@@ -237,6 +246,28 @@ object Queries {
         if (ASSIGN.containsMatchIn(t)) return true
         return ASSIGN.containsMatchIn(b) && ASSIGN_DUE.containsMatchIn(b)
     }
+
+    /** 성적 공지의 말(제목). */
+    private val GRADE_TITLE = Regex("성적|점수|채점|결과|통계|분포|\\bgrades?\\b|\\bscores?\\b|\\bresults?\\b|\\bstatistics\\b", RegexOption.IGNORE_CASE)
+    /** 점수 분포를 말하는 말. */
+    private val STATS_WORDS = Regex("평균|중앙값|중간값|표준\\s*편차|사분위|분포|히스토그램|최고점|최저점|통계|\\bQ[123]\\b|\\bmedian\\b|\\bmean\\b|\\baverage\\b|\\bavg\\b|\\bstd\\b|\\bstdev\\b|\\bhistogram\\b|\\bdistribution\\b|\\bstatistics\\b|\\bquartiles?\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * 점수 분포가 실린 성적 공지인가(2026-11-28, "통계 저장" 버튼). 제목이 성적·점수·결과 공지이고, 제목이나 본문에
+     * 평균·중앙값·Q1/Q3·표준편차·분포 같은 말이 있을 때. 키워드만 본다(숫자는 비서가 사용자 요청으로 읽는다).
+     */
+    fun isScoreStatsAnnouncement(title: String?, text: String?): Boolean {
+        val t = title.orEmpty()
+        if (!GRADE_TITLE.containsMatchIn(t)) return false
+        return STATS_WORDS.containsMatchIn(t) || STATS_WORDS.containsMatchIn(text.orEmpty())
+    }
+
+    /** 성적 공지이거나 제목이 시험 이름(중간고사·Exam 1 등)이고, 분포 말이 있는가(기기 안 읽기·"통계 저장" 버튼의 대상). */
+    fun mayHaveScoreStats(title: String?, text: String?): Boolean =
+        isScoreStatsAnnouncement(title, text) ||
+            // 제목이 시험 이름뿐("Exam 1")이면 분포 말이 두 가지 이상일 때만("평균 소요 시간" 같은 문장 하나로는 아니다).
+            (ScoreStatsParser.examKey(title) != null && !isExamAnnouncement(title, text) &&
+                STATS_WORDS.findAll("${title.orEmpty()} ${text.orEmpty()}").map { it.value.lowercase() }.toSet().size >= 2)
 
     /** 준비물·지참물·허용 물품을 말하는 줄(2026-11-24). 키워드만 보고 날짜나 물품을 해석하지 않는다. */
     private val SUPPLIES = Regex("준비물|지참|가져\\s*오|가져\\s*와|챙겨|허용|불허|사용\\s*(가능|불가)|계산기|신분증|학생증|사인펜|요약지|치팅|cheat\\s*sheet|\\bbring\\b|\\ballowed\\b|\\bcalculators?\\b", RegexOption.IGNORE_CASE)

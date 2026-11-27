@@ -10,7 +10,14 @@ import org.json.JSONObject
  */
 data class HistoryEntry(val at: Long, val channel: String, val title: String, val text: String, val bigText: String?, val url: String?,
     /** 시험·과제 공지의 "내 일정에 등록" 초안(알림 기록에서도 같은 버튼). */
-    val draft: String? = null)
+    val draft: String? = null,
+    /** 채팅 입력창을 채우는 버튼(성적 공지의 "통계 저장", 2026-11-28): 버튼 이름과 채울 문구. */
+    val action: String? = null,
+    val prefill: String? = null,
+) {
+    /** 채울 문구 끝의 "(공지 ID N)". */
+    val announcementId: Long? get() = prefill?.let { Regex("\\(공지 ID (\\d+)\\)\\s*$").find(it)?.groupValues?.get(1)?.toLongOrNull() }
+}
 
 object NotifyHistoryLogic {
     const val KEEP_DAYS = 90L
@@ -25,7 +32,8 @@ object NotifyHistoryLogic {
         list.forEach { e ->
             arr.put(JSONObject().put("at", e.at).put("channel", e.channel).put("title", e.title).put("text", e.text)
                 .put("big", e.bigText ?: JSONObject.NULL).put("url", e.url ?: JSONObject.NULL)
-                .apply { e.draft?.let { put("draft", it) } })
+                .apply { e.draft?.let { put("draft", it) } }
+                .apply { if (e.action != null && e.prefill != null) put("action", e.action).put("prefill", e.prefill) })
         }
     }.toString()
 
@@ -37,6 +45,8 @@ object NotifyHistoryLogic {
                 o.optLong("at"), o.optString("channel"), o.optString("title"), o.optString("text"),
                 if (o.isNull("big")) null else o.optString("big"), if (o.isNull("url")) null else o.optString("url"),
                 if (!o.has("draft") || o.isNull("draft")) null else o.optString("draft"),
+                if (!o.has("action") || o.isNull("action")) null else o.optString("action"),
+                if (!o.has("prefill") || o.isNull("prefill")) null else o.optString("prefill"),
             )
         }
     }
@@ -61,7 +71,8 @@ class NotifyHistory(context: Context) {
 
     @Synchronized fun record(n: Notice, nowMs: Long = System.currentTimeMillis()) {
         runCatching {
-            val e = HistoryEntry(nowMs, n.channel.id, n.title, n.text, n.bigText, n.url, n.draft)
+            val e = HistoryEntry(nowMs, n.channel.id, n.title, n.text, n.bigText, n.url, n.draft,
+                n.prefillAction?.takeIf { n.prefill != null }, n.prefill?.takeIf { n.prefillAction != null })
             prefs.edit().putString("items", NotifyHistoryLogic.toJson(NotifyHistoryLogic.add(load(), e, nowMs))).apply()
         }
     }

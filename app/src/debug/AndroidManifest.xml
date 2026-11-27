@@ -5,6 +5,10 @@
         <receiver android:name="kr.snu.etlassistant.debug.TestNotifyReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+        <!-- 점수 분포 조회 시험(GET만, 집계만 로그). adb 셸만 보낼 수 있게 DUMP 권한으로 막는다. -->
+        <receiver android:name="kr.snu.etlassistant.debug.ScoreStatsProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
         <!-- 환영 화면 미리보기(저장 상태를 바꾸지 않음). adb 셸만 열 수 있게 DUMP 권한으로 막는다. -->
         <activity android:name="kr.snu.etlassistant.debug.WelcomePreviewActivity"
             android:exported="true"

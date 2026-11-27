@@ -686,7 +686,7 @@ private fun EtlTokenSection(s: SettingsState, a: SettingsActions) {
             onDismissRequest = { confirmDisconnect = false },
             title = { Text("eTL 연결을 해제할까요?") },
             text = {
-                Text("저장한 eTL 토큰과, 앱이 eTL에서 받아 둔 과제 목록·시간표·강의계획서 캐시를 이 폰에서 지워요. " +
+                Text("저장한 eTL 토큰과, 앱이 eTL에서 받아 둔 과제 목록·시간표·강의계획서 캐시, 성적 통계를 이 폰에서 지워요. " +
                     "대화, 받은 파일, 알림 기록, 내 마감은 그대로 남아요.\n\n" +
                     "eTL 웹사이트의 토큰(서울대 로그인으로 연결했다면 '영민이 (기기 이름)')은 eTL에 그대로 남아요. " +
                     "필요 없으면 eTL 설정의 승인된 통합 목록에서 지워 주세요.")

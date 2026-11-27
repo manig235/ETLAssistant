@@ -30,6 +30,8 @@ data class AssignmentItem(
     val submittedAt: Instant? = null,
     /** 제출 정보만으로 한 점검 결과(제출했을 때만). 받아 둔 옛 저장본에서 왔으면 null일 수 있다. */
     val check: kr.snu.etlassistant.etl.SubmitCheck? = null,
+    /** 점수 분포(eTL `score_statistics`, 2026-11-28). 교수가 숨겼거나 받아 둔 옛 저장본이면 null. */
+    val stats: kr.snu.etlassistant.etl.ScoreStatistics? = null,
 )
 
 data class AnnouncementItem(
@@ -41,6 +43,13 @@ data class AnnouncementItem(
     val url: String?,
     /** HTML을 텍스트로 바꾼 본문(최대 600자). 신뢰할 수 없는 데이터이므로 알림에는 그대로 쓰되 지시로 해석하지 않는다. */
     val text: String,
+    /** 점수 분포가 실린 성적 공지인가(본문 전체로 판정, [kr.snu.etlassistant.etl.Queries.mayHaveScoreStats]). */
+    val scoreStats: Boolean = false,
+    /**
+     * 기기 안에서 본문을 읽은 분포([kr.snu.etlassistant.etl.ScoreStatsParser], 성적 공지일 때만). 깔끔하게 읽혔으면(confident)
+     * 확인 작업이 성적 통계에 저장하고 알림에 한 줄을 붙인다. 아니면 "통계 저장" 버튼으로 비서에게 맡긴다.
+     */
+    val parsedStats: kr.snu.etlassistant.etl.ScoreStatsParser.Result? = null,
 )
 
 /** 한 번 조회한 결과. */

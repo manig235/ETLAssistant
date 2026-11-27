@@ -123,6 +123,7 @@ object SnapshotFetcher {
                 score = if (kr.snu.etlassistant.etl.Queries.isGraded(a)) a.obj("submission")?.optDouble("score")?.takeIf { !it.isNaN() } else null,
                 submittedAt = EtlLogic.parseInstant(a.obj("submission")?.str("submitted_at")),
                 check = kr.snu.etlassistant.etl.SubmissionCheck.evaluate(a, a.obj("submission"), now),
+                stats = kr.snu.etlassistant.etl.ScoreStats.parse(a.obj("score_statistics")),
             )
         }
 
@@ -154,7 +155,12 @@ object SnapshotFetcher {
                     text = EtlLogic.htmlToText(a.str("message"), 2000).let { full ->
                         if (Queries.isExamAnnouncement(a.str("title"), full)) full else EtlLogic.htmlToText(a.str("message"), 600)
                     },
-                )
+                    // 성적 공지의 분포 말(Q1·평균 등)은 본문 뒤쪽에 있기도 해서 본문 전체로 본다(표 칸은 " | "로 나눈다).
+                ).let { item ->
+                    val full = kr.snu.etlassistant.etl.ScoreStatsParser.textFromHtml(a.str("message"))
+                    if (!Queries.mayHaveScoreStats(a.str("title"), full)) item
+                    else item.copy(scoreStats = true, parsedStats = kr.snu.etlassistant.etl.ScoreStatsParser.parse(a.str("title"), full))
+                }
             }
     }
 

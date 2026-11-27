@@ -6,7 +6,7 @@ package kr.snu.etlassistant.etl
  * 끔은 그대로 도구를 숨기고 거절한다. 일정을 바꾸는 범위(내 마감·보강·휴강·캘린더)는 계속 확인을 거친다.
  */
 enum class WriteScope(val label: String, val reviewed: Boolean = true) {
-    DEADLINES("내 마감·시험"), TIMETABLE("시간표 보강·휴강"), CALENDAR("캘린더 일정"), FILES("파일 만들기", reviewed = false)
+    DEADLINES("내 마감·시험"), TIMETABLE("시간표 보강·휴강"), CALENDAR("캘린더 일정"), FILES("파일 만들기", reviewed = false), SCORES("성적 통계")
 }
 
 enum class WriteKind { ADD, UPDATE, DELETE }
@@ -59,6 +59,8 @@ object WritePolicy {
         "calendar_update" -> Operation(WriteScope.CALENDAR, WriteKind.UPDATE)
         "calendar_delete" -> Operation(WriteScope.CALENDAR, WriteKind.DELETE)
         "make_pdf" -> Operation(WriteScope.FILES, WriteKind.ADD)
+        "score_stats_save" -> Operation(WriteScope.SCORES, WriteKind.ADD)
+        "score_stats_delete" -> Operation(WriteScope.SCORES, WriteKind.DELETE)
         else -> null
     }
 }

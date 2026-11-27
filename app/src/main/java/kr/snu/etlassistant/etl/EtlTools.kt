@@ -81,7 +81,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 .put("required", JSONArray())))
         .put(tool("etl_announcements", "공지(Canvas 공지). 최근 days일, 최신순. 과목을 지정하면 그 과목만. 교수가 마감·보강·휴강을 공지 본문에만 적는 경우가 있다. 과목 메뉴의 '게시판' 글은 etl_boards로 따로 본다.",
             schema(Triple("days", "integer", "최근 며칠(1~60). 기본 7"), Triple("course_id", "integer", "이 과목만(선택)"))))
-        .put(tool("etl_grades", "과목별 현재 점수·등급과 채점된 과제(점수/배점, 마감순).",
+        .put(tool("etl_grades", "과목별 현재 점수·등급과 채점된 과제(점수/배점, 마감순). eTL이 점수 분포를 주면 과제마다 stats(최저·최고·평균)와 position(내 점수 위치 어림: 범위일 뿐 정확한 등수 아님)이 붙는다. 받은 분포는 폰의 성적 통계에도 저장된다.",
             schema(Triple("course_id", "integer", "이 과목만(선택, 지난 학기도 가능)"))))
         .put(tool("etl_files", "과목의 강의자료·내 제출 파일 목록(받지 않는다). 파일 탭, 모듈, 과제·공지 첨부와 본문 링크, 내 제출 첨부를 합친다. downloaded=true면 작업 폴더에 이미 있다. download_args가 있으면 그 인자를 etl_download에 넘긴다. 파일 탭의 숨김은 받기 거부 사유가 아니다. 정보 미확인도 실제 받기 요청으로 다시 확인한다. 게시판 첨부는 etl_board_post로 찾는다.",
             schema(Triple("course_id", "integer", "과목 ID"), required = listOf("course_id"))))
@@ -162,6 +162,8 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("path", "string", "예: /api/v1/users/self/todo"),
                 Triple("all", "boolean", "목록의 다음 쪽까지 모두 받기(최대 20쪽). 기본 false"),
                 required = listOf("path"))))
+        // 성적 통계(폰 안 읽기·쓰기, etl/ScoreStatsTools.kt)
+        .also { a -> ScoreStatsTools.specs(untrusted, writeRule).forEach { a.put(it) } }
         // 폰 안 쓰기: 비서가 쓴 마크다운을 PDF로(pdf/MakePdfTool.kt)
         .put(kr.snu.etlassistant.pdf.MakePdfTool.spec(untrusted))
         // 시험 자료 만들기용 공개 기출 자료(허용 목록 사이트, 읽기 전용, study/StudyTools.kt)
@@ -170,7 +172,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
     override fun call(name: String, args: JSONObject): ToolResult {
         val known = setOf("etl_digest", "etl_courses", "etl_assignments", "etl_assignment", "etl_search_files", "etl_download", "etl_read_file", "etl_render_pages", WorkspaceImage.NAME, "etl_verify_submission", "etl_get", "my_deadlines", "etl_announcements", "etl_grades", "etl_files", "etl_boards", "etl_board_posts", "etl_board_post", "etl_timetable", "etl_syllabus",
             "my_deadline_add", "my_deadline_update", "my_deadline_delete", "timetable_change_add", "timetable_change_delete",
-            kr.snu.etlassistant.pdf.MakePdfTool.NAME) + kr.snu.etlassistant.study.StudyTools.NAMES
+            kr.snu.etlassistant.pdf.MakePdfTool.NAME) + kr.snu.etlassistant.study.StudyTools.NAMES + ScoreStatsTools.NAMES
         if (name !in known && name !in calendar.names) throw UnknownToolException(name)
         if (name == WorkspaceImage.NAME) return WorkspaceImage.view(workspace, args.optString("path", ""))
         val secrets = listOfNotNull(tokenStore.load())
@@ -203,6 +205,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "timetable_change_add" -> timetableChangeAdd(args)
                 "timetable_change_delete" -> timetableChangeDelete(args)
                 kr.snu.etlassistant.pdf.MakePdfTool.NAME -> kr.snu.etlassistant.pdf.MakePdfTool(context, workspace).call(args)
+                in ScoreStatsTools.NAMES -> ScoreStatsTools(context).call(name, args)
                 in kr.snu.etlassistant.study.StudyTools.NAMES -> kr.snu.etlassistant.study.StudyTools(context, workspace).call(name, args)
                 "etl_boards" -> board().boards(id(args, "course_id"))
                 "etl_board_posts" -> board().posts(id(args, "course_id"), id(args, "board_id"), args.optInt("page", 1), args.optString("keyword", ""))
@@ -230,7 +233,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             "etl_digest" -> "days=${args.optInt("days", 7)}"
             "etl_announcements" -> "days=${args.optInt("days", 7)}" + if (args.has("course_id")) " course=${args.optLong("course_id")}" else ""
             "etl_syllabus" -> "course=${args.optLong("course_id")}" + if (args.has("attachment")) " attachment=${args.optInt("attachment")}" else ""
-            "etl_grades", "etl_files" -> if (args.has("course_id")) "course=${args.optLong("course_id")}" else ""
+            "etl_grades", "etl_files", ScoreStatsTools.READ -> if (args.has("course_id")) "course=${args.optLong("course_id")}" else ""
             "my_deadlines" -> args.optString("range", "all")
             "etl_board_posts" -> "board=${args.optLong("board_id")} page=${args.optInt("page", 1)}"
             "etl_board_post" -> "board=${args.optLong("board_id")} post=${args.optLong("post_id")}"
@@ -593,7 +596,17 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     private fun grades(c: EtlClient, course: Long?): JSONObject {
         val courses = Queries.coursesFor(c.getAll(CourseAssignments.COURSES_PATH), course)
-        return Queries.gradesResult(courses, CourseAssignments.fetch(c, courses), Instant.now())
+        val results = CourseAssignments.fetch(c, courses)
+        val now = Instant.now()
+        // 받은 점수 분포는 성적 통계에도 저장한다(시간마다 확인할 때와 같은 항목).
+        runCatching {
+            ScoreStatsStore(context).syncEtl(results.flatMap { r ->
+                kr.snu.etlassistant.notify.SnapshotFetcher.mapAssignments(r.courseId, r.courseName, r.assignments, now).mapNotNull {
+                    ScoreStats.fromEtl(it.courseId, it.courseName, it.assignmentId, it.name, it.stats, it.score, it.points, now.toEpochMilli())
+                }
+            })
+        }
+        return Queries.gradesResult(courses, results, now)
     }
 
     /** 실패해도 목록의 나머지는 만든다(토큰 거부는 그대로 던진다). */

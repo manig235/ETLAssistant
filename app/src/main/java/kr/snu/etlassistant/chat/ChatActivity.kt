@@ -108,6 +108,7 @@ class ChatActivity : AppCompatActivity(), CodexSession.Listener, ChatModel.Liste
             onMyDeadlines = { openMyDeadlines() },
             onTimetable = { startActivity(Intent(this, TimetableActivity::class.java)) },
             onHistory = { startActivity(Intent(this, NotifyHistoryActivity::class.java)) },
+            onScoreStats = { startActivity(Intent(this, ScoreStatsActivity::class.java)) },
             onBanner = { action ->
                 when (action) {
                     BannerAction.SETTINGS -> openSettings()
