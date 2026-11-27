@@ -140,6 +140,13 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- 서울대 로그인으로 eTL 연결(앱 안 로그인 화면). 회전·화면 모드가 바뀌어도 로그인 중인 화면을 다시 만들지 않는다. -->
+        <activity
+            android:name="kr.snu.etlassistant.onboarding.EtlLoginActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name="kr.snu.etlassistant.chat.SettingsActivity"
             android:exported="false"

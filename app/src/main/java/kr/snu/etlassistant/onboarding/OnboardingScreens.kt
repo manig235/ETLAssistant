@@ -80,6 +80,8 @@ import kr.snu.etlassistant.phase0.R
 
 /** 화면이 바깥(액티비티, 세션, 시스템)에 부탁하는 일들. */
 class OnboardingActions(
+    /** 앱 안 서울대 로그인 화면으로 eTL을 연결한다([EtlLoginActivity]). */
+    val loginWithSnu: () -> Unit,
     val openEtlSettings: () -> Unit,
     val readClipboard: () -> String?,
     val requestNotifications: () -> Unit,
@@ -366,32 +368,75 @@ private fun TokenStep(vm: OnboardingViewModel, a: OnboardingActions) {
     val t = DesignSystemTheme.typography
     val state = vm.tokenState
     val saved = state is TokenState.Saved
+    val paste = vm.showPaste
     StepFrame(
         title = "eTL에 연결할게요",
-        subtitle = "eTL에서 내 토큰을 만들어 붙여넣으면, 앱이 eTL을 읽기 전용으로 조회해요. 제출이나 수정은 하지 않아요.",
+        subtitle = "연결하면 앱이 eTL을 읽기 전용으로 조회해요. 제출이나 수정은 하지 않아요.",
         bottom = {
-            if (saved) {
-                PrimaryButton("다음") { vm.goNext() }
-                WantedTextButton(text = "다른 토큰으로 바꾸기", modifier = Modifier.fillMaxWidth(), onClick = { vm.replaceToken() })
-            } else {
-                PrimaryButton(
-                    "확인하고 저장",
-                    enabled = OnboardingLogic.isPlausibleEtlToken(vm.tokenInput) && state !is TokenState.Checking,
-                    loading = state is TokenState.Checking,
-                ) { vm.checkAndSaveToken() }
-                if (vm.hasStoredToken) {
-                    WantedTextButton(text = "기존 토큰 그대로 쓰기", modifier = Modifier.fillMaxWidth(), onClick = { vm.keepExistingToken() })
+            when {
+                saved -> {
+                    PrimaryButton("다음") { vm.goNext() }
+                    WantedTextButton(text = "다른 토큰으로 바꾸기", modifier = Modifier.fillMaxWidth(), onClick = { vm.replaceToken() })
                 }
+                paste -> {
+                    PrimaryButton(
+                        "확인하고 저장",
+                        enabled = OnboardingLogic.isPlausibleEtlToken(vm.tokenInput) && state !is TokenState.Checking,
+                        loading = state is TokenState.Checking,
+                    ) { vm.checkAndSaveToken() }
+                    WantedTextButton(text = "서울대 로그인으로 연결하기", modifier = Modifier.fillMaxWidth(), onClick = { vm.showPaste = false })
+                }
+                else -> {
+                    PrimaryButton("서울대 로그인으로 연결", enabled = state !is TokenState.Checking) { a.loginWithSnu() }
+                    Text(
+                        SNU_LOGIN_NOTE,
+                        style = t.caption1Regular,
+                        color = c.foregroundNeutralSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    WantedTextButton(text = "직접 발급해서 붙여넣기", modifier = Modifier.fillMaxWidth(), onClick = { vm.showPaste = true })
+                }
+            }
+            if (!saved && vm.hasStoredToken) {
+                WantedTextButton(text = "기존 토큰 그대로 쓰기", modifier = Modifier.fillMaxWidth(), onClick = { vm.keepExistingToken() })
             }
         },
     ) {
-        if (!saved) {
+        if (saved) {
+            val name = (state as TokenState.Saved).name
+            StatusCard(if (name != null) "${name}님으로 연결됐어요" else "이미 연결돼 있어요")
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "토큰은 이 폰에 암호화돼 저장됐어요. 이제 마감, 공지, 파일을 조회할 수 있어요.",
+                style = t.body2Regular,
+                color = c.foregroundNeutralSecondary,
+            )
+        } else if (!paste) {
+            Card {
+                Step("1", "서울대 로그인 화면에서 평소처럼 로그인해요")
+                Spacer(Modifier.height(10.dp))
+                Step("2", "영민이가 eTL 토큰을 만들어 이 폰에 저장해요")
+                Spacer(Modifier.height(10.dp))
+                Step("3", "로그인 기록은 바로 지워요")
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "eTL 설정의 토큰 목록에 '영민이 (기기 이름)'이 생겨요. 필요 없어지면 거기서 지울 수 있어요.",
+                style = t.body2Regular,
+                color = c.foregroundNeutralSecondary,
+            )
+            (state as? TokenState.Error)?.let {
+                Spacer(Modifier.height(12.dp))
+                StatusCard(it.message, positive = false)
+            }
+        } else {
             Card {
                 Step("1", "아래 버튼으로 eTL 설정 페이지를 열어요")
                 Spacer(Modifier.height(10.dp))
                 Step("2", "'새 액세스 토큰'을 만들어요 (용도는 아무거나)")
                 Spacer(Modifier.height(10.dp))
-                Step("3", "만들어진 토큰을 복사해서 아래에 붙여넣어요")
+                Step("3", "만들어진 토큰을 복사해서 돌아오면 자동으로 채워요")
             }
             Spacer(Modifier.height(12.dp))
             SecondaryButton("eTL 설정 페이지 열기") { a.openEtlSettings() }
@@ -409,18 +454,12 @@ private fun TokenStep(vm: OnboardingViewModel, a: OnboardingActions) {
                 onValueChange = { vm.tokenInput = it },
                 modifier = Modifier.fillMaxWidth(),
             )
-        } else {
-            val name = (state as TokenState.Saved).name
-            StatusCard(if (name != null) "${name}님으로 연결됐어요" else "이미 연결돼 있어요")
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "토큰은 이 폰에 암호화돼 저장됐어요. 이제 마감, 공지, 파일을 조회할 수 있어요.",
-                style = t.body2Regular,
-                color = c.foregroundNeutralSecondary,
-            )
         }
     }
 }
+
+/** "서울대 로그인으로 연결" 버튼 아래 안내(첫 실행 안내와 설정이 같이 쓴다). */
+const val SNU_LOGIN_NOTE = "서울대 로그인 화면에서 로그인하면 영민이가 eTL 토큰을 만들어 저장해요. 비밀번호는 앱에 저장되지 않아요."
 
 @Composable
 private fun Step(no: String, text: String) {

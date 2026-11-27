@@ -64,6 +64,7 @@ import com.wanted.android.wanted.design.input.input.control.CheckBoxState
 import com.wanted.android.wanted.design.input.input.control.CheckBoxStyle
 import com.wanted.android.wanted.design.input.input.control.WantedCheckBox
 import com.wanted.android.wanted.design.input.textinput.textfield.WantedTextField
+import com.wanted.android.wanted.design.input.textinput.textfield.WantedTextFieldDefaults
 import com.wanted.android.wanted.design.loading.loading.WantedCircularProgressIndicator
 import com.wanted.android.wanted.design.theme.DesignSystemTheme
 import com.wanted.android.wanted.design.util.ButtonSize
@@ -114,6 +115,12 @@ class SettingsState {
     /** 공개 기출 자료 찾기(MIT OCW 등, 기본 켬). */
     var studyLookup by mutableStateOf(true)
     var hasEtlToken by mutableStateOf(false)
+    /** eTL 토큰 붙여넣기 칸(브라우저에서 돌아왔을 때 클립보드로 채울 수 있게 여기에 둔다). */
+    var etlTokenInput by mutableStateOf("")
+    /** 붙여넣은 토큰을 eTL에 확인하는 중. */
+    var etlTokenChecking by mutableStateOf(false)
+    /** 붙여넣은 토큰 확인 실패 문구(없으면 null). */
+    var etlTokenError by mutableStateOf<String?>(null)
 
     var notify by mutableStateOf(NotifySettings())
     var notifyPermitted by mutableStateOf(true)
@@ -150,9 +157,13 @@ class SettingsActions(
     val saveApiKey: (String) -> Boolean,
     val clearApiKey: () -> Unit,
     val setUseApiKey: (Boolean) -> Unit,
-    val saveEtlToken: (String) -> Boolean,
+    /** 붙여넣은 토큰을 eTL에 확인하고 저장한다(결과는 [SettingsState]의 eTL 토큰 값으로). */
+    val saveEtlToken: (String) -> Unit,
     val clearEtlToken: () -> Unit,
     val openEtlSettings: () -> Unit,
+    /** 앱 안 서울대 로그인 화면으로 eTL을 연결한다. */
+    val loginWithSnu: () -> Unit = {},
+    val readClipboard: () -> String? = { null },
     val updateNotify: ((NotifySettings) -> NotifySettings) -> Unit,
     val pickTime: (initialMinutes: Int, onPicked: (Int) -> Unit) -> Unit,
     val requestNotifyPermission: () -> Unit,
@@ -617,30 +628,54 @@ private fun LoginPanel(prompt: SessionEvent.LoginPrompt, expiresAt: Long, a: Set
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EtlTokenSection(s: SettingsState, a: SettingsActions) {
-    var input by remember { mutableStateOf("") }
     var confirmDisconnect by remember { mutableStateOf(false) }
     Section("eTL 토큰") {
         SettingsCard {
             if (s.hasEtlToken) StatusBanner("저장됨 (Keystore로 암호화)", StatusTone.POSITIVE)
             else StatusBanner("저장된 토큰이 없어요", StatusTone.CAUTION)
             Spacer(Modifier.height(12.dp))
-            SoftButton("eTL 토큰 만들러 가기", onClick = a.openEtlSettings)
+            MainButton(if (s.hasEtlToken) "서울대 로그인으로 다시 연결" else "서울대 로그인으로 연결", enabled = !s.etlTokenChecking, onClick = a.loginWithSnu)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                kr.snu.etlassistant.onboarding.SNU_LOGIN_NOTE,
+                style = DesignSystemTheme.typography.caption1Regular,
+                color = DesignSystemTheme.colors.foregroundNeutralSecondary,
+            )
             Spacer(Modifier.height(16.dp))
+            Text(
+                "직접 발급해서 붙여넣기",
+                style = DesignSystemTheme.typography.body2Bold,
+                color = DesignSystemTheme.colors.foregroundNeutralPrimary,
+            )
+            Spacer(Modifier.height(8.dp))
+            SoftButton("eTL 토큰 만들러 가기", onClick = a.openEtlSettings)
+            Spacer(Modifier.height(12.dp))
             WantedTextField(
-                text = input,
+                text = s.etlTokenInput,
                 placeholder = "토큰을 붙여넣어 주세요",
                 title = if (s.hasEtlToken) "다른 토큰으로 바꾸기" else "eTL 토큰",
-                description = "이 폰의 Keystore에 암호화해서 저장해요.",
+                description = s.etlTokenError ?: "eTL에 확인한 뒤 이 폰의 Keystore에 암호화해서 저장해요.",
+                status = if (s.etlTokenError != null) WantedTextFieldDefaults.Status.Negative else WantedTextFieldDefaults.Status.Normal,
+                trailingButton = "붙여넣기",
+                onClickTrailingButton = {
+                    a.readClipboard()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                        s.etlTokenInput = it
+                        s.etlTokenError = null
+                    }
+                },
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 background = DesignSystemTheme.colors.backgroundNeutralPrimary,
-                onValueChange = { input = it },
+                onValueChange = {
+                    s.etlTokenInput = it
+                    s.etlTokenError = null
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MainButton("저장", enabled = input.isNotBlank()) {
-                    if (a.saveEtlToken(input)) input = ""
+                MainButton(if (s.etlTokenChecking) "확인하는 중…" else "확인하고 저장", enabled = s.etlTokenInput.isNotBlank() && !s.etlTokenChecking) {
+                    a.saveEtlToken(s.etlTokenInput)
                 }
                 SoftButton("eTL 연결 해제", enabled = s.hasEtlToken) { confirmDisconnect = true }
             }
@@ -652,7 +687,9 @@ private fun EtlTokenSection(s: SettingsState, a: SettingsActions) {
             title = { Text("eTL 연결을 해제할까요?") },
             text = {
                 Text("저장한 eTL 토큰과, 앱이 eTL에서 받아 둔 과제 목록·시간표·강의계획서 캐시를 이 폰에서 지워요. " +
-                    "대화, 받은 파일, 알림 기록, 내 마감은 그대로 남아요. eTL 웹사이트의 토큰은 eTL 설정에서 따로 지워 주세요.")
+                    "대화, 받은 파일, 알림 기록, 내 마감은 그대로 남아요.\n\n" +
+                    "eTL 웹사이트의 토큰(서울대 로그인으로 연결했다면 '영민이 (기기 이름)')은 eTL에 그대로 남아요. " +
+                    "필요 없으면 eTL 설정의 승인된 통합 목록에서 지워 주세요.")
             },
             confirmButton = { WantedTextButton(text = "해제", onClick = { confirmDisconnect = false; a.clearEtlToken() }) },
             dismissButton = { WantedTextButton(text = "취소", onClick = { confirmDisconnect = false }) },

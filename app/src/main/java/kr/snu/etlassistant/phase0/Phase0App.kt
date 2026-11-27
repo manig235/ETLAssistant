@@ -7,6 +7,8 @@ class Phase0App : Application() {
         super.onCreate()
         kr.snu.etlassistant.chat.AppAppearance.apply(kr.snu.etlassistant.chat.AppAppearance.load(this))
         CodexRunner.init(this)
+        // 서울대 로그인 화면이 도중에 강제로 끝났으면 남은 로그인 쿠키를 지운다(흔적이 있을 때만 WebView를 건드린다).
+        kr.snu.etlassistant.onboarding.EtlLoginActivity.wipeIfInterrupted(this)
         Thread({
             try {
                 kr.snu.etlassistant.codex.ChatGptAuthStorage.prepare(this)

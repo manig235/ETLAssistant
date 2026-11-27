@@ -38,17 +38,27 @@ class OnboardingActivity : AppCompatActivity(), CodexSession.Listener {
         if (!granted && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) openNotificationSettings()
     }
 
+    /** 서울대 로그인 화면의 결과. 토큰은 그 화면이 이미 확인·저장했고, 여기서는 표시만 바꾼다. */
+    private val etlLogin = registerForActivityResult(EtlLoginActivity.Contract()) { outcome ->
+        when (outcome) {
+            is EtlLoginActivity.Outcome.Connected -> vm.onLoginConnected(outcome.name)
+            EtlLoginActivity.Outcome.Paste -> vm.showPaste = true
+            EtlLoginActivity.Outcome.Canceled -> {}
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         refreshNotifyGranted()
         val actions = OnboardingActions(
-            // 새 연결에 필요한 토큰 발급은 LearningX에서 제공하지 않아 웹을 연다.
-            openEtlSettings = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myetl.snu.ac.kr/profile/settings"))) },
-            readClipboard = {
-                val clip = getSystemService(ClipboardManager::class.java).primaryClip
-                if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(this).toString() else null
+            loginWithSnu = { etlLogin.launch(Unit) },
+            // 직접 발급: LearningX에는 토큰 메뉴가 없어 eTL 웹 설정을 연다. 돌아오면 클립보드를 한 번 본다.
+            openEtlSettings = {
+                vm.awaitingClipboard = true
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myetl.snu.ac.kr/profile/settings")))
             },
+            readClipboard = { readClipboardText() },
             requestNotifications = { requestNotifications() },
             requestBatteryExemption = {
                 BatteryOpt.request(this)
@@ -89,6 +99,22 @@ class OnboardingActivity : AppCompatActivity(), CodexSession.Listener {
     }
 
     override fun onEvent(e: SessionEvent) = vm.onSessionEvent(e)
+
+    /**
+     * 토큰을 만들러 브라우저에 다녀온 뒤 처음 화면에 돌아왔을 때 한 번만 클립보드를 본다(Android 10+는 창에 포커스가 있어야 읽힌다).
+     * 그 버튼을 누르지 않았으면 클립보드를 읽지 않는다.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || !vm.awaitingClipboard) return
+        vm.awaitingClipboard = false
+        if (vm.step == Step.TOKEN) vm.offerClipboard(readClipboardText())
+    }
+
+    private fun readClipboardText(): String? = runCatching {
+        val clip = getSystemService(ClipboardManager::class.java).primaryClip
+        if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(this).toString() else null
+    }.getOrNull()
 
     private fun refreshNotifyGranted() {
         val permitted = Build.VERSION.SDK_INT < 33 ||

@@ -24,6 +24,8 @@ import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
 import kr.snu.etlassistant.etl.ApiKeyStore
 import kr.snu.etlassistant.etl.EtlService
+import kr.snu.etlassistant.etl.EtlTokenCheck
+import kr.snu.etlassistant.onboarding.EtlLoginActivity
 import kr.snu.etlassistant.notify.BatteryOpt
 import kr.snu.etlassistant.notify.CourseFilterLogic
 import kr.snu.etlassistant.notify.CourseFilterStore
@@ -64,6 +66,18 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         }
     }
 
+    /** 서울대 로그인 화면의 결과. 토큰은 그 화면이 확인·저장했고, 여기서는 저장 뒤 할 일만 한다(붙여넣기와 같게). */
+    private val etlLogin = registerForActivityResult(EtlLoginActivity.Contract()) { outcome ->
+        when (outcome) {
+            is EtlLoginActivity.Outcome.Connected -> onEtlTokenSaved(outcome.name)
+            EtlLoginActivity.Outcome.Paste -> toast("eTL 토큰을 만들어 아래 칸에 붙여넣어 주세요", long = true)
+            EtlLoginActivity.Outcome.Canceled -> {}
+        }
+    }
+
+    /** "eTL 토큰 만들러 가기"를 눌러 브라우저에 다녀오는 중(돌아오면 클립보드를 한 번 본다). */
+    private var awaitingClipboard = false
+
     /** 수동 실행 뒤 상태 줄을 다시 읽는다(워커가 끝날 시간을 주기 위해 지연 호출). */
     private val refreshNotifyStatus = Runnable { refreshNotifyStatusLines() }
 
@@ -88,8 +102,12 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
             clearEtlToken = ::clearEtlToken,
             openEtlSettings = {
                 // 토큰 발급은 웹 전용이다. LearningX의 프로필 설정에는 액세스 토큰 메뉴가 없다.
+                // 돌아오면 클립보드를 한 번 본다(이 버튼을 눌렀을 때만).
+                awaitingClipboard = true
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://myetl.snu.ac.kr/profile/settings")))
             },
+            loginWithSnu = { etlLogin.launch(Unit) },
+            readClipboard = ::readClipboardText,
             updateNotify = ::updateNotify,
             pickTime = ::pickTime,
             requestNotifyPermission = {
@@ -318,25 +336,54 @@ class SettingsActivity : AppCompatActivity(), CodexSession.Listener {
         refreshSecrets()
     }
 
-    /** @return 저장했으면 true(입력칸을 비운다). 토큰 값은 메시지에 넣지 않는다. */
-    private fun saveEtlToken(raw: String): Boolean {
-        val token = raw.trim()
-        if (!SettingsLogic.isPlausibleEtlToken(token)) {
-            toast("토큰 형식이 올바르지 않아요(공백 없는 ASCII 문자)", long = true)
-            return false
-        }
-        var saved = false
-        try {
-            EtlService.tokens(this).save(token)
-            saved = true
-            toast("eTL 토큰을 저장했어요")
-            CodexSession.restart() // MCP 서버를 새로 등록해야 한다
-        } catch (e: Exception) {
-            toast("저장하지 못했어요(${e.javaClass.simpleName})", long = true)
-        }
-        refreshSecrets()
-        return saved
+    /** 붙여넣은 토큰을 eTL에 확인하고 저장한다. 토큰 값은 메시지에 넣지 않는다. */
+    private fun saveEtlToken(raw: String) {
+        if (state.etlTokenChecking) return
+        state.etlTokenChecking = true
+        state.etlTokenError = null
+        val app = applicationContext
+        Thread({
+            val result = EtlTokenCheck.verifyAndSave(app, raw)
+            runOnUiThread {
+                state.etlTokenChecking = false
+                when (result) {
+                    is EtlTokenCheck.Result.Saved -> {
+                        state.etlTokenInput = ""
+                        onEtlTokenSaved(result.name)
+                    }
+                    is EtlTokenCheck.Result.Error -> state.etlTokenError = result.message
+                }
+            }
+        }, "etl-token-check").apply { isDaemon = true }.start()
     }
+
+    /** 새 eTL 토큰을 저장한 뒤(붙여넣기·서울대 로그인 공통). */
+    private fun onEtlTokenSaved(name: String?) {
+        if (isDestroyed) return
+        state.etlTokenError = null
+        toast(if (name != null) "${name}님 eTL로 연결했어요" else "eTL 토큰을 저장했어요")
+        CodexSession.restart() // MCP 서버를 새로 등록해야 한다
+        refreshSecrets()
+    }
+
+    /**
+     * "eTL 토큰 만들러 가기"로 브라우저에 다녀온 뒤 처음 돌아왔을 때 한 번만 클립보드를 본다(Android 10+는 포커스가 있어야 읽힌다).
+     * 토큰 모양이면 칸에 채우고 바로 확인한다.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || !awaitingClipboard) return
+        awaitingClipboard = false
+        val text = readClipboardText()?.trim().orEmpty()
+        if (state.etlTokenChecking || !SettingsLogic.isPlausibleEtlToken(text)) return
+        state.etlTokenInput = text
+        saveEtlToken(text)
+    }
+
+    private fun readClipboardText(): String? = runCatching {
+        val clip = getSystemService(android.content.ClipboardManager::class.java).primaryClip
+        if (clip != null && clip.itemCount > 0) clip.getItemAt(0).coerceToText(this).toString() else null
+    }.getOrNull()
 
     /** eTL 연결 해제: 토큰과 eTL에서 받아 둔 캐시를 지운다(무엇을 남기는지는 [EtlDisconnect]). */
     private fun clearEtlToken() {

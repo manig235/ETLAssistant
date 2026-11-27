@@ -12,11 +12,8 @@ import kotlinx.coroutines.withContext
 import kr.snu.etlassistant.codex.AccountInfo
 import kr.snu.etlassistant.codex.SessionEvent
 import kr.snu.etlassistant.codex.SessionState
-import kr.snu.etlassistant.etl.EtlAuthException
-import kr.snu.etlassistant.etl.EtlClient
-import kr.snu.etlassistant.etl.EtlException
-import kr.snu.etlassistant.etl.EtlLogic.str
 import kr.snu.etlassistant.etl.EtlService
+import kr.snu.etlassistant.etl.EtlTokenCheck
 import kr.snu.etlassistant.notify.NotifyScheduler
 import kr.snu.etlassistant.notify.NotifySettingsStore
 
@@ -122,28 +119,44 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     fun checkAndSaveToken() {
         val token = tokenInput.trim()
         if (!OnboardingLogic.isPlausibleEtlToken(token)) {
-            tokenState = TokenState.Error("토큰 모양이 아니에요. 공백 없이 그대로 붙여넣어 주세요")
+            tokenState = TokenState.Error(EtlTokenCheck.BAD_FORMAT)
             return
         }
         tokenState = TokenState.Checking
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    val me = EtlClient(token).getObject("/api/v1/users/self")
-                    val name = OnboardingLogic.displayName(me.str("name") ?: me.str("short_name"))
-                    EtlService.tokens(getApplication()).save(token)
-                    TokenState.Saved(name)
-                } catch (e: EtlAuthException) {
-                    TokenState.Error("eTL이 이 토큰을 받아주지 않았어요. 다시 만들어서 붙여넣어 주세요")
-                } catch (e: EtlException) {
-                    TokenState.Error("eTL에 연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요")
-                } catch (e: Exception) {
-                    TokenState.Error("확인하지 못했어요(${e.javaClass.simpleName})")
-                }
+            val result = withContext(Dispatchers.IO) { EtlTokenCheck.verifyAndSave(getApplication(), token) }
+            tokenState = when (result) {
+                is EtlTokenCheck.Result.Saved -> TokenState.Saved(result.name)
+                is EtlTokenCheck.Result.Error -> TokenState.Error(result.message)
             }
-            tokenState = result
-            if (result is TokenState.Saved) tokenInput = ""
+            if (result is EtlTokenCheck.Result.Saved) tokenInput = ""
         }
+    }
+
+    /** "서울대 로그인으로 연결"이 토큰을 만들어 저장하고 돌아왔다([name]은 표시용 이름). */
+    fun onLoginConnected(name: String?) {
+        tokenState = TokenState.Saved(name)
+        tokenInput = ""
+        showPaste = false
+    }
+
+    /** 브라우저로 토큰을 만들러 나갔다가 돌아오면 클립보드를 한 번 볼지(이번 실행에서 그 버튼을 눌렀을 때만). */
+    var awaitingClipboard = false
+
+    /** 직접 붙여넣기 칸을 보이는가(기본은 "서울대 로그인으로 연결"만). */
+    var showPaste by mutableStateOf(false)
+
+    /**
+     * 브라우저에서 돌아왔을 때 한 번만 부른다. 클립보드 글이 토큰 모양이면 칸에 채우고 바로 확인한다.
+     * @return 채웠으면 true
+     */
+    fun offerClipboard(text: String?): Boolean {
+        val t = text?.trim().orEmpty()
+        if (tokenState is TokenState.Saved || tokenState is TokenState.Checking) return false
+        if (!OnboardingLogic.isPlausibleEtlToken(t)) return false
+        tokenInput = t
+        checkAndSaveToken()
+        return true
     }
 
     /** 이미 저장된 토큰을 두고 새 토큰으로 바꾸려는 경우. */
