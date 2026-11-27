@@ -1019,6 +1019,21 @@ object CodexSession {
                 val tool = item.optString("tool")
                 main.post { trackers[chat]?.let { setActivity(chat, if (completed) it.toolFinished(id) else it.toolStarted(id, tool)) } }
             }
+            "imageGeneration" -> if (completed && item.optString("status") == "completed") {
+                val m = modelFor(chat) ?: return
+                try {
+                    val attachment = GeneratedImages.attachment(item, listOf(
+                        File(app.filesDir, "workspace/generated_images"),
+                        File(app.filesDir, "codex-home/generated_images"),
+                    ), File(kr.snu.etlassistant.files.WorkFileCleanup.root(app), "generated_images"))
+                    if (attachment == null) m.addNotice("이미지는 생성됐지만 채팅에 불러오지 못했어요.")
+                    else if (m.messages.none { message -> message.attachments.any { it.path == attachment.path } }) {
+                        m.addFiles(listOf(attachment))
+                    }
+                } catch (_: Exception) {
+                    m.addNotice("이미지는 생성됐지만 채팅에 저장하지 못했어요.")
+                }
+            }
         }
     }
 

@@ -68,7 +68,11 @@ object WorkFileCleanup {
             PeriodicWorkRequestBuilder<WorkFileCleanupWorker>(1, TimeUnit.DAYS).build(),
         )
     }
-    fun run(context: Context) = WorkFiles.prune(root(context), System.currentTimeMillis())
+    fun run(context: Context): Int {
+        val now = System.currentTimeMillis()
+        return listOf(root(context), File(context.filesDir, "workspace/generated_images"),
+            File(context.filesDir, "codex-home/generated_images")).sumOf { WorkFiles.prune(it, now) }
+    }
 }
 
 class WorkFileCleanupWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
