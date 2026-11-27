@@ -6,12 +6,16 @@ on:
       - 'ios/**'
       - '.github/workflows/ios.yml'
       - '.github/scripts/ios-simulator.sh'
+      - '.github/scripts/check-ios-device-family.py'
+      - '.github/scripts/ios-export-screenshots.py'
   push:
     branches: [main, ios-port]
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
       - '.github/scripts/ios-simulator.sh'
+      - '.github/scripts/check-ios-device-family.py'
+      - '.github/scripts/ios-export-screenshots.py'
   workflow_dispatch:
 
 permissions:
@@ -48,13 +52,21 @@ jobs:
           retention-days: 7
 
   simulator-tests:
+    name: simulator-tests (${{ matrix.device }})
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # iPhone, the 13-inch iPad (App Store screenshot size) and the smallest iPad.
+        device: ['iPhone', 'iPad Pro 13-inch', 'iPad mini']
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Run app UI tests on an iPhone simulator
+      - name: Run app UI tests on a simulator
+        env:
+          YOUNGMIN_SIMULATOR: ${{ matrix.device }}
         run: bash .github/scripts/ios-simulator.sh
       - name: Export UI screenshots and diagnostics
         if: always()
@@ -63,11 +75,16 @@ jobs:
             xcrun xcresulttool export attachments \
               --path ios-test-results/Youngmin.xcresult \
               --output-path ios-test-results/attachments
+            python3 .github/scripts/ios-export-screenshots.py ios-test-results/attachments ios-test-results
           fi
+      - name: Name the artifact
+        if: always()
+        id: artifact
+        run: echo "slug=$(echo '${{ matrix.device }}' | tr 'A-Z ' 'a-z-' | tr -cd 'a-z0-9-')" >> "$GITHUB_OUTPUT"
       - name: Save simulator test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ios-simulator-tests-${{ github.run_attempt }}
+          name: ios-simulator-tests-${{ steps.artifact.outputs.slug }}-${{ github.run_attempt }}
           path: ios-test-results/
           retention-days: 7

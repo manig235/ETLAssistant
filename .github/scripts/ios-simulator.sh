@@ -8,25 +8,30 @@ xcodebuild -version | tee ios-test-results/toolchain.log
 git rev-parse HEAD > ios-test-results/revision.log
 xcrun simctl list devices available --json > ios-test-results/devices.json
 
-# Use an installed iPhone from the newest available iOS runtime. Do not
+# Use an installed device from the newest available iOS runtime. Do not
 # hard-code a model or OS version that can disappear from runner images.
+# YOUNGMIN_SIMULATOR is a name prefix ("iPhone", "iPad Pro 13-inch", "iPad mini").
+export YOUNGMIN_SIMULATOR="${YOUNGMIN_SIMULATOR:-iPhone}"
 simulator_id="$(python3 - <<'PY'
 import json
+import os
 import re
 
+prefix = os.environ['YOUNGMIN_SIMULATOR']
 with open('ios-test-results/devices.json') as stream:
     runtimes = json.load(stream)['devices']
 for runtime in sorted(runtimes, key=lambda value: tuple(map(int, re.findall(r'\d+', value))), reverse=True):
     if '.iOS-' not in runtime:
         continue
     for device in runtimes[runtime]:
-        if device.get('isAvailable') and device['name'].startswith('iPhone'):
+        if device.get('isAvailable') and device['name'].startswith(prefix):
             print(device['udid'])
             raise SystemExit(0)
-raise SystemExit('No available iPhone simulator. See ios-test-results/devices.json.')
+raise SystemExit(f'No available {prefix} simulator. See ios-test-results/devices.json.')
 PY
 )"
-echo "Simulator: $simulator_id" | tee ios-test-results/destination.log
+echo "Simulator ($YOUNGMIN_SIMULATOR): $simulator_id" | tee ios-test-results/destination.log
+xcrun simctl list devices | grep "$simulator_id" | tee -a ios-test-results/destination.log || true
 
 cleanup() {
   # Best effort: a compile error may mean no app ever reached the screen.
@@ -62,3 +67,9 @@ xcodebuild test \
   CODE_SIGNING_ALLOWED=NO \
   "${native_args[@]}" \
   2>&1 | tee ios-test-results/xcodebuild.log
+
+# The built app and extensions must declare iPhone + iPad and the iPad orientations
+# needed for Split View, Slide Over and Stage Manager (no UIRequiresFullScreen).
+python3 .github/scripts/check-ios-device-family.py \
+  "${RUNNER_TEMP:-/tmp}/youngmin-ios-derived/Build/Products/Debug-iphonesimulator/Youngmin.app" \
+  | tee ios-test-results/device-family.log
