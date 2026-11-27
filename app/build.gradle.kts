@@ -74,8 +74,8 @@ android {
         testInstrumentationRunner = "kr.snu.etlassistant.security.SecuritySmokeInstrumentation"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.3.4"
+        versionCode = 24
+        versionName = "0.3.5"
         ndk {
             abiFilters += "arm64-v8a"
         }
