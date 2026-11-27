@@ -83,24 +83,27 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
             schema(Triple("days", "integer", "최근 며칠(1~60). 기본 7"), Triple("course_id", "integer", "이 과목만(선택)"))))
         .put(tool("etl_grades", "과목별 현재 점수·등급과 채점된 과제(점수/배점, 마감순).",
             schema(Triple("course_id", "integer", "이 과목만(선택, 지난 학기도 가능)"))))
-        .put(tool("etl_files", "과목의 강의자료·내 제출 파일 목록(받지 않는다). 파일 탭, 모듈, 과제·공지 첨부와 본문 링크, 내 제출 첨부를 합친다. downloaded=true면 작업 폴더에 이미 있다. skip이 있으면 받을 수 없는 이유다. 게시판 첨부는 여기 나오지 않는다(etl_board_post).",
+        .put(tool("etl_files", "과목의 강의자료·내 제출 파일 목록(받지 않는다). 파일 탭, 모듈, 과제·공지 첨부와 본문 링크, 내 제출 첨부를 합친다. downloaded=true면 작업 폴더에 이미 있다. download_args가 있으면 그 인자를 etl_download에 넘긴다(파일 탭에서 숨겨진 첨부도 출처를 확인해 받을 수 있다). skip은 제한 또는 출처 확인 안내다. 게시판 첨부는 여기 나오지 않는다(etl_board_post).",
             schema(Triple("course_id", "integer", "과목 ID"), required = listOf("course_id"))))
         .put(tool("etl_assignment", "과제 하나의 상세(마감, 제출 유형, 설명, 내 제출 상태).",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("assignment_id", "integer", "과제 ID"),
                 required = listOf("course_id", "assignment_id"))))
-        .put(tool("etl_search_files", "강의 파일을 이름으로 검색한다.",
+        .put(tool("etl_search_files", "강의 파일 탭에서 이름으로 검색한다. 파일 탭이 숨겨져 실패하거나 결과가 없으면 etl_files로 공지·과제·모듈 첨부를 찾고, LearningX 게시판은 etl_boards로 찾는다. 검색 실패만으로 파일을 읽을 수 없다고 단정하지 않는다.",
             schema(Triple("course_id", "integer", "강의 ID"), Triple("term", "string", "검색어(2글자 이상)"),
                 required = listOf("course_id", "term"))))
-        .put(tool("etl_download", "eTL 파일을 내려받아 ① 비서가 읽을 수 있는 작업 폴더(etl-files/)에 저장하고 ② 기본적으로 폰의 Download/etl/에도 사본을 저장한다. 파일을 읽거나 채점·요약만 할 거라면 save_to_phone=false로 폰 사본을 건너뛴다. 돌려주는 workspace_path를 etl_read_file, etl_render_pages 또는 etl_view_image에 넘긴다. 게시판 글의 첨부파일은 etl_board_post가 준 file_id와 함께 course_id, board_id, post_id를 넘긴다(숨김 폴더에 있어 그래야 받을 수 있다).",
+        .put(tool("etl_download", "eTL 파일을 내려받아 ① 비서가 읽을 수 있는 작업 폴더(etl-files/)에 저장하고 ② 기본적으로 폰의 Download/etl/에도 사본을 저장한다. 읽기·채점·요약만 할 때는 save_to_phone=false. workspace_path를 etl_read_file, etl_render_pages 또는 etl_view_image에 넘긴다. 파일 탭의 숨김은 열람 금지와 다르다. 공지·과제·모듈에 연결된 파일은 etl_files의 download_args 또는 course_id, source_type, source_id로 출처를 확인해 받는다. LearningX 게시판 첨부는 file_id_or_url과 course_id, board_id, post_id를 넘긴다. 잠긴 파일은 받을 수 없다.",
             schema(Triple("file_id_or_url", "string", "파일 ID 또는 eTL 파일 URL(…/files/<id>)"),
                 Triple("save_to_phone", "boolean", "폰의 Download/etl/에도 저장할지. 기본 true"),
-                Triple("course_id", "integer", "게시판 첨부일 때만: 과목 ID"),
+                Triple("course_id", "integer", "숨김 첨부의 출처를 확인할 과목 ID"),
+                Triple("source_type", "string", "Canvas 출처: announcement(공지), assignment(과제·내 제출), module(모듈)"),
+                Triple("source_id", "integer", "source_type에 해당하는 공지·과제·모듈 ID"),
                 Triple("board_id", "integer", "게시판 첨부일 때만: 게시판 ID"),
                 Triple("post_id", "integer", "게시판 첨부일 때만: 글 ID"),
                 required = listOf("file_id_or_url"))))
-        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드 파일과 docx·pptx·hwp·hwpx는 본문(글만)을, PDF는 쪽 수를 돌려준다(PDF 내용은 etl_render_pages로 본다).",
+        .put(tool("etl_read_file", "etl_download로 받은 파일이나 사용자가 첨부한 파일(etl-files/ 안)의 내용을 읽는다. 텍스트·코드와 docx·pptx·hwp·hwpx는 본문, xlsx는 시트·셀 주소와 저장된 값, PDF는 쪽 수를 돌려준다. xlsx에서 이름·학번을 찾을 때 query를 사용하면 앞 세 행(열 제목)과 일치하는 행을 읽는다. 수식을 재계산하지 않으며 서식은 적용하지 않는다. PDF 내용은 etl_render_pages로 본다.",
             schema(Triple("path", "string", "etl_download가 돌려준 workspace_path(예: etl-files/123-과제.pdf) 또는 첨부 경로(etl-files/uploads/…)"),
                 Triple("max_chars", "integer", "텍스트 최대 글자 수. 기본 20000, 최대 60000"),
+                Triple("query", "string", "xlsx에서 찾을 이름 또는 학번(행 검색, 선택). 결과에서 이름과 학번을 모두 대조한다"),
                 required = listOf("path"))))
         .put(tool(WorkspaceImage.NAME, "작업 폴더 etl-files/ 안의 PNG·JPEG·WebP 이미지 하나를 연다. etl_render_pages가 돌려준 rendered[].path나 첨부 이미지의 상대 경로를 쓴다. 앱 작업 폴더 밖의 파일은 읽을 수 없다. 원본은 최대 20MB·6400만 픽셀이고 큰 이미지는 줄여서 돌려준다. 사진 메타데이터는 제거한다. code mode에서는 반환 content 중 type=image 블록을 image(...)로 출력해야 볼 수 있다. base64는 text나 로그로 출력하지 않는다.",
             schema(Triple("path", "string", "etl-files/ 안의 상대 경로(예: etl-files/render/123-p1.png)"), required = listOf("path"))))
@@ -190,7 +193,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
                 "etl_assignment" -> assignment(client(), id(args, "course_id"), id(args, "assignment_id"))
                 "etl_search_files" -> searchFiles(client(), id(args, "course_id"), args.optString("term", ""))
                 "etl_download" -> downloadFile(client(), args.optString("file_id_or_url", ""), args.optBoolean("save_to_phone", true), args)
-                "etl_read_file" -> readFile(args.optString("path", ""), args.optInt("max_chars", EtlFiles.DEFAULT_TEXT_CHARS))
+                "etl_read_file" -> readFile(args.optString("path", ""), args.optInt("max_chars", EtlFiles.DEFAULT_TEXT_CHARS), args.str("query"))
                 "etl_render_pages" -> renderPages(args.optString("path", ""), args.optString("pages", "").ifEmpty { null })
                 "etl_verify_submission" -> verify(client(), id(args, "course_id"), id(args, "assignment_id"))
                 "my_deadlines" -> myDeadlines(args)
@@ -898,10 +901,7 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     private val workspace: File get() = File(context.filesDir, "workspace")
 
-    /**
-     * 숨김 파일은 받지 않는다(교수가 일부러 숨긴 것일 수 있다). 단, 게시판 첨부는 LearningX가 Canvas의 숨김 폴더에 두므로
-     * course_id·board_id·post_id가 오고 LearningX가 그 글의 첨부임을 확인해 준 경우에만 받는다.
-     */
+    /** 숨김은 파일 탭 노출 설정이므로 공지·과제·모듈·게시판에서 열람 가능한 첨부인지 재확인한다. */
     private fun downloadFile(c: EtlClient, ref: String, saveToPhone: Boolean = true, args: JSONObject = JSONObject()): JSONObject {
         val fid = EtlLogic.fileId(ref)
         val meta = c.getObject("/api/v1/files/$fid")
@@ -911,10 +911,14 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
         }
         var post: String? = null
         if (meta.optBoolean("hidden_for_user", false)) {
-            if (!(args.has("board_id") && args.has("post_id") && args.has("course_id"))) {
-                throw EtlException("숨겨진 파일입니다. 게시판 첨부라면 course_id, board_id, post_id를 함께 넘기세요. 아니면 eTL에서 확인해 주세요.")
+            if (meta.optBoolean("locked_for_user")) throw EtlException("파일 $fid 은(는) 잠겨 있습니다")
+            if (args.has("source_type")) {
+                LinkedFileAccess.verify(fid, id(args, "course_id"), args.optString("source_type"), id(args, "source_id"), c::getObject, c::getAll)
+            } else if (args.has("board_id") && args.has("post_id") && args.has("course_id")) {
+                post = board().attachmentTitle(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"), fid) ?: "게시글"
+            } else {
+                throw EtlException("파일 탭에서 숨겨진 파일입니다. 열람 금지로 단정하지 말고 etl_files의 download_args를 사용하세요. 공지·과제·모듈 첨부는 course_id, source_type, source_id를, 게시판 첨부는 course_id, board_id, post_id를 함께 넘기세요.")
             }
-            post = board().attachmentTitle(id(args, "course_id"), id(args, "board_id"), id(args, "post_id"), fid) ?: "게시글"
         }
         return saveAttachment(c, meta, saveToPhone).also { r -> post?.let { r.put("post", it) } }
     }
@@ -990,11 +994,17 @@ class EtlTools(private val context: Context, private val tokenStore: TokenStore)
 
     // ---- 파일 읽기 ----------------------------------------------------------
 
-    private fun readFile(path: String, maxChars: Int): JSONObject {
+    private fun readFile(path: String, maxChars: Int, query: String? = null): JSONObject {
         val f = EtlFiles.resolveInside(workspace, path)
         val rel = EtlFiles.relPath(workspace, f)
         val o = JSONObject().put("path", rel).put("size", f.length())
         return when {
+            XlsxText.isXlsx(f.name) -> {
+                val result = XlsxText.read(f, query, maxChars)
+                o.put("kind", "text").put("truncated", result.truncated).put("text", result.text)
+                    .put("matched_rows", result.matchedRows)
+                    .put("note", "셀 주소와 저장된 원시 값입니다. 서식은 적용하지 않고 수식은 재계산하지 않습니다. 이름과 학번이 같은 행인지 확인하세요.")
+            }
             EtlFiles.isTextLike(f.name) -> {
                 val limit = maxChars.coerceIn(1, EtlFiles.MAX_TEXT_CHARS)
                 val buf = CharArray(limit + 1)

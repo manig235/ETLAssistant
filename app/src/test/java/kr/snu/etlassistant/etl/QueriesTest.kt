@@ -5,6 +5,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -129,6 +130,29 @@ class QueriesTest {
         assertEquals("과제1", rows[12L]!!.getString("assignment"))
         assertEquals(1, r.getInt("downloaded_count"))
         assertTrue(Queries.linkedFiles("""<img src="/files/7/preview"><a href="/courses/2/files/8">""", 1) == listOf(7L))
+    }
+
+    @Test fun hiddenAnnouncementAttachmentIncludesUsableDownloadContext() {
+        val hidden = JSONObject().put("id", 42).put("display_name", "점수.xlsx").put("hidden_for_user", true)
+        val ann = JSONObject().put("id", 7).put("title", "중간고사 채점 완료")
+            .put("message", "<a href='/courses/1/files/42/download'>엑셀</a>")
+        val refs = Queries.attachedFiles(emptyList(), listOf(ann), 1)
+        // 파일 탭 목록에도 있는 경우와, 파일 탭이 막혀 메타만 따로 받은 경우 모두 출처를 보존한다.
+        for (listed in listOf(listOf(hidden), null)) {
+            val row = Queries.filesResult(1, "물리학", listed, emptyList(), emptyList(), refs,
+                mapOf(42L to hidden), setOf(42L), emptyList()).getJSONArray("files").getJSONObject(0)
+            assertFalse(row.has("skip"))
+            assertTrue(row.getBoolean("downloaded"))
+            val args = row.getJSONObject("download_args")
+            assertEquals("42", args.getString("file_id_or_url"))
+            assertEquals(1L, args.getLong("course_id"))
+            assertEquals("announcement", args.getString("source_type"))
+            assertEquals(7L, args.getLong("source_id"))
+            assertFalse(row.toString().contains("verifier"))
+        }
+        assertNotNull(Queries.skipReason(hidden))
+        assertNull(Queries.skipReason(hidden, linked = true))
+        assertTrue(Queries.skipReason(JSONObject(hidden.toString()).put("locked_for_user", true), linked = true)!!.contains("잠긴"))
     }
 
     @Test fun timetableChanges() {

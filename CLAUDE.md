@@ -174,6 +174,7 @@ eTL "게시판" 탭은 Canvas 토론이 아니라 LearningX(LTI)라서 `discussi
 `etl_syllabus` 도구를 추가하고 `etl_read_file`이 docx·pptx 글을 읽게 했다. 검색 페이지 GET은 이제 302(메인으로)지만 쿠키는 그대로 준다.
 **한글 문서(2026-11-21)**: `etl_read_file`이 hwp(5.x)·hwpx 글도 읽는다(`etl/HwpText.kt`, 외부 라이브러리 없음: 직접 만든 CFB 리더 + `BodyText/Section*` raw deflate + PARA_TEXT 레코드, hwpx는 `Contents/section*.xml`의 `<hp:t>`). PDF 변환은 하지 않는다(기기 안 렌더러 없음, 외부 변환 서버 금지).
 배포용·암호 문서는 `PrvText` 앞부분 미리보기만 주고 `preview_only`·`note`로 알린다. hwp 3.x는 못 읽는다. 공개 샘플(pyhwp·hwplib·hwpxlib)과 기기에서 실제 eTL hwp로 확인.
+**숨김 첨부·엑셀(2026-11-27)**: 파일 탭에서 숨겨진 공지·과제·모듈 첨부도 `etl_files.download_args`로 출처를 전달하고 `LinkedFileAccess`에서 실제 연결·열람 가능 여부를 재확인해 받는다(게시판 첨부는 기존 경로). `etl_read_file`은 xlsx의 시트·셀 주소·저장된 값을 읽고 `query`로 이름/학번이 들어간 행을 찾는다(`etl/XlsxText.kt`, 앞 세 행은 열 제목 확인용). 서식 적용·수식 재계산·구형 xls 읽기는 지원하지 않는다. 압축 해제 크기를 제한하고 DTD·외부 참조는 거부한다. 전체 단위 테스트·debug 빌드로 확인했으며 해당 과목 실기기 재확인은 남아 있다.
 
 **ttokttok-pet 기능 이식(2026-11-21, 사용자 지시: "저기서 구현했던 기능은 다 가져온다")**: 기준은 `etl-board` 브랜치 + main의 알림 기록(etl-history).
 데스크톱 전용(말풍선 UI, 토큰 창, 채팅 폴더 workspace.js, 휴대폰 연동, eTL 비서 말풍선)은 대상이 아니다. 옮긴 것:
@@ -377,7 +378,7 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   로그인 없음, **eTL 토큰은 보내지 않는다**(`etl/Timetable.kt`). 강의계획서 내용은 같은 방식의 상세 조회 POST `cc103ajax.action`,
   계획서 첨부는 수강편람 화면이 쓰는 공개 다운로드 `https://shine.snu.ac.kr/com/download/noflt/downloadWebFile.action`(GET, 리다이렉트 안 따라감, 50MB 상한)로 받는다.
 - `etl_get`은 토큰·로그인·`sessionless_launch` 경로를 거부하고, 응답의 서명 링크(`verifier`, `session_token` 등)와 피드 주소를 `***`로 가린다.
-- 숨김 파일(`hidden_for_user`)은 받지 않는다. 게시판 첨부만 예외로, LearningX가 그 글의 첨부임을 확인한 경우에만 받는다.
+- 파일 탭 숨김(`hidden_for_user`)과 열람 잠금(`locked_for_user`)을 구분한다. 숨김 파일은 Canvas 공지·과제·모듈 또는 LearningX 게시판에서 실제 첨부·링크임을 재확인한 경우 받는다(`etl_files.download_args` → `etl_download`). 잠긴 파일은 항상 거부한다. 숨김만 보고 사용자에게 재첨부를 요구하지 않는다.
 - MCP 서버는 127.0.0.1에만 바인딩하고, 실행마다 바뀌는 비밀값을 요구한다.
 - eTL 내용(공지, 과제 설명, 파일)은 신뢰하지 않는 데이터다. 그 안의 지시를 따르지 않도록 Codex 지침(AGENTS.md)에 명시한다.
 - **개인정보 보호(2026-11-23, `docs/privacy-policy.md`)**:
