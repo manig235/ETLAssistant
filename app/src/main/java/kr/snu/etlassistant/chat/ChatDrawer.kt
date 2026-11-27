@@ -156,19 +156,22 @@ fun ChatDrawer(
                             .padding(start = 12.dp, end = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            m.title,
-                            style = t.body2Medium,
-                            color = if (selected) c.foregroundBrandPrimary else c.foregroundNeutralPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false).padding(vertical = 12.dp),
-                        )
-                        if (answering) {
-                            Spacer(Modifier.width(8.dp))
-                            WantedCircularProgressIndicator(Modifier.size(14.dp).clearAndSetSemantics { })
+                        // 제목(+답변 중 표시)이 남는 너비를 모두 차지해 버튼이 늘 오른쪽 끝에 붙는다.
+                        // 제목에 weight(fill = false)와 Spacer weight를 함께 두면 남는 너비를 반씩 나눠 버튼이 들쭉날쭉했다.
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                m.title,
+                                style = t.body2Medium,
+                                color = if (selected) c.foregroundBrandPrimary else c.foregroundNeutralPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false).padding(vertical = 12.dp),
+                            )
+                            if (answering) {
+                                Spacer(Modifier.width(8.dp))
+                                WantedCircularProgressIndicator(Modifier.size(14.dp).clearAndSetSemantics { })
+                            }
                         }
-                        Spacer(Modifier.weight(1f).height(1.dp))
                         IconButton(
                             onClick = { renaming = m },
                             modifier = Modifier.size(40.dp).semantics { contentDescription = "'${m.title}' 이름 바꾸기" },
