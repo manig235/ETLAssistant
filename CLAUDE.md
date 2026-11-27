@@ -385,13 +385,16 @@ Codex 실행·추가 서버·알림 발송은 없다. 단위 테스트와 debug 
   **예외 하나(2026-11-21, 사용자 승인)**: 게시판(LearningX) 토큰을 받기 위한 LTI 실행 POST. eTL 호스트의 `/learningx/lti/…`로만,
   Canvas 실행 페이지가 준(서명한) 폼 필드만 그대로 보낸다(`etl/Board.kt`). 실행 링크·폼·LearningX 토큰(`xn_api_token`)은 결과·오류·로그에 넣지 않고
   메모리(`BoardSession`)에만 둔다. 게시글 "읽음" 처리 POST는 보내지 않는다.
-  **예외 둘(2026-11-27, 사용자 승인)**: "서울대 로그인으로 연결"의 토큰 만들기 POST `https://myetl.snu.ac.kr/api/v1/users/self/tokens` 하나(`etl/EtlTokenIssuer.kt`, 주소 고정).
+  **예외 둘(2026-11-27, 사용자 승인)**: "서울대 로그인으로 연결"의 토큰 만들기 요청 하나(`etl/EtlTokenIssuer.kt`, 주소 고정): API 경로 `POST https://myetl.snu.ac.kr/api/v1/users/self/tokens`(`token[purpose]`),
+  없으면(404, 서울대 eTL의 옛 Canvas는 이 경로가 없다 — S22 실측) 웹 설정 경로 `POST https://myetl.snu.ac.kr/profile/tokens`(`access_token[purpose]`). 404면 아무것도 만들어지지 않으므로 토큰은 하나만 생긴다.
+  옛 Canvas는 만들 때만 `visible_token`에 전체 토큰을 준다(그 뒤는 "..." 축약본) → `token`→`full_token`→`visible_token` 순으로 축약본(…/.../32자 미만)은 버리고 읽는다.
   사용자가 연결 버튼을 누르고 앱 안 로그인 화면(`onboarding/EtlLoginActivity`, 시작 때 쿠키를 지워 이전 세션 없음)에서 방금 직접 로그인했을 때만,
-  세션 쿠키 + `X-CSRF-Token`(`_csrf_token` 쿠키 URL 디코딩)으로 `token[purpose]=영민이 (기기 모델)`만 보낸다(만료 없음, 리다이렉트 안 따라감, 자동으로 두 번 보내지 않음).
+  세션 쿠키 + `X-CSRF-Token`(`_csrf_token` 쿠키 URL 디코딩)으로 이름 `영민이 (기기 모델)`만 보낸다(만료 없음, 리다이렉트 안 따라감, 자동으로 두 번 보내지 않음).
   그 전에 세션으로 `GET users/self`가 200인지 확인한다. 그 밖의 eTL 쓰기는 없고, 만든 토큰을 API로 지우지도 않는다(연결 해제 안내에서 eTL 설정에서 지우라고 알림).
   로그인 화면은 snu.ac.kr https만 열고(그 밖 https는 브라우저, http·file·content·javascript 등은 막음, 인증 앱 스킴은 BROWSABLE·컴포넌트/셀렉터 제거한 Intent로),
   JS 인터페이스·파일 접근·혼합 콘텐츠·양식 저장·제3자 쿠키 없음. 성공·실패·취소·종료 때 쿠키·웹 저장소·캐시·기록·HTTP 인증을 지우고,
-  강제 종료로 못 지웠으면 다음 앱 시작 때 지운다(`etl_login` prefs의 dirty). 토큰은 메모리에만 두고 `EtlTokenCheck`(Bearer `users/self`)로 확인한 뒤 저장한다. 로그는 호스트+경로와 `token issue: ok/http 403` 같은 분류만.
+  강제 종료로 못 지웠으면 다음 앱 시작 때 지운다(`etl_login` prefs의 dirty). 토큰은 메모리에만 두고 `EtlTokenCheck`(Bearer `users/self`)로 확인한 뒤 저장한다. 로그는 호스트+경로, 쿠키 이름(값 없이), `token issue: ok (profile)`/`http 404 (api)` 같은 분류만.
+  S22(2026-11-27)에서 실제 로그인 → API 404 → 웹 경로로 발급 → Bearer 확인·저장 → 알림 확인 성공, 다시 열면 SSO 로그인부터(쿠키 삭제 확인).
 - 시간표는 서울대 공개 수강편람(sugang.snu.ac.kr)의 검색 페이지 GET(세션 쿠키)과 상세 조회 POST(`cc101ajax.action`, 공개 과목 코드만)를 쓴다.
   로그인 없음, **eTL 토큰은 보내지 않는다**(`etl/Timetable.kt`). 강의계획서 내용은 같은 방식의 상세 조회 POST `cc103ajax.action`,
   계획서 첨부는 수강편람 화면이 쓰는 공개 다운로드 `https://shine.snu.ac.kr/com/download/noflt/downloadWebFile.action`(GET, 리다이렉트 안 따라감, 50MB 상한)로 받는다.
