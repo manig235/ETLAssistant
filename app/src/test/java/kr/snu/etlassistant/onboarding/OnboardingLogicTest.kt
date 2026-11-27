@@ -59,6 +59,8 @@ class OnboardingLogicTest {
     private fun course(id: Long, name: String, credits: Double?, materials: Boolean? = true, assignment: Boolean? = true) =
         OnboardingLogic.CourseOption(TimetableLogic.CourseMeetings(id, name, emptyList(), credits = credits), materials, assignment)
 
+    private val finals = MockExam.Hint(MockExam.FINAL)
+
     private fun courseOf(question: String, index: Int): String? =
         question.removeSuffix(" ${OnboardingLogic.suggestions[index]}").takeIf { it != question }
 
@@ -71,23 +73,29 @@ class OnboardingLogicTest {
             course(7, "5학점 수업", 5.0), course(8, "   ", 3.0),
             course(9, "기계공학개론", 3.0),
         )
-        val questions = OnboardingLogic.personalizedSuggestions(courses, Random(13))
+        val questions = OnboardingLogic.personalizedSuggestions(courses, Random(13), finals)
+        assertEquals(7, questions.size)
         assertEquals(OnboardingLogic.suggestions.take(3), questions.take(3))
-        val picked = questions.drop(3).zip(OnboardingLogic.suggestions.drop(3)) { question, template ->
+        val picked = questions.take(6).drop(3).zip(OnboardingLogic.suggestions.drop(3)) { question, template ->
             assertTrue(question.endsWith(" $template"))
             question.removeSuffix(" $template")
         }
         assertEquals(setOf("기계공학개론", "전기에너지변환", "제어공학개론"), picked.toSet())
-        assertEquals(questions, OnboardingLogic.personalizedSuggestions(courses.reversed(), Random(13)))
+        assertEquals(questions, OnboardingLogic.personalizedSuggestions(courses.reversed(), Random(13), finals))
+        // 모의고사는 확인된 3~4학점 과목이 셋뿐이라 겹치되 자료 요약 과목과는 겹치지 않는다.
+        val mock = questions[6].removeSuffix(" 기말고사 대비 모의고사 PDF로 만들어줘")
+        assertTrue(mock in picked && mock != picked[0])
     }
 
     @Test fun genericOnlyWhenNoCourseIsKnown() {
-        assertEquals(OnboardingLogic.suggestions, OnboardingLogic.personalizedSuggestions(emptyList()))
+        assertEquals(OnboardingLogic.defaultSuggestions(finals), OnboardingLogic.personalizedSuggestions(emptyList(), mockExam = finals))
+        assertEquals("기말고사 대비 모의고사 PDF로 만들어줘", OnboardingLogic.defaultSuggestions(finals)[6])
         // 직접 추가한 수업과 이름 없는 과목은 과목으로 치지 않는다.
-        assertEquals(OnboardingLogic.suggestions,
-            OnboardingLogic.personalizedSuggestions(listOf(course(-3, "직접 추가", 3.0), course(4, " \u200b ", 3.0))))
-        val one = OnboardingLogic.personalizedSuggestions(listOf(course(1, "확인된 수업", 3.0)))
-        assertEquals(OnboardingLogic.suggestions.drop(3).map { "확인된 수업 $it" }, one.drop(3))
+        assertEquals(OnboardingLogic.defaultSuggestions(finals),
+            OnboardingLogic.personalizedSuggestions(listOf(course(-3, "직접 추가", 3.0), course(4, " \u200b ", 3.0)), mockExam = finals))
+        val one = OnboardingLogic.personalizedSuggestions(listOf(course(1, "확인된 수업", 3.0)), mockExam = finals)
+        assertEquals(OnboardingLogic.suggestions.drop(3).map { "확인된 수업 $it" }, one.drop(3).take(3))
+        assertEquals("확인된 수업 기말고사 대비 모의고사 PDF로 만들어줘", one[6])
         assertTrue(one.none { "[과목명]" in it })
     }
 

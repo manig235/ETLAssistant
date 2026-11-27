@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Add
@@ -183,7 +184,7 @@ fun StatusBanner(spec: BannerSpec, onClick: () -> Unit, modifier: Modifier = Mod
 // ---- 빈 화면 ------------------------------------------------------------------
 
 private val SuggestionIcons = listOf(Icons.Outlined.Event, Icons.Outlined.Campaign, Icons.Outlined.Event,
-    Icons.Outlined.ChatBubbleOutline, Icons.Outlined.AttachFile, Icons.Outlined.TaskAlt)
+    Icons.Outlined.ChatBubbleOutline, Icons.Outlined.AttachFile, Icons.Outlined.TaskAlt, Icons.Outlined.Quiz)
 
 @Composable
 fun EmptyState(onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {

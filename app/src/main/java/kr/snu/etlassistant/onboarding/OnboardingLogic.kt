@@ -1,7 +1,9 @@
 package kr.snu.etlassistant.onboarding
 
 import android.content.Context
+import kr.snu.etlassistant.etl.EtlLogic
 import kr.snu.etlassistant.etl.TimetableLogic
+import java.time.LocalDate
 import kotlin.random.Random
 
 /** 첫 실행 안내의 단계. */
@@ -51,6 +53,12 @@ object OnboardingLogic {
     )
 
     /**
+     * 확정한 여섯 질문 + 7번째 모의고사 질문(시험 이름은 [hint], 과목 없음). 과목을 하나도 모를 때와 화면을 처음 그릴 때 쓴다.
+     */
+    fun defaultSuggestions(hint: MockExam.Hint = MockExam.Hint(MockExam.termByWeek(LocalDate.now(EtlLogic.KST)))): List<String> =
+        suggestions + MockExam.question(hint.term, hint.course)
+
+    /**
      * 추천 질문 후보 과목 하나. 콘텐츠 값은 null이면 미확인(조회 실패·아직 조회 안 함), false면 확인했는데 없음.
      */
     data class CourseOption(
@@ -84,8 +92,14 @@ object OnboardingLogic {
      * 과목 질문 3개(자료 요약, 자료 받기, 과제 제출 확인)에 구체적인 과목명을 붙인다. 이번 학기 과목을 하나라도 알면 일반 문구로 두지 않는다.
      * 질문마다 후보 순위: 콘텐츠 확인됨(3~4학점 → 그 외) > 미확인(3~4학점) > 없음 확인(3~4학점) > 미확인(그 외) > 없음 확인(그 외).
      * 콘텐츠가 확인된 과목이 하나라도 있으면 그 질문은 확인된 과목만 쓴다(겹쳐도). 가능하면 질문끼리 과목을 겹치지 않는다.
+     * 7번째 모의고사 질문은 [mockExam]의 시험 과목(과목 칸이 비었으면 제목에 든 이번 학기 과목명)을, 없으면 자료 질문의 가장 좋은 순위
+     * 과목 중 앞의 세 질문과 겹치지 않는 과목을 쓴다(못 피하면 자료 요약과만은 겹치지 않게, 그것도 안 되면 겹친다).
      */
-    fun personalizedSuggestions(courses: List<CourseOption>, random: Random = Random.Default): List<String> {
+    fun personalizedSuggestions(
+        courses: List<CourseOption>,
+        random: Random = Random.Default,
+        mockExam: MockExam.Hint = MockExam.Hint(MockExam.termByWeek(LocalDate.now(EtlLogic.KST))),
+    ): List<String> {
         val named = courses.filter { it.course.courseId > 0 }
             .map { cleanName(it.course.name) to it }
             .filter { it.first.isNotEmpty() }
@@ -120,10 +134,15 @@ object OnboardingLogic {
         val summary = pick(materialNames, assignment)
         val download = pick(materialNames, summary, assignment)
         val picked = listOf(summary, download, assignment)
+        // 모의고사는 자료 질문의 가장 좋은 순위(예: 자료 확인된 3~4학점) 안에서만 고른다. 겹침을 피하려고 1학점 과목으로 내려가지 않는다.
+        val best = materials.filter { it.second == materials.firstOrNull()?.second }.map { it.first }
+        val mockCourse = mockExam.course
+            ?: MockExam.courseInTitle(mockExam.title, named.map { it.first })
+            ?: best.firstOrNull { it !in picked } ?: best.firstOrNull { it != summary } ?: best.firstOrNull()
         return suggestions.mapIndexed { index, question ->
             val course = if (index >= 3) picked[index - 3] else null
             if (course == null) question else "$course $question"
-        }
+        } + MockExam.question(mockExam.term, mockCourse)
     }
 }
 

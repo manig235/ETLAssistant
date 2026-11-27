@@ -24,6 +24,8 @@ import kr.snu.etlassistant.etl.TimetableStore
 import kr.snu.etlassistant.etl.EtlLogic
 import kr.snu.etlassistant.etl.EtlLogic.str
 import kr.snu.etlassistant.notify.CourseFilterStore
+import kr.snu.etlassistant.notify.MyDeadlineStore
+import kr.snu.etlassistant.notify.MyKind
 import kr.snu.etlassistant.notify.SnapshotCache
 import kotlinx.coroutines.delay
 import kotlin.random.Random
@@ -38,16 +40,16 @@ import kotlin.random.Random
 fun rememberSuggestionQuestions(): List<String> {
     val context = LocalContext.current.applicationContext
     val seed = rememberSaveable { Random.nextInt() }
-    var questions by rememberSaveable { mutableStateOf(OnboardingLogic.suggestions) }
+    var questions by rememberSaveable { mutableStateOf(OnboardingLogic.defaultSuggestions()) }
     var settled by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (settled) return@LaunchedEffect
         val offline = withContext(Dispatchers.IO) { runCatching { suggestionOptions(context, online = false) }.getOrNull() }
-        offline?.let { questions = OnboardingLogic.personalizedSuggestions(it.options, Random(seed)) }
+        offline?.let { questions = OnboardingLogic.personalizedSuggestions(it.options, Random(seed), it.mockExam) }
         for (attempt in 0 until RETRY_DELAYS_MS.size + 1) {
             val result = withContext(Dispatchers.IO) { runCatching { suggestionOptions(context, online = true) }.getOrNull() }
             if (result != null && result.options.isNotEmpty())
-                questions = OnboardingLogic.personalizedSuggestions(result.options, Random(seed))
+                questions = OnboardingLogic.personalizedSuggestions(result.options, Random(seed), result.mockExam)
             if (result?.complete == true) {
                 settled = true
                 return@LaunchedEffect
@@ -60,8 +62,23 @@ fun rememberSuggestionQuestions(): List<String> {
 
 private val RETRY_DELAYS_MS = listOf(10_000L, 30_000L, 60_000L)
 
-/** [complete]: 토큰으로 이번 학기 과목 목록을 받았고 콘텐츠 확인까지 시도했다(더 다시 할 필요 없음). */
-private class SuggestionOptions(val options: List<OnboardingLogic.CourseOption>, val complete: Boolean)
+/**
+ * [complete]: 토큰으로 이번 학기 과목 목록을 받았고 콘텐츠 확인까지 시도했다(더 다시 할 필요 없음).
+ * [mockExam]: 모의고사 질문의 시험 이름·과목(내 일정의 시험 → 학기 주차).
+ */
+private class SuggestionOptions(
+    val options: List<OnboardingLogic.CourseOption>,
+    val complete: Boolean,
+    val mockExam: MockExam.Hint,
+)
+
+/** 내 일정의 시험(완료 표시하지 않은 것)으로 모의고사 질문의 시험 이름·과목을 정한다. 네트워크 없음. */
+private fun mockExamHint(context: Context, now: Instant): MockExam.Hint {
+    val exams = runCatching { MyDeadlineStore(context).load() }.getOrDefault(emptyList())
+        .filter { it.kind == MyKind.EXAM && !it.done }
+        .map { MockExam.Exam(it.title, it.course, it.due, it.end) }
+    return MockExam.hint(exams, now)
+}
 
 private data class CachedSuggestionContent(val checkedAt: Instant, val content: SuggestionContent)
 private val contentCache = ConcurrentHashMap<Pair<String, Long>, CachedSuggestionContent>()
@@ -75,10 +92,11 @@ private const val MAX_CONTENT_CHECKS = 8
  */
 private suspend fun suggestionOptions(context: Context, online: Boolean): SuggestionOptions = coroutineScope {
     val token = runCatching { EtlService.tokens(context).load() }.getOrNull()?.takeIf { it.isNotEmpty() }
-    val (courses, listed) = suggestionCourses(context, if (online) token else null)
-    if (courses.isEmpty()) return@coroutineScope SuggestionOptions(emptyList(), false)
-    val owner = token?.let { BoardSession.ownerOf(it) }
     val now = Instant.now()
+    val mockExam = mockExamHint(context, now)
+    val (courses, listed) = suggestionCourses(context, if (online) token else null)
+    if (courses.isEmpty()) return@coroutineScope SuggestionOptions(emptyList(), false, mockExam)
+    val owner = token?.let { BoardSession.ownerOf(it) }
     contentCache.entries.removeAll { java.time.Duration.between(it.value.checkedAt, now).seconds !in 0 until 900 }
     val eligible = courses.filter(OnboardingLogic::eligibleCourse)
     val toCheck = (eligible.ifEmpty { courses.take(MAX_CONTENT_CHECKS) }).map { it.courseId }.toSet()
@@ -96,7 +114,7 @@ private suspend fun suggestionOptions(context: Context, online: Boolean): Sugges
             OnboardingLogic.CourseOption(course, content?.hasMaterials, content?.hasRecentAssignment)
         }
     }.awaitAll()
-    SuggestionOptions(options, online && client != null && listed)
+    SuggestionOptions(options, online && client != null && listed, mockExam)
 }
 
 /** 받아 둔 과제 목록·시간표가 이만큼 오래됐으면 지난 학기 것일 수 있어 쓰지 않는다. */
