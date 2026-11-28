@@ -12,6 +12,19 @@ def release(version="0.5.2"):
 
 
 class FixedDownloadTest(unittest.TestCase):
+    def test_installer_requires_a_verified_matching_asset(self):
+        source = release("0.5.3")
+        with self.assertRaises(RuntimeError):
+            select_release([source], installer=True)
+        asset = dict(source["assets"][0])
+        asset["name"] = "youngmin-windows-x64-setup-v0.5.3.exe"
+        asset["browser_download_url"] = f"{DOWNLOADS}/{source['tag_name']}/{asset['name']}"
+        source["assets"].append(asset)
+        self.assertEqual(asset, select_release([source], installer=True)[1])
+        asset["digest"] = None
+        with self.assertRaises(RuntimeError):
+            select_release([source], installer=True)
+
     def test_newest_windows_version_ignores_android_and_alias(self):
         android = release("9.0.0")
         android["tag_name"] = "v9.0.0"

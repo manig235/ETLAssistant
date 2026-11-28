@@ -9,9 +9,16 @@ import struct
 import zipfile
 
 
+def stream_digest(stream):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
 def verify(path: Path) -> None:
     with path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        digest = stream_digest(stream)
     expected = path.with_suffix(".zip.sha256").read_text().split()[0]
     assert digest == expected, "Distribution checksum mismatch"
     with zipfile.ZipFile(path) as archive:
@@ -20,7 +27,7 @@ def verify(path: Path) -> None:
         manifest = json.loads(archive.read("YoungMini/SHA256SUMS.json"))
         for relative, expected in manifest.items():
             with archive.open("YoungMini/" + relative) as stream:
-                assert hashlib.file_digest(stream, "sha256").hexdigest() == expected, "File checksum mismatch: " + relative
+                assert stream_digest(stream) == expected, "File checksum mismatch: " + relative
         binary = archive.read("YoungMini/YoungMini.exe")
         pe = struct.unpack_from("<I", binary, 0x3C)[0]
         assert binary[:2] == b"MZ" and struct.unpack_from("<H", binary, pe + 4)[0] == 0x8664
@@ -44,13 +51,13 @@ def verify(path: Path) -> None:
         assert "YoungMini/resources/app/dist/index.html" in names
         assert "YoungMini/resources/app/dist/fonts/PretendardVariable.woff2" in names
         assert "YoungMini/resources/app/electron/main.cjs" in names
-        assert {"YoungMini/resources/app/electron/render-office.ps1", "YoungMini/resources/app/electron/updates.cjs", "YoungMini/resources/app/electron/lifecycle.cjs", "YoungMini/resources/app/electron/appearance.cjs", "YoungMini/resources/app/electron/images.cjs", "YoungMini/resources/app/electron/etl-login.cjs"}.issubset(names)
+        assert {"YoungMini/resources/app/electron/render-office.ps1", "YoungMini/resources/app/electron/updates.cjs", "YoungMini/resources/app/electron/lifecycle.cjs", "YoungMini/resources/app/electron/startup.cjs", "YoungMini/resources/app/electron/appearance.cjs", "YoungMini/resources/app/electron/images.cjs", "YoungMini/resources/app/electron/etl-login.cjs"}.issubset(names)
         startup = json.loads(archive.read("YoungMini/resources/app/electron/initial-state.json"))
         assert startup["projects"][0]["id"] == "integrated" and startup["agenda"]["notices"] == []
         assert any("KaTeX_Main-Regular-" in n and n.endswith(".woff2") for n in names)
         assert any("pdf.worker.min-" in n and n.endswith(".mjs") for n in names), "Missing offline PDF.js worker"
         entry = json.loads(archive.read("YoungMini/resources/app/package.json"))
-        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.2"
+        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.3"
         assert "YoungMini/jre/bin/javaw.exe" in names
         assert "YoungMini/runtime/codex.exe" in names
         assert "YoungMini/runtime/codex-code-mode-host.exe" in names

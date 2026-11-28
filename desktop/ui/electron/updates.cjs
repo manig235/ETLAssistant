@@ -4,9 +4,9 @@ const API='https://api.github.com/repos/manig235/ETLAssistant/releases';
 const INTERVAL=6*60*60*1000,RETRY=60*60*1000;
 const parse=v=>/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(v||'')&&v.split('.').every(n=>Number.isSafeInteger(Number(n)))?v.split('.').map(Number):null;
 function newer(a,b){const x=parse(a),y=parse(b);if(!x||!y)return false;for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]>y[i];return false;}
-function downloadURL(version){return `${REPO}/releases/download/windows-v${version}/youngmin-windows-x64-v${version}.zip`;}
+function downloadURL(version,installer=false){return `${REPO}/releases/download/windows-v${version}/youngmin-windows-x64-${installer?'setup-v':'v'}${version}.${installer?'exe':'zip'}`;}
 function candidate(value,current) {
-  if(!value||!parse(value.version)||!newer(value.version,current)||value.url!==downloadURL(value.version))return null;
+  if(!value||!parse(value.version)||!newer(value.version,current)||![downloadURL(value.version),downloadURL(value.version,true)].includes(value.url))return null;
   return {version:value.version,url:value.url,releaseUrl:`${REPO}/releases/tag/windows-v${value.version}`,text:`Windows ${value.version} 업데이트가 있어요.`,notes:typeof value.notes==='string'?value.notes.slice(0,4000):'',bytes:Number.isSafeInteger(value.bytes)&&value.bytes>0?value.bytes:0};
 }
 function windowsRelease(releases,current){
@@ -14,11 +14,11 @@ function windowsRelease(releases,current){
   for(const release of releases){
     if(!release||release.draft||release.prerelease)continue;
     const match=/^windows-v(\d+\.\d+\.\d+)$/.exec(release.tag_name||'');if(!match||!parse(match[1]))continue;
-    const version=match[1],name=`youngmin-windows-x64-v${version}.zip`;
+    const version=match[1],names=[`youngmin-windows-x64-v${version}.zip`,`youngmin-windows-x64-setup-v${version}.exe`];
     for(const asset of release.assets||[]){
-      if(asset?.name!==name||asset.state!=='uploaded')continue;
+      if(!names.includes(asset?.name)||asset.state!=='uploaded')continue;
       const found=candidate({version,url:asset.browser_download_url,notes:release.body,bytes:asset.size},current);
-      if(found&&(!best||newer(found.version,best.version)))best=found;
+      if(found&&(!best||newer(found.version,best.version)||(found.version===best.version&&found.url.endsWith('.exe'))))best=found;
     }
   }
   return best;

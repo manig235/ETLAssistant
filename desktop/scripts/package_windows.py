@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 CODEX_VERSION = "rust-v0.170.0"
 ELECTRON_VERSION = "45.5.0"
 ELECTRON_HASH = "20155c8b8aa5b1f575f3757bdf21490e0bac2f19a65a26ce9ba99bcf9f2c69bd"
@@ -33,7 +33,10 @@ JRE_HASH = "739d8f2fd286dc2736d55cc8c9260980baefd275ad48cda242335bb0f08e0795"
 
 def sha256(path: Path) -> str:
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+        return digest.hexdigest()
 
 
 def fetch(url: str, expected: str, cache: Path) -> Path:

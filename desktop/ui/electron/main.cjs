@@ -8,6 +8,9 @@ const {isExternalLink, validCommand, isInside} = require('./validation.cjs');
 const {displayName,petMotion,readAppearance,saveAppearance}=require('./appearance.cjs');
 const {importImages,importFiles}=require('./images.cjs');
 const {beginEtlLogin}=require('./etl-login.cjs');
+const {createStartup,STARTUP_ARG}=require('./startup.cjs');
+const startup=createStartup({app});
+const startHidden=process.argv.includes(STARTUP_ARG);
 
 const home = process.env.YOUNGMIN_DESKTOP_HOME || (app.isPackaged ? path.dirname(process.execPath) : path.resolve(__dirname, '../../build/shell-dev'));
 const data = process.env.YOUNGMIN_DATA_HOME || (process.platform === 'win32' ? path.join(process.env.LOCALAPPDATA, 'YoungMini') : path.join(app.getPath('home'), '.local/share/youngmini-desktop'));
@@ -35,7 +38,7 @@ function checkUpdates(){if(state.ready&&state.school?.settings?.updates!==false)
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => show());
+  app.on('second-instance', (_,argv) => {if(!argv.includes(STARTUP_ARG))show();});
   app.whenReady().then(() => {
     app.setAppUserModelId('kr.snu.youngmini.desktop');
     // The app UI loads bundled assets only. eTL login uses a separate ephemeral session.
@@ -43,10 +46,11 @@ else {
     session.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']}, (_, callback) => callback({cancel:true}));
     session.setPermissionRequestHandler((_, __, callback) => callback(false));
     session.setPermissionCheckHandler(() => false);
-    main = createWindow({width:1560, height:980, minWidth:720, minHeight:500, show:true, title:settings.displayName, backgroundColor:'#f7f8fa'});
+    main = createWindow({width:1560, height:980, minWidth:720, minHeight:500, show:!startHidden, title:settings.displayName, backgroundColor:'#f7f8fa'});
     main.loadFile(entry);
     main.on('close', event => {if (!quitting) {event.preventDefault(); main.hide();}});
     main.on('show', () => publishShell());
+    main.on('focus', () => publishShell());
     if (settings.pet) createPet();
     tray = new Tray(nativeImage.createFromPath(appIcon).resize({width:24,height:24}));
     tray.setToolTip(settings.displayName); tray.on('click', show); updateTray();
@@ -80,7 +84,7 @@ function setPet(value) {
 }
 function updateTray() {tray?.setContextMenu(Menu.buildFromTemplate([{label:'채팅 열기',click:()=>{revealChat();show();}},{label:'바탕화면 펫',type:'checkbox',checked:settings.pet,click:item=>setPet(item.checked)},{type:'separator'},{label:settings.displayName+' 재시작',click:()=>void restart()},{label:settings.displayName+' 종료',click:()=>app.quit()}]));}
 function publish(channel, value) {for (const window of [main,pet]) if (window && !window.isDestroyed()) window.webContents.send(channel,value);}
-function shellState() {return {...settings,error:shellError,openChat:openChatPulse,openUpdate:openUpdatePulse,update:updateManager.snapshot(),etlLoginBusy,etlLoginError};}
+function shellState() {return {...settings,startup:startup.snapshot(),error:shellError,openChat:openChatPulse,openUpdate:openUpdatePulse,update:updateManager.snapshot(),etlLoginBusy,etlLoginError};}
 function revealChat(){++openChatPulse;publishShell();}
 function publishShell() {publish('shell-state',shellState());}
 function setDisplayName(value) {
@@ -167,6 +171,11 @@ ipcMain.handle('control', async(event, action, value) => {
     case 'quit': app.quit(); break;
     case 'displayName': setDisplayName(value); break;
     case 'petMotion': setPetMotion(value); break;
+    case 'startup': {
+      if(event.sender!==main?.webContents||typeof value!=='boolean')throw Error('Denied');
+      try {startup.set(value);}finally {publishShell();}
+      break;
+    }
     case 'petMenu': if(event.sender===pet?.webContents) Menu.buildFromTemplate([
       {label:'채팅 열기',click:()=>{revealChat();show();}},
       {type:'separator'},

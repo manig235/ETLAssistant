@@ -35,6 +35,19 @@ async function mount(page:Page,state:State,pet=false,home=false) {
 }
 const commands=(page:Page,action:string)=>page.evaluate(action=>(window as any).__commands.filter((c:any)=>c.action===action),action);
 
+test('startup preference reads the Windows state and sends an explicit toggle',async({page})=>{
+  await mount(page,base());
+  await page.evaluate(()=>(window as any).__shellPush({startup:{supported:true,enabled:false,error:null}}));
+  await page.getByRole('button',{name:'연결 · 설정',exact:true}).click();
+  const toggle=page.getByRole('checkbox',{name:'Windows 로그인 시 자동 실행',exact:true});
+  await expect(toggle).not.toBeChecked();await toggle.click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__controls)).toContainEqual(['startup',true]);
+  await page.evaluate(()=>(window as any).__shellPush({startup:{supported:true,enabled:true,error:null}}));
+  await expect(toggle).toBeChecked();
+  await page.evaluate(()=>(window as any).__shellPush({startup:{supported:true,enabled:false,error:'자동 실행 설정을 저장하지 못했어요.'}}));
+  await expect(toggle).not.toBeChecked();await expect(page.getByRole('alert')).toContainText('자동 실행 설정');
+});
+
 test('session icons rename and confirm deletion while protecting working sessions',async({page})=>{
   const s=base();s.sessions.push(session('00000000-0000-4000-8000-000000000003','작업 중'));s.sessions[2].pdfBusy=true;
   await mount(page,s);await expect(page.getByRole('button',{name:'작업 중 삭제',exact:true})).toBeDisabled();

@@ -20,15 +20,17 @@ API = f"https://api.github.com/repos/{REPOSITORY}"
 DOWNLOADS = f"https://github.com/{REPOSITORY}/releases/download"
 TAG = "windows-latest"
 FILENAME = "youngmin-windows-x64.zip"
+INSTALLER_FILENAME = "youngmin-windows-x64-setup.exe"
 
 
-def select_release(releases):
+def select_release(releases, installer=False):
     candidates = []
     for release in releases:
         match = re.fullmatch(r"windows-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", release.get("tag_name", ""))
         if not match or release.get("draft") or release.get("prerelease"):
             continue
-        name = f"youngmin-windows-x64-v{'.'.join(match.groups())}.zip"
+        version = '.'.join(match.groups())
+        name = f"youngmin-windows-x64-setup-v{version}.exe" if installer else f"youngmin-windows-x64-v{version}.zip"
         for asset in release.get("assets", []):
             if (asset.get("name") == name and asset.get("state") == "uploaded"
                     and asset.get("size", 0) > 0
@@ -36,7 +38,7 @@ def select_release(releases):
                     and re.fullmatch(r"sha256:[0-9a-f]{64}", asset.get("digest") or "")):
                 candidates.append((tuple(map(int, match.groups())), release, asset))
     if not candidates:
-        raise RuntimeError("No published Windows ZIP with a SHA-256 digest")
+        raise RuntimeError("No published Windows package with a SHA-256 digest")
     return max(candidates, key=lambda item: item[0])[1:]
 
 
@@ -93,6 +95,8 @@ def main():
     else:
         raise RuntimeError("Release list exceeds pagination limit")
     source, asset = select_release(releases)
+    # Installer and portable aliases must refer to the same reviewed version.
+    _, installer = select_release([source], installer=True)
     checksum = asset["digest"].removeprefix("sha256:")
     latest_before = github.request("/releases/latest")["tag_name"]
     print(f"Verified source: {source['tag_name']} ({checksum})", flush=True)
@@ -119,11 +123,27 @@ def main():
         checksum_path.write_bytes(f"{checksum}  {FILENAME}\n".encode())
         checksum_digest = hashlib.sha256(checksum_path.read_bytes()).hexdigest()
         replace_asset(github, alias["id"], checksum_path, FILENAME + ".sha256", checksum_digest)
+        installer_checksum = installer["digest"].removeprefix("sha256:")
+        installer_path = Path(directory) / f"{INSTALLER_FILENAME}.{installer_checksum[:16]}.pending"
+        installer_digest = hashlib.sha256()
+        request = urllib.request.Request(installer["browser_download_url"], headers={"User-Agent": "YoungMini-Windows-download-publisher"})
+        with urllib.request.urlopen(request, timeout=60) as response, installer_path.open("wb") as output:
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                installer_digest.update(chunk)
+        if installer_path.stat().st_size != installer["size"] or installer_digest.hexdigest() != installer_checksum:
+            raise RuntimeError("Installer size or SHA-256 mismatch")
+        replace_asset(github, alias["id"], installer_path, INSTALLER_FILENAME, installer_checksum)
+        installer_sum = Path(directory) / f"{INSTALLER_FILENAME}.sha256.{installer_checksum[:16]}.pending"
+        installer_sum.write_bytes(f"{installer_checksum}  {INSTALLER_FILENAME}\n".encode())
+        replace_asset(github, alias["id"], installer_sum, INSTALLER_FILENAME + ".sha256", hashlib.sha256(installer_sum.read_bytes()).hexdigest())
         body = (f"Windows x64 최신 정식 배포본의 고정 다운로드입니다. 현재 **{source['tag_name']}**.\n\n"
+                f"[Windows 설치 파일 받기]({DOWNLOADS}/{TAG}/{INSTALLER_FILENAME})\n\n"
                 f"[Windows 최신 ZIP 바로 받기]({DOWNLOADS}/{TAG}/{FILENAME})\n\n"
                 f"[현재 버전의 변경 사항과 원본]({source['html_url']}) · "
                 f"[Android 최신 APK](https://github.com/{REPOSITORY}/releases/latest/download/youngmin.apk)\n\n"
-                "압축을 모두 풀고 기존 영민이를 완전히 종료한 뒤 YoungMini/YoungMini.exe를 실행하세요.\n\n"
+                "설치 파일을 실행하면 시작 메뉴와 앱 제거에 등록됩니다. 설치 중 Windows 로그인 시 자동 실행을 선택할 수 있습니다. "
+                "ZIP은 압축을 모두 풀고 기존 영민이를 완전히 종료한 뒤 YoungMini/YoungMini.exe를 실행하세요.\n\n"
                 "이 릴리스는 다운로드 파일만 갱신합니다. 아래 자동 생성 Source code 압축파일은 앱 설치 파일이 아닙니다. "
                 "소스 코드는 위 버전별 원본에서 확인하세요.\n")
         github.request(f"/releases/{alias['id']}", {"name": f"영민이 Windows 최신 버전 ({source['tag_name']})",

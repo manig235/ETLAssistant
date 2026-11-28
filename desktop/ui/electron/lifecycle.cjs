@@ -15,7 +15,7 @@ function createRestarter({app,getBackend,beforeStop,timeoutMillis=5000}) {
         try{if(child.stdin.writable&&!child.stdin.writableEnded)child.stdin.end();}catch{}
         if(child.exitCode!==null||child.signalCode!==null)finish();
       });
-      app.relaunch();
+      app.relaunch({args:process.argv.slice(1).filter(arg=>arg!=='--startup')});
       // app.quit can wait indefinitely for an unresponsive renderer's unload event.
       app.exit(0);
     })();

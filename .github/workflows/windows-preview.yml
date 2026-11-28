@@ -61,18 +61,29 @@ jobs:
         run: |
           python desktop/scripts/package_windows.py
           python desktop/scripts/verify_package.py "desktop/dist/youngmin-windows-x64-v$env:WINDOWS_VERSION.zip"
+      - name: Build the offline per-user Windows installer
+        run: python desktop/scripts/package_installer.py
+      - name: Verify installation, startup opt-out, reinstall and uninstall
+        shell: pwsh
+        run: .\desktop\scripts\test_installer.ps1 -Installer "desktop/dist/youngmin-windows-x64-setup-v$env:WINDOWS_VERSION.exe"
       - name: Test the actual Windows Codex and code-mode host without an account
         shell: pwsh
         run: |
           Expand-Archive "desktop/dist/youngmin-windows-x64-v$env:WINDOWS_VERSION.zip" desktop/build/windows-test
           $env:YOUNGMIN_TEST_CODEX = (Resolve-Path desktop/build/windows-test/YoungMini/runtime/codex.exe).Path
           .\gradlew.bat -p desktop --no-daemon --rerun-tasks test --tests kr.snu.youngmini.desktop.RealCodexTransportTest
+      - name: Verify packaged startup and settings without changing Windows startup
+        shell: pwsh
+        run: |
+          $env:YOUNGMIN_SMOKE_EXE = (Resolve-Path desktop/build/windows-test/YoungMini/YoungMini.exe).Path
+          node desktop/ui/tests/startup-native.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: youngmini-windows-preview
           path: |
             desktop/dist/*.zip
+            desktop/dist/*setup*.exe
             desktop/dist/*.sha256
             desktop/build/reports/
           retention-days: 14
@@ -88,6 +99,8 @@ jobs:
           $notes = "desktop/releases/$env:RELEASE_TAG.md"
           if (-not (Test-Path -LiteralPath $notes)) { throw 'Missing reviewed release notes' }
           $zip = "desktop/dist/youngmin-windows-x64-v$env:WINDOWS_VERSION.zip"
+          $installer = "desktop/dist/youngmin-windows-x64-setup-v$env:WINDOWS_VERSION.exe"
+          if (-not (Test-Path -LiteralPath $installer)) { throw 'Missing Windows installer' }
           $existing = gh release view $env:RELEASE_TAG --json isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if (-not ($existing | ConvertFrom-Json).isDraft) { throw 'Refusing to replace a published release' }
@@ -95,7 +108,7 @@ jobs:
             gh release create $env:RELEASE_TAG --verify-tag --draft --latest=false --title "영민이 Windows $env:WINDOWS_VERSION" --notes-file $notes
             if ($LASTEXITCODE -ne 0) { throw 'Could not create draft Windows release' }
           }
-          gh release upload $env:RELEASE_TAG $zip "$zip.sha256"
+          gh release upload $env:RELEASE_TAG $zip "$zip.sha256" $installer "$installer.sha256"
           if ($LASTEXITCODE -ne 0) { throw 'Could not upload verified Windows assets' }
           # Preserve /releases/latest and its youngmin.apk alias for Android users.
           gh release edit $env:RELEASE_TAG --draft=false --latest=false
