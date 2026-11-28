@@ -2,13 +2,13 @@
 
 공식 Wanted Montage UI를 쓰는 Windows x64 학습 비서입니다. 서울대학교 공식 서비스가 아닙니다.
 
-**[Windows 0.5.2 ZIP 바로 받기](https://github.com/manig235/ETLAssistant/releases/download/windows-v0.5.2/youngmin-windows-x64-v0.5.2.zip)** · **[Android 최신 APK 바로 받기](https://github.com/manig235/ETLAssistant/releases/latest/download/youngmin.apk)**
+**[Windows 최신 ZIP 바로 받기](https://github.com/manig235/ETLAssistant/releases/download/windows-latest/youngmin-windows-x64.zip)** · **[Android 최신 APK 바로 받기](https://github.com/manig235/ETLAssistant/releases/latest/download/youngmin.apk)**
 
 Windows ZIP을 모두 풀고 `YoungMini/YoungMini.exe`를 실행하세요. 업데이트할 때는 기존 앱을 먼저 종료합니다. 대화·설정은 이 PC의 사용자 데이터 폴더에 유지됩니다.
 
 0.5.2부터 실행 시와 이후 6시간마다 GitHub의 새 Windows 버전을 확인합니다. Windows 알림·앱 배너·알림 기록에서 알리고, 변경 사항을 확인한 뒤 ZIP을 받을 수 있습니다. 같은 버전의 알림은 반복하지 않으며 배너는 하루 미루거나 설정의 ‘새 Windows 버전 알림’에서 끌 수 있습니다. 오프라인에서는 기존 확인 결과를 보존하고 조용히 재시도합니다. 설정의 수동 확인도 유지합니다.
 
-Windows는 `windows-vX.Y.Z` 태그로 배포하고 GitHub의 Android ‘Latest’ 표시는 바꾸지 않습니다. 따라서 Android 최신 APK 바로 받기 주소는 버전이 올라가도 유지됩니다.
+Windows는 `windows-vX.Y.Z` 태그로 배포하고 GitHub의 Android ‘Latest’ 표시는 바꾸지 않습니다. 검증된 정식 ZIP을 배포한 뒤 `windows-latest` 릴리스의 버전 없는 ZIP과 체크섬도 자동 갱신하므로 위 두 다운로드 주소를 계속 사용할 수 있습니다. 앱 안 업데이트 안내는 확인한 버전의 고유 ZIP을 사용합니다. `windows-latest` 태그 자체는 이동하지 않으며 해당 릴리스 본문이 현재 버전과 정확한 소스 링크를 안내합니다.
 
 설정·트레이·펫 우클릭에서 **이름 재시작**을 선택할 수 있습니다. 진행 중 답변은 중단하며 저장된 세션·초안을 복원합니다. 대화창이 먹통이어도 트레이에서 사용합니다.
 

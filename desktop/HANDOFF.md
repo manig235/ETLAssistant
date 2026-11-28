@@ -18,7 +18,7 @@
 - 알림 기록과 버전 중복 방지는 `Agenda.windowsUpdate`가 원자적으로 저장합니다. 이 private 명령은 렌더러 명령 허용 목록에 넣지 않습니다. 다운로드는 확인한 Windows ZIP URL로만 이동하며 설치된 버전의 오래된 대기 알림은 띄우지 않습니다.
 - `.github/workflows/windows-preview.yml`은 수동 검증과 windows-v* 태그의 테스트→ZIP/체크섬 검증→draft 자산 업로드→정식 게시를 처리합니다. `--latest=false`로 Android 최신 릴리스와 youngmin.apk 별칭을 유지합니다. 배포 태그는 UI 버전과 같아야 하며 이미 공개한 배포를 덮어쓰지 않습니다.
 - 실제 앱의 `updates-native.cjs`는 합성 릴리스로 자동 확인→지속 알림 기록→네이티브 알림 dispatch/click→다운로드 선택, 6시간 캐시/재시작/하루 미루기/끄기를 확인합니다. 이 테스트는 Windows 알림 API를 fixture로 대체하므로 실사용 배너를 눈으로 확인한 것으로 보고하지 않습니다.
-- 직접 링크: Windows `/releases/download/windows-v0.5.2/youngmin-windows-x64-v0.5.2.zip`; Android `/releases/latest/download/youngmin.apk` (0.3.8 APK의 HTTP 200 확인). 로컬 exe는 package-check-v0.5.2/YoungMini/YoungMini.exe입니다.
+- 고정 직접 링크: Windows `/releases/download/windows-latest/youngmin-windows-x64.zip`; Android `/releases/latest/download/youngmin.apk`. Windows의 버전별 원본 ZIP도 유지합니다. `publish_windows_download.py`가 정식 버전 중 가장 높은 Windows ZIP의 크기·SHA-256을 검증한 뒤 별칭 자산을 업로드/검증하고 교체합니다. 업로드 실패 시 기존 고정 ZIP은 보존하며 태그를 강제 이동하지 않습니다. 배포 작업은 직렬화하고 고정 릴리스도 latest=false로 Android Latest를 보존합니다. 로컬 exe는 package-check-v0.5.2/YoungMini/YoungMini.exe입니다.
 
 ## 0.5.0 후속 구현
 

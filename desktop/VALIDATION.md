@@ -1,5 +1,9 @@
 # Windows 0.5.2 검증
 
+## Windows 고정 최신 다운로드
+
+`python -m unittest discover -s desktop/scripts -p test_publish_windows_download.py`로 숫자 버전 정렬, Android/고정 별칭 제외, 미공개/사전 배포/잘못된 주소/미검증 자산 거부, 업로드 실패 시 기존 파일 보존, 검증 후 교체 순서를 검사합니다. 고정 링크는 `/releases/download/windows-latest/youngmin-windows-x64.zip`이며 버전별 배포는 그대로 둡니다. 다음 `windows-v*` 배포부터 자동 갱신합니다.
+
 ## 0.5.2 자동 업데이트 알림
 
 Node 경계/로그인/업데이트 21개, UI 33개를 확인했습니다. 새 검사는 Windows/Android 채널 분리, 태그·업로드 상태·URL 일치, 페이지네이션, 동시 요청 합치기, 6시간 캐시/재시작, 오프라인 보존/재시도, 하루 미루기, 손상된 캐시/크기 제한을 포함합니다. JVM은 버전별 알림의 중복 방지와 재시작 보존, 잘못된 주소 거부를 검사합니다.
