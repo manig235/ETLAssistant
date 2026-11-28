@@ -13,7 +13,7 @@ eTL 도구(읽기 전용)를 Codex가 호출해서, 학생이 폰에서 비서�
   "Sign in with ChatGPT" 오픈소스 경로(https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)는
   오픈소스이고 기기에서 실행되며 무료인 앱을 대상으로 한다. 그래서 이 앱도 **오픈소스, 무료, 기기 내 실행**을 유지한다.
   모바일에 적용되는지는 문서에 명시돼 있지 않다. 배포 전에 확인할 것.
-- **안드로이드만**: iOS는 앱 안에서 다른 실행 파일을 띄우는 것 자체가 불가능하다.
+- **Android + Windows(2026-11-28 사용자 요청)**: Android 앱을 유지하면서 `desktop/`에 Windows x64 버전을 추가했다. 0.2.0부터 화면은 공식 Montage Web(React) + Electron, eTL·로그인·문서 처리는 독립 Kotlin/JVM 백엔드이며 전용 stdio 파이프로 연결한다. 0.3.1에서 셸/렌더러 시작 상태를 `desktop/ui/electron/initial-state.json`으로 통일했다. 백엔드 첫 응답 전 IPC 초기 상태 수신으로 빈 화면이 되던 오류를 재현·수정했으며 `startup-smoke.cjs`로 느린 시작을 검사한다. 0.3.0부터 왼쪽 통합/26-2 과목/커스텀 프로젝트·세션, 가운데 대화 하나, 오른쪽 선택적 파일 미리보기다. 여러 세션은 백그라운드에서 병렬 실행하며 나란히 보기·파일 목록 탭은 제거했다. 프로젝트 자료 범위·지침을 공유하되 대화 이력은 독립이다. 요청한 원본/완성 결과만 카드로 보여주고 참고 다운로드는 숨긴다. Markdown/KaTeX→실제 A4 PDF 생성과 PDF.js 미리보기, 세션별 모델·effort·프로젝트 라벨 펫, Enter 전송·Ctrl+Enter 개행, 첫 실행 안내, 개인 일정·eTL 공지/성적 변경/마감 알림을 지원한다. 창 닫기는 트레이 숨김이며 명시적인 종료까지 계속 실행한다. 펫에는 향후 모션을 추가할 계획이며 정지 유지 조건은 없다. 말풍선은 위 중앙이다. 실행·검증·로컬 세션 인계는 `desktop/README.md`, `desktop/VALIDATION.md`, `desktop/HANDOFF.md`를 본다. iOS는 앱 안에서 다른 실행 파일을 띄우는 제약 때문에 대상이 아니다.
 - **Termux 의존 없음**: 사용자가 Termux를 따로 설치하는 방식은 장벽이 높고 불안정해서 기각했다.
 - **Claude 백엔드는 넣지 않는다(2026-11-27)**: 목적은 Claude 구독자도 무료로 쓰게 하는 것이었지만, Anthropic은 사전 승인 없이 외부 앱이
   claude.ai 로그인·구독 한도를 쓰게 하는 것을 허용하지 않는다(Agent SDK 문서). 남는 API 키(사용량 과금) 방식은 목적에 맞지 않아 기각했다.

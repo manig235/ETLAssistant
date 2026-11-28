@@ -295,34 +295,46 @@ object Queries {
         return ids.toList()
     }
 
-    data class FileRef(val id: Long, val meta: JSONObject?, val source: String, val labels: Map<String, String>, val title: String? = null)
+    data class FileRef(val id: Long, val meta: JSONObject?, val source: String, val labels: Map<String, String>, val title: String? = null, val sourceId: Long? = null) {
+        fun downloadArgs(courseId: Long): JSONObject? {
+            val type = if (source == "submission") "assignment" else source
+            if (sourceId == null || sourceId <= 0 || type !in setOf("announcement", "assignment", "module")) return null
+            return JSONObject().put("file_id_or_url", id.toString()).put("course_id", courseId)
+                .put("source_type", type).put("source_id", sourceId)
+        }
+    }
 
     /** 과제 설명·첨부, 내 제출 첨부, 공지 본문·첨부에 걸린 파일. */
     fun attachedFiles(assignments: List<JSONObject>, announcements: List<JSONObject>, courseId: Long): List<FileRef> {
         val out = mutableListOf<FileRef>()
-        fun add(item: JSONObject?, source: String, labels: Map<String, String>, html: String?) {
+        fun add(item: JSONObject?, source: String, sourceId: Long, labels: Map<String, String>, html: String?) {
             val atts = mutableListOf<JSONObject>()
             item?.optJSONArray("attachments")?.let { arr -> for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { atts += it } }
             item?.optJSONObject("attachment")?.let { atts += it }
-            for (f in atts) f.optLong("id").takeIf { it > 0 }?.let { out += FileRef(it, f, source, labels) }
-            for (id in linkedFiles(html, courseId)) out += FileRef(id, null, source, labels)
+            for (f in atts) f.optLong("id").takeIf { it > 0 }?.let { out += FileRef(it, f, source, labels, sourceId = sourceId) }
+            for (id in linkedFiles(html, courseId)) out += FileRef(id, null, source, labels, sourceId = sourceId)
         }
         for (a in assignments) {
-            if (!isPublished(a)) continue
+            if (!isPublished(a) || a.optBoolean("locked_for_user")) continue
             val labels = a.str("name")?.let { mapOf("assignment" to it) } ?: emptyMap()
-            add(a, "assignment", labels, a.str("description"))
-            add(a.obj("submission"), "submission", labels, null)
+            add(a, "assignment", a.optLong("id"), labels, a.str("description"))
+            add(a.obj("submission"), "submission", a.optLong("id"), labels, null)
         }
-        for (n in announcements) add(n, "announcement", n.str("title")?.let { mapOf("announcement" to it) } ?: emptyMap(), n.str("message"))
+        for (n in announcements) {
+            if (!isPublished(n) || n.optBoolean("locked_for_user")) continue
+            add(n, "announcement", n.optLong("id"), n.str("title")?.let { mapOf("announcement" to it) } ?: emptyMap(), n.str("message"))
+        }
         return out
     }
 
     /** 모듈 항목 중 File: (파일 ID, 제목, 모듈 이름). */
-    fun moduleFiles(modules: List<JSONObject>): List<FileRef> = modules.flatMap { m ->
+    fun moduleFiles(modules: List<JSONObject>): List<FileRef> = modules.filter {
+        isPublished(it) && !it.optBoolean("locked_for_user") && it.optString("state") != "locked"
+    }.flatMap { m ->
         val items = m.optJSONArray("items") ?: JSONArray()
         (0 until items.length()).mapNotNull { items.optJSONObject(it) }
-            .filter { it.optString("type") == "File" && it.optLong("content_id") > 0 }
-            .map { FileRef(it.optLong("content_id"), null, "module", m.str("name")?.let { n -> mapOf("module" to n) } ?: emptyMap(), it.str("title")) }
+            .filter { it.optString("type") == "File" && it.optLong("content_id") > 0 && isPublished(it) }
+            .map { FileRef(it.optLong("content_id"), null, "module", m.str("name")?.let { n -> mapOf("module" to n) } ?: emptyMap(), it.str("title"), m.optLong("id")) }
     }
 
     fun folderNames(folders: List<JSONObject>): Map<Long, String?> = folders.associate { f ->
@@ -330,14 +342,14 @@ object Queries {
         f.optLong("id") to full.replace(Regex("^course files/?"), "").ifEmpty { null }
     }
 
-    /** 받지 않는 이유(없으면 null): 동영상, 잠김, 숨김. 게시판 첨부의 숨김은 다른 경로(etl_download의 게시판 인자)로 받는다. */
-    fun skipReason(f: JSONObject?): String? {
+    /** 숨김은 목록 노출 설정이다. 실제로 연결된 출처가 있으면 다운로드 때 출처를 재확인한다. 잠금은 항상 지킨다. */
+    fun skipReason(f: JSONObject?, linked: Boolean = false): String? {
         if (f == null) return "파일 정보를 읽지 못했습니다. 받기 요청 때 다시 확인합니다."
         val type = (f.str("content-type") ?: f.str("content_type") ?: "").lowercase()
         return when {
             type.startsWith("video/") || f.optString("mime_class") == "video" -> "동영상은 받지 않습니다. eTL에서 보세요."
             f.optBoolean("locked_for_user", false) -> "잠긴 파일입니다. 열리는 시각 이후에 받을 수 있습니다."
-            f.optBoolean("hidden_for_user", false) -> "숨겨진 파일입니다. eTL에서 확인해 주세요."
+            f.optBoolean("hidden_for_user", false) && !linked -> "파일 탭에서 숨겨진 파일입니다. 공지·과제·모듈 또는 게시판에서 첨부 출처를 확인하세요."
             else -> null
         }
     }
@@ -358,6 +370,7 @@ object Queries {
         errors: List<String>,
     ): JSONObject {
         val folderOf = folderNames(folders)
+        val listedById = listed.orEmpty().associateBy { it.optLong("id") }
         val moduleOf = modules.associate { it.id to it.labels["module"] }
         val rows = linkedMapOf<Long, JSONObject>()
         fun row(f: JSONObject?, id: Long, name: String, source: String, labels: Map<String, String?>): JSONObject {
@@ -383,16 +396,28 @@ object Queries {
         for (m in modules) refs[m.id] = m
         for (r in attached) {
             val prev = refs[r.id]
-            refs[r.id] = if (prev == null) r else prev.copy(meta = prev.meta ?: r.meta, labels = r.labels + prev.labels)
+            refs[r.id] = if (prev == null) r else {
+                val origin = if (prev.downloadArgs(courseId) != null) prev else r
+                origin.copy(meta = prev.meta ?: r.meta, labels = r.labels + prev.labels)
+            }
         }
         for (ref in refs.values) {
             val existing = rows[ref.id]
             if (existing != null) {
                 ref.labels.forEach { (k, v) -> if (v.isNotBlank() && !existing.has(k)) existing.put(k, v) }
-                continue
+            } else {
+                val f = details[ref.id] ?: ref.meta
+                rows[ref.id] = row(f, ref.id, f?.str("display_name") ?: f?.str("filename") ?: ref.title ?: "파일 ${ref.id}", ref.source, ref.labels)
             }
-            val f = details[ref.id] ?: ref.meta
-            rows[ref.id] = row(f, ref.id, f?.str("display_name") ?: f?.str("filename") ?: ref.title ?: "파일 ${ref.id}", ref.source, ref.labels)
+            ref.downloadArgs(courseId)?.let { args ->
+                val r = rows.getValue(ref.id)
+                r.put("download_args", args)
+                val f = listedById[ref.id] ?: details[ref.id] ?: ref.meta
+                val skip = skipReason(f, linked = true)
+                r.remove("skip")
+                if (skip != null) r.put("skip", skip)
+                r.put("downloaded", skip == null && ref.id in saved)
+            }
         }
         val order = mapOf("files" to 0, "module" to 0, "assignment" to 0, "announcement" to 0, "submission" to 1)
         val collator = Collator.getInstance(Locale.KOREAN)

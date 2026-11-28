@@ -1,0 +1,9 @@
+/runtime/
+/resources/windows/runtime/
+/dist/
+/.gradle-user/
+__pycache__/
+/ui/node_modules/
+/ui/dist/
+/ui/test-results/
+/ui/playwright-report/

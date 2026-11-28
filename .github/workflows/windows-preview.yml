@@ -1,0 +1,53 @@
+name: Windows preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.5'
+      - name: Build and test official Montage UI
+        run: |
+          npm --prefix desktop/ui ci
+          npm --prefix desktop/ui run build
+          npx --prefix desktop/ui playwright install chromium
+          npm --prefix desktop/ui test
+      - name: Test including Windows DPAPI and render preview
+        run: .\gradlew.bat -p desktop --no-daemon test
+      - name: Stage Windows libraries
+        run: .\gradlew.bat -p desktop --no-daemon stageWindows
+      - name: Build self-contained ZIP and verify all files
+        run: |
+          python desktop/scripts/package_windows.py
+          python desktop/scripts/verify_package.py desktop/dist/youngmin-windows-x64-v0.3.1.zip
+      - name: Test the actual Windows Codex and code-mode host without an account
+        shell: pwsh
+        run: |
+          Expand-Archive desktop/dist/youngmin-windows-x64-v0.3.1.zip desktop/build/windows-test
+          $env:YOUNGMIN_TEST_CODEX = (Resolve-Path desktop/build/windows-test/YoungMini/runtime/codex.exe).Path
+          .\gradlew.bat -p desktop --no-daemon --rerun-tasks test --tests kr.snu.youngmini.desktop.RealCodexTransportTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: youngmini-windows-preview
+          path: |
+            desktop/dist/*.zip
+            desktop/dist/*.sha256
+            desktop/build/reports/
+          retention-days: 14

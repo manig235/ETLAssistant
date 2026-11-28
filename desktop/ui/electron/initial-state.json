@@ -1,0 +1,40 @@
+{
+  "starting": true,
+  "ready": false,
+  "status": "영민이를 준비하고 있어요",
+  "error": null,
+  "loggedIn": false,
+  "loginBusy": false,
+  "loginUrl": null,
+  "loginCode": null,
+  "etlConnected": false,
+  "etlBusy": false,
+  "courses": [],
+  "projects": [
+    {
+      "id": "integrated",
+      "name": "통합 프로젝트",
+      "kind": "integrated",
+      "courseIds": [],
+      "instructions": ""
+    }
+  ],
+  "activeProjectId": "integrated",
+  "activeChatId": "",
+  "visibleChatIds": [],
+  "models": [],
+  "sessions": [],
+  "agenda": {
+    "personal": [],
+    "academic": [],
+    "notices": [],
+    "settings": {
+      "onboarded": false,
+      "deadlines": true,
+      "announcements": true,
+      "grades": true,
+      "personal": true,
+      "completion": true
+    }
+  }
+}
