@@ -25,7 +25,7 @@ let main, pet, tray, backend, quitting=false, shellError=null, dragOrigin, openC
 const etlConnections=new Map();
 const entry = path.resolve(__dirname, '../dist/index.html');
 const allowedURL = pathToFileURL(entry).href;
-const appIcon = path.join(__dirname, '../dist/robot.png');
+const appIcon = path.join(__dirname, process.platform==='win32'?'../dist/robot.ico':'../dist/robot.png');
 const trusted = event => [main?.webContents,pet?.webContents].includes(event.sender) && event.senderFrame === event.sender.mainFrame && event.senderFrame.url.split('?')[0] === allowedURL;
 const prints=new Map(), previewRequests=new Map(), attempted=new Set();let printQueue=Promise.resolve();
 const restart=require('./lifecycle.cjs').createRestarter({app,getBackend:()=>backend,beforeStop:async()=>{quitting=true;await etlLoginFlow?.cancel();for(const done of etlConnections.values())done(false);etlConnections.clear();}});

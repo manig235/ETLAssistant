@@ -1,12 +1,14 @@
-# 영민이 Windows 0.5.3
+# 영민이 Windows 0.5.4
 
-0.5.3부터 ZIP과 함께 오프라인 설치 파일을 만듭니다. 설치 파일은 현재 사용자 계정에 설치하고 시작 메뉴·바탕화면 바로가기와 Windows 앱 제거 목록에 등록합니다. 관리자 권한은 필요하지 않습니다.
+작업 표시줄·실행 파일·설치 및 제거 파일·바로가기에 기존 영민이 로고를 적용합니다. Windows용 ICO에는 16~256px 크기가 들어 있으며, 패키지 검증 시 실행 파일의 실제 아이콘 리소스와 대조합니다.
+
+0.5.4부터 ZIP과 함께 오프라인 설치 파일을 만듭니다. 설치 파일은 현재 사용자 계정에 설치하고 시작 메뉴·바탕화면 바로가기와 Windows 앱 제거 목록에 등록합니다. 관리자 권한은 필요하지 않습니다.
 
 설치 중 **Windows 로그인 시 자동 실행**을 선택할 수 있으며 기본값은 켜짐입니다. 자동 실행은 대화창 없이 트레이에서 시작하고, 펫 표시는 기존 설정을 따릅니다. 앱의 **연결 · 설정 → 자동 실행**에서도 켜고 끌 수 있습니다. Windows 작업 관리자가 자동 실행을 끈 경우 앱에서도 꺼짐으로 표시하며 임의로 다시 켜지 않습니다. PC가 꺼져 있거나 로그아웃된 동안에는 알림을 보내지 않습니다.
 
 설치·업데이트는 `%LOCALAPPDATA%\YoungMini`의 기존 대화와 로그인 정보를 계속 사용합니다. 앱 제거 시 자동 실행 등록과 프로그램 파일은 제거하며 사용자 데이터는 보존합니다. ZIP을 내려받기만 해서는 자동 실행에 등록되지 않습니다.
 
-빌드: 기존 ZIP 빌드·검증 뒤 `python desktop/scripts/package_installer.py`를 실행합니다. 결과는 `desktop/dist/youngmin-windows-x64-setup-v0.5.3.exe`이며, 빌드 과정은 업로드하지 않습니다. 공개 배포 뒤 설치 파일 고정 주소는 `windows-latest/youngmin-windows-x64-setup.exe`가 됩니다. 무인 설치는 `/S /AUTOSTART=0`으로 자동 실행을 끌 수 있고, 기존 설치의 무인 업데이트는 선택을 유지합니다.
+빌드: 기존 ZIP 빌드·검증 뒤 `python desktop/scripts/package_installer.py`를 실행합니다. 결과는 `desktop/dist/youngmin-windows-x64-setup-v0.5.4.exe`이며, 빌드 과정은 업로드하지 않습니다. 공개 배포 뒤 설치 파일 고정 주소는 `windows-latest/youngmin-windows-x64-setup.exe`가 됩니다. 무인 설치는 `/S /AUTOSTART=0`으로 자동 실행을 끌 수 있고, 기존 설치의 무인 업데이트는 선택을 유지합니다.
 
 공식 Wanted Montage UI를 쓰는 Windows x64 학습 비서입니다. 서울대학교 공식 서비스가 아닙니다.
 
@@ -48,7 +50,7 @@ Windows 알림은 트레이에서 실행 중일 때 표시합니다. 첫 조회�
 
 ## 실행과 업데이트
 
-설치 파일 `youngmin-windows-x64-setup-v0.5.3.exe`를 실행하거나, ZIP `youngmin-windows-x64-v0.5.3.zip`을 **새 폴더에 모두 압축 해제**하고 `YoungMini/YoungMini.exe`를 실행합니다. Java·Node·Codex를 따로 설치하지 않습니다. 이전 ZIP 버전은 트레이에서 완전히 종료한 뒤 새 버전을 실행하세요.
+설치 파일 `youngmin-windows-x64-setup-v0.5.4.exe`를 실행하거나, ZIP `youngmin-windows-x64-v0.5.4.zip`을 **새 폴더에 모두 압축 해제**하고 `YoungMini/YoungMini.exe`를 실행합니다. Java·Node·Codex를 따로 설치하지 않습니다. 이전 ZIP 버전은 트레이에서 완전히 종료한 뒤 새 버전을 실행하세요.
 
 로그인·대화·다운로드는 `%LOCALAPPDATA%\YoungMini`를 계속 사용합니다. 이전 버전의 대화는 통합 프로젝트로 옮겨 읽고, 직접 담았던 파일도 카드로 복원합니다. 기존 데이터 폴더를 지울 필요가 없습니다.
 

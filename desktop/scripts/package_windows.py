@@ -11,12 +11,13 @@ import json
 from pathlib import Path, PurePosixPath
 import shutil
 import struct
+import subprocess
 import tempfile
 import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 CODEX_VERSION = "rust-v0.170.0"
 ELECTRON_VERSION = "45.5.0"
 ELECTRON_HASH = "20155c8b8aa5b1f575f3757bdf21490e0bac2f19a65a26ce9ba99bcf9f2c69bd"
@@ -89,6 +90,7 @@ def package(cache: Path) -> Path:
         electron = fetch(f"https://github.com/electron/electron/releases/download/v{ELECTRON_VERSION}/electron-v{ELECTRON_VERSION}-win32-x64.zip", ELECTRON_HASH, cache)
         safe_extract_zip(electron, app)
         (app / "electron.exe").rename(app / "YoungMini.exe")
+        subprocess.run([shutil.which("node") or "node", str(ROOT / "scripts/brand_windows.cjs"), str(app / "YoungMini.exe")], check=True)
         (app / "resources/default_app.asar").unlink(missing_ok=True)
         binary = (app / "YoungMini.exe").read_bytes()
         pe = struct.unpack_from("<I", binary, 0x3C)[0]

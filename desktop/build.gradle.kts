@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "kr.snu.youngmini"
-version = "0.5.3"
+version = "0.5.4"
 
 kotlin {
     jvmToolchain(17)

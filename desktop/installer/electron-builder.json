@@ -2,10 +2,25 @@
   "appId": "kr.snu.youngmini.desktop",
   "productName": "YoungMini",
   "electronVersion": "45.5.0",
-  "directories": {"output": "../dist", "buildResources": "../installer"},
+  "directories": {
+    "output": "../dist",
+    "buildResources": "../installer"
+  },
   "artifactName": "youngmin-windows-x64-setup-v${version}.${ext}",
   "publish": null,
-  "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "executableName": "YoungMini", "signAndEditExecutable": false},
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "executableName": "YoungMini",
+    "signAndEditExecutable": false,
+    "icon": "public/robot.ico"
+  },
   "nsis": {
     "oneClick": false,
     "perMachine": false,
@@ -17,8 +32,12 @@
     "uninstallDisplayName": "영민이 (Young Mini)",
     "deleteAppDataOnUninstall": false,
     "runAfterFinish": true,
-    "installerLanguages": ["ko_KR"],
+    "installerLanguages": [
+      "ko_KR"
+    ],
     "language": "1042",
-    "include": "installer.nsh"
+    "include": "installer.nsh",
+    "installerIcon": "../ui/public/robot.ico",
+    "uninstallerIcon": "../ui/public/robot.ico"
   }
 }

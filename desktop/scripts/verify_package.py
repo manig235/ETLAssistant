@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import struct
+import subprocess
 import zipfile
 
 
@@ -29,6 +30,7 @@ def verify(path: Path) -> None:
             with archive.open("YoungMini/" + relative) as stream:
                 assert stream_digest(stream) == expected, "File checksum mismatch: " + relative
         binary = archive.read("YoungMini/YoungMini.exe")
+        subprocess.run(["node", str(Path(__file__).resolve().parent / "brand_windows.cjs"), "--verify", "-"], input=binary, check=True)
         pe = struct.unpack_from("<I", binary, 0x3C)[0]
         assert binary[:2] == b"MZ" and struct.unpack_from("<H", binary, pe + 4)[0] == 0x8664
         assert struct.unpack_from("<H", binary, pe + 24 + 68)[0] == 2, "Launcher opens a console window"
@@ -49,6 +51,7 @@ def verify(path: Path) -> None:
         assert not required - classes, "Missing application classes: " + repr(required - classes)
         assert {"YoungMini/d3dcompiler_47.dll", "YoungMini/dxcompiler.dll", "YoungMini/vk_swiftshader.dll", "YoungMini/vulkan-1.dll"}.issubset(names)
         assert "YoungMini/resources/app/dist/index.html" in names
+        assert "YoungMini/resources/app/dist/robot.ico" in names
         assert "YoungMini/resources/app/dist/fonts/PretendardVariable.woff2" in names
         assert "YoungMini/resources/app/electron/main.cjs" in names
         assert {"YoungMini/resources/app/electron/render-office.ps1", "YoungMini/resources/app/electron/updates.cjs", "YoungMini/resources/app/electron/lifecycle.cjs", "YoungMini/resources/app/electron/startup.cjs", "YoungMini/resources/app/electron/appearance.cjs", "YoungMini/resources/app/electron/images.cjs", "YoungMini/resources/app/electron/etl-login.cjs"}.issubset(names)
@@ -57,7 +60,7 @@ def verify(path: Path) -> None:
         assert any("KaTeX_Main-Regular-" in n and n.endswith(".woff2") for n in names)
         assert any("pdf.worker.min-" in n and n.endswith(".mjs") for n in names), "Missing offline PDF.js worker"
         entry = json.loads(archive.read("YoungMini/resources/app/package.json"))
-        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.3"
+        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.4"
         assert "YoungMini/jre/bin/javaw.exe" in names
         assert "YoungMini/runtime/codex.exe" in names
         assert "YoungMini/runtime/codex-code-mode-host.exe" in names
