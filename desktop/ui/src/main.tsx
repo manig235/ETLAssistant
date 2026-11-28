@@ -7,4 +7,4 @@ import {Print} from './Print';
 import {ScreenBoundary} from './ScreenBoundary';
 import './styles.css';
 
-createRoot(document.getElementById('root')!).render(<ScreenBoundary><ThemeProvider enableDarkMode={false}>{new URLSearchParams(location.search).get('print') ? <Print id={new URLSearchParams(location.search).get('print')!}/> : <App/>}</ThemeProvider></ScreenBoundary>);
+createRoot(document.getElementById('root')!).render(<ScreenBoundary><ThemeProvider enableDarkMode>{new URLSearchParams(location.search).get('print') ? <Print id={new URLSearchParams(location.search).get('print')!}/> : <App/>}</ThemeProvider></ScreenBoundary>);

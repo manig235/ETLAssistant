@@ -1,7 +1,10 @@
-name: Windows preview
+name: Windows build and release
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'windows-v*'
 
 permissions:
   contents: read
@@ -10,8 +13,22 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check the Windows tag and app version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          $version = (Get-Content desktop/ui/package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows version' }
+          if ($env:IS_TAG -eq 'true' -and $env:RELEASE_TAG -ne "windows-v$version") { throw 'Tag does not match Windows version' }
+          "WINDOWS_VERSION=$version" >> $env:GITHUB_ENV
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -26,7 +43,11 @@ jobs:
         run: |
           npm --prefix desktop/ui ci
           npm --prefix desktop/ui run build
-          npx --prefix desktop/ui playwright install chromium
+      - name: Install test browser
+        working-directory: desktop/ui
+        run: npx playwright install chromium
+      - name: Test UI and update delivery
+        run: |
           npm --prefix desktop/ui test
       - name: Test including Windows DPAPI and render preview
         run: .\gradlew.bat -p desktop --no-daemon test
@@ -35,11 +56,11 @@ jobs:
       - name: Build self-contained ZIP and verify all files
         run: |
           python desktop/scripts/package_windows.py
-          python desktop/scripts/verify_package.py desktop/dist/youngmin-windows-x64-v0.3.1.zip
+          python desktop/scripts/verify_package.py "desktop/dist/youngmin-windows-x64-v$env:WINDOWS_VERSION.zip"
       - name: Test the actual Windows Codex and code-mode host without an account
         shell: pwsh
         run: |
-          Expand-Archive desktop/dist/youngmin-windows-x64-v0.3.1.zip desktop/build/windows-test
+          Expand-Archive "desktop/dist/youngmin-windows-x64-v$env:WINDOWS_VERSION.zip" desktop/build/windows-test
           $env:YOUNGMIN_TEST_CODEX = (Resolve-Path desktop/build/windows-test/YoungMini/runtime/codex.exe).Path
           .\gradlew.bat -p desktop --no-daemon --rerun-tasks test --tests kr.snu.youngmini.desktop.RealCodexTransportTest
       - uses: actions/upload-artifact@v4
@@ -51,3 +72,27 @@ jobs:
             desktop/dist/*.sha256
             desktop/build/reports/
           retention-days: 14
+      - name: Publish a verified Windows release
+        if: startsWith(github.ref, 'refs/tags/windows-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ($env:RELEASE_TAG -ne "windows-v$env:WINDOWS_VERSION") { throw 'Invalid Windows release tag' }
+          $notes = "desktop/releases/$env:RELEASE_TAG.md"
+          if (-not (Test-Path -LiteralPath $notes)) { throw 'Missing reviewed release notes' }
+          $zip = "desktop/dist/youngmin-windows-x64-v$env:WINDOWS_VERSION.zip"
+          $existing = gh release view $env:RELEASE_TAG --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (-not ($existing | ConvertFrom-Json).isDraft) { throw 'Refusing to replace a published release' }
+          } else {
+            gh release create $env:RELEASE_TAG --verify-tag --draft --latest=false --title "영민이 Windows $env:WINDOWS_VERSION" --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create draft Windows release' }
+          }
+          gh release upload $env:RELEASE_TAG $zip "$zip.sha256"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload verified Windows assets' }
+          # Preserve /releases/latest and its youngmin.apk alias for Android users.
+          gh release edit $env:RELEASE_TAG --draft=false --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish Windows release' }

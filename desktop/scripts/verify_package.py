@@ -28,7 +28,10 @@ def verify(path: Path) -> None:
         required = {
             "kr/snu/youngmini/desktop/BridgeMainKt.class", "kr/snu/youngmini/desktop/ChatSession.class",
             "kr/snu/youngmini/desktop/DesktopEngine.class", "kr/snu/youngmini/desktop/Agenda.class",
-            "kr/snu/youngmini/desktop/ProjectStore.class", "kr/snu/youngmini/desktop/PdfJobs.class", "kr/snu/youngmini/desktop/ToolContexts.class", "kr/snu/etlassistant/mcp/McpServer.class",
+            "kr/snu/youngmini/desktop/ProjectStore.class", "kr/snu/youngmini/desktop/PdfJobs.class", "kr/snu/youngmini/desktop/ToolContexts.class", "kr/snu/youngmini/desktop/ImageAttachments.class", "kr/snu/etlassistant/mcp/McpServer.class",
+            "org/apache/poi/xwpf/usermodel/XWPFDocument.class", "org/apache/poi/xssf/usermodel/XSSFWorkbook.class", "org/apache/poi/xslf/usermodel/XMLSlideShow.class",
+            "kr/snu/youngmini/desktop/SchoolFeatures.class", "kr/snu/youngmini/desktop/SchoolTools.class", "kr/snu/youngmini/desktop/LocalApprovals.class", "kr/snu/youngmini/desktop/FileTools.class", "kr/snu/youngmini/desktop/OfficeRenderer.class", "kr/snu/youngmini/desktop/BundledSkills.class", "kr/snu/youngmini/desktop/CalendarFiles.class", "kr/snu/youngmini/portable/MyDeadlines.class",
+            "skills/pdf/SKILL.md", "skills/documents/SKILL.md", "skills/spreadsheets/SKILL.md", "skills/presentations/SKILL.md", "skills/images/SKILL.md", "skills/data-analysis/SKILL.md", "skills/study/SKILL.md", "skills/office-schema.md",
             "org/apache/pdfbox/Loader.class", "com/sun/jna/platform/win32/Crypt32Util.class",
         }
         classes = set()
@@ -41,12 +44,13 @@ def verify(path: Path) -> None:
         assert "YoungMini/resources/app/dist/index.html" in names
         assert "YoungMini/resources/app/dist/fonts/PretendardVariable.woff2" in names
         assert "YoungMini/resources/app/electron/main.cjs" in names
+        assert {"YoungMini/resources/app/electron/render-office.ps1", "YoungMini/resources/app/electron/updates.cjs", "YoungMini/resources/app/electron/lifecycle.cjs", "YoungMini/resources/app/electron/appearance.cjs", "YoungMini/resources/app/electron/images.cjs", "YoungMini/resources/app/electron/etl-login.cjs"}.issubset(names)
         startup = json.loads(archive.read("YoungMini/resources/app/electron/initial-state.json"))
         assert startup["projects"][0]["id"] == "integrated" and startup["agenda"]["notices"] == []
         assert any("KaTeX_Main-Regular-" in n and n.endswith(".woff2") for n in names)
         assert any("pdf.worker.min-" in n and n.endswith(".mjs") for n in names), "Missing offline PDF.js worker"
         entry = json.loads(archive.read("YoungMini/resources/app/package.json"))
-        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.3.1"
+        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.1"
         assert "YoungMini/jre/bin/javaw.exe" in names
         assert "YoungMini/runtime/codex.exe" in names
         assert "YoungMini/runtime/codex-code-mode-host.exe" in names

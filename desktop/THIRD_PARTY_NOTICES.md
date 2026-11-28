@@ -15,6 +15,7 @@
 | kotlinx.coroutines | https://github.com/Kotlin/kotlinx.coroutines | Apache-2.0 |
 | JSON-java | https://github.com/stleary/JSON-java | Public domain |
 | JNA | https://github.com/java-native-access/jna | LGPL-2.1-or-later 또는 Apache-2.0 (Apache-2.0 경로 사용) |
+| Apache POI / XMLBeans / Commons Compress·Collections·IO·Math / SparseBitSet / Log4j API | https://poi.apache.org | Apache-2.0 (개별 JAR의 LICENSE/NOTICE 포함) |
 | Apache PDFBox / FontBox | https://pdfbox.apache.org | Apache-2.0 |
 | Noto Sans KR | https://github.com/notofonts/noto-cjk | SIL Open Font License 1.1 (`fonts/OFL.txt`를 앱 JAR에 포함) |
 | Pretendard | https://github.com/orioncactus/pretendard | SIL Open Font License 1.1 (`resources/app/dist/fonts/OFL.txt`) |

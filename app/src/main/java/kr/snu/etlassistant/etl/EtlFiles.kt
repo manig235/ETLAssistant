@@ -104,12 +104,12 @@ object EtlFiles {
      * [root] 밖을 가리키면 [EtlException]. 파일이 없어도 예외.
      */
     fun resolveInside(workspace: File, rel: String): File {
-        val root = File(workspace, DIR).canonicalFile
+        val root = File(workspace, DIR).toPath().toRealPath().toFile()
         val cleaned = rel.trim().removePrefix("./")
-        if (cleaned.isEmpty() || cleaned.startsWith("/") || cleaned.contains('\u0000')) throw EtlException("허용되지 않은 경로입니다")
+        if (cleaned.isEmpty() || cleaned.startsWith("/") || cleaned.contains('\u0000') || File(cleaned).isAbsolute) throw EtlException("허용되지 않은 경로입니다")
         val f = try {
-            File(workspace, cleaned).canonicalFile
-        } catch (_: IOException) {
+            File(workspace, cleaned).toPath().toRealPath().toFile()
+        } catch (_: Exception) {
             throw EtlException("허용되지 않은 경로입니다")
         }
         if (!f.path.startsWith(root.path + File.separator)) throw EtlException("etl-files/ 안의 파일만 열 수 있습니다")
@@ -130,7 +130,7 @@ object EtlFiles {
     }
 
     /** 작업 폴더 기준 상대 경로 표기. */
-    fun relPath(workspace: File, f: File): String = f.canonicalFile.relativeTo(workspace.canonicalFile).path
+    fun relPath(workspace: File, f: File): String = f.canonicalFile.relativeTo(workspace.canonicalFile).path.replace(File.separatorChar, '/')
 
     /**
      * "1-3,5" 같은 쪽 지정(1부터)을 쪽 번호 목록으로. 범위를 벗어난 값은 버리고, 중복을 없애 오름차순으로 [max]개까지.

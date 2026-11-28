@@ -7,6 +7,27 @@ import org.junit.Test
 import java.nio.file.Files
 
 class ProjectsAndAgendaTest {
+    @Test fun windowsUpdatesHaveOneDurableNoticePerVersionAndCannotPointOutsideTheirRelease() {
+        val root=Files.createTempDirectory("youngmini-update-notices").toFile()
+        fun url(v:String)="https://github.com/manig235/ETLAssistant/releases/download/windows-v$v/youngmin-windows-x64-v$v.zip"
+        try {
+            var agenda=Agenda(root);agenda.windowsUpdate("0.5.2",url("0.5.2"));agenda.windowsUpdate("0.5.2",url("0.5.2"));assertEquals(1,agenda.snapshot().getJSONArray("notices").length())
+            agenda=Agenda(root);agenda.windowsUpdate("0.5.3",url("0.5.3"));agenda.windowsUpdate("0.5.2",url("0.5.2"));assertEquals(2,agenda.snapshot().getJSONArray("notices").length());assertEquals("0.5.2",agenda.snapshot().getJSONArray("notices").getJSONObject(0).getString("updateVersion"))
+            assertThrows(Exception::class.java){agenda.windowsUpdate("0.5.4","https://example.com/file.zip")};assertThrows(Exception::class.java){agenda.windowsUpdate("../bad",url("../bad"))}
+        }finally{root.deleteRecursively()}
+    }
+    @Test fun homeAnnouncementsExistOnSilentBaselineAndReadStateSurvivesFailuresAndRestart() {
+        val root=Files.createTempDirectory("youngmini-home-announcements").toFile();val now=1800000000000L
+        try {
+            var agenda=Agenda(root){now};val course=Course(10,"선형대수학","2026-2",true)
+            val item=JSONObject().put("id",21).put("title","기말 범위 안내").put("posted_at",java.time.Instant.ofEpochMilli(now-1000).toString())
+            agenda.ingest(course,null,listOf(item));assertEquals(0,agenda.snapshot().getJSONArray("notices").length())
+            val cached=agenda.snapshot().getJSONArray("announcements");assertEquals(1,cached.length());assertFalse(cached.getJSONObject(0).getBoolean("read"))
+            agenda.readAnnouncement("10:21");agenda=Agenda(root){now};agenda.ingest(course,null,null);assertTrue(agenda.snapshot().getJSONArray("announcements").getJSONObject(0).getBoolean("read"))
+            agenda.ingest(course,null,listOf(item));assertTrue(agenda.snapshot().getJSONArray("announcements").getJSONObject(0).getBoolean("read"))
+            agenda.clearAcademic();assertEquals(0,agenda.snapshot().getJSONArray("announcements").length())
+        }finally {root.deleteRecursively()}
+    }
     @Test fun silentBaselineZeroScoreChangesFailedCoursesAndDeliverySurviveRestart() {
         val root=Files.createTempDirectory("youngmini-watch").toFile();var now=1800000000000L
         try {

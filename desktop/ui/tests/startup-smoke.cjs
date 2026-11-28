@@ -28,7 +28,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
     fs.writeFileSync(release,'continue');
     let ready=false;for(let i=0;i<300&&!ready;i++){const snapshot=await page.evaluate(()=>window.youngmini.getState());if(snapshot.shell.error)throw Error(snapshot.shell.error);ready=snapshot.state.ready;if(!ready)await page.waitForTimeout(100);}assert(ready,'Real backend did not start');
     await page.getByRole('dialog').getByRole('button',{name:'나중에 설정',exact:true}).click();
-    await page.getByText('이전 버전의 대화도 보존돼요.',{exact:true}).waitFor();assert.equal(await page.getByRole('textbox').inputValue(),'이전에 쓰던 초안');assert.deepEqual(errors,[]);
+    await page.getByRole('button',{name:'통합 프로젝트',exact:true}).click();await page.getByText('이전 버전의 대화도 보존돼요.',{exact:true}).waitFor();assert.equal(await page.getByRole('textbox').inputValue(),'이전에 쓰던 초안');assert.deepEqual(errors,[]);
     await page.screenshot({path:path.join(reports,'startup-after-backend.png')});
     console.log('PASS: real shell renders before any backend output, settings stay usable, then real Kotlin/Codex starts and restores legacy chat/draft.');
   } catch(error){console.error(error);if(page)await page.screenshot({path:path.join(reports,'startup-failure.png')}).catch(()=>{});throw error;}

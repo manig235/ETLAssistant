@@ -16,7 +16,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.3.1"
+VERSION = "0.5.1"
 CODEX_VERSION = "rust-v0.170.0"
 ELECTRON_VERSION = "45.5.0"
 ELECTRON_HASH = "20155c8b8aa5b1f575f3757bdf21490e0bac2f19a65a26ce9ba99bcf9f2c69bd"
@@ -109,7 +109,7 @@ def package(cache: Path) -> Path:
             receipt["binaries"][installed] = binary_hash
         safe_extract_zip(fetch(JRE_URL, JRE_HASH, cache), app / "jre", strip_root=True)
         assert (app / "jre/bin/java.exe").is_file()
-        for name in ("README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "VALIDATION.md"):
+        for name in ("README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "VALIDATION.md", "FEATURE_PARITY.md"):
             shutil.copyfile(ROOT / name, app / name)
         shutil.copytree(ROOT / "licenses", app / "licenses")
         # Carry the upstream license texts for all bundled runtime npm dependencies.

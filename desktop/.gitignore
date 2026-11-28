@@ -7,3 +7,4 @@ __pycache__/
 /ui/dist/
 /ui/test-results/
 /ui/playwright-report/
+/ui/debug.log

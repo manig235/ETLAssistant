@@ -42,6 +42,10 @@ class DocumentReaderTest {
             assertEquals(2, images.images.size)
             assertTrue(Base64.getDecoder().decode(images.images[0].data).take(4) == listOf(0x89.toByte(), 0x50.toByte(), 0x4e.toByte(), 0x47.toByte()))
             assertThrows(EtlException::class.java) { reader.read("../secret.txt") }
+            File(root,"generated").mkdirs();target.copyTo(File(root,"generated/final.pdf"))
+            assertEquals(8,reader.read("generated/final.pdf").getInt("page_count"))
+            assertEquals(2,reader.render("generated/final.pdf","1,8").images.size)
+            assertThrows(EtlException::class.java){reader.render("generated/../secrets/private.pdf","1")}
         } finally { root.deleteRecursively() }
     }
 

@@ -6,12 +6,14 @@ plugins {
 }
 
 group = "kr.snu.youngmini"
-version = "0.3.1"
+version = "0.5.1"
 
 kotlin {
     jvmToolchain(17)
     sourceSets.main {
         kotlin.srcDir("../app/src/main/java")
+        kotlin.srcDir("src/portable/kotlin")
+        kotlin.include("kr/snu/youngmini/portable/**")
         kotlin.include("kr/snu/youngmini/desktop/**")
         listOf("EtlClient", "EtlLogic", "EtlFiles", "Queries", "CourseAssignments", "LinkedFileAccess", "HwpText", "XlsxText", "Board").forEach {
             kotlin.include("kr/snu/etlassistant/etl/$it.kt")
@@ -37,6 +39,7 @@ dependencies {
     implementation("org.json:json:20240303")
     implementation("net.java.dev.jna:jna-platform:5.17.0")
     implementation("org.apache.pdfbox:pdfbox:3.0.5")
+    implementation("org.apache.poi:poi-ooxml:6.0.0")
     testImplementation(kotlin("test-junit"))
 }
 

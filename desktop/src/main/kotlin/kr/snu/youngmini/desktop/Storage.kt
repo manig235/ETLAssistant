@@ -90,9 +90,13 @@ class DesktopAuth(private val vault: SecretVault) {
 data class ChatMessage(val id: String, val role: String, val text: String)
 data class SavedChat(val id: String, val title: String, val thread: String?, val messages: List<ChatMessage>,
     val model: String? = null, val effort: String? = null, val files: List<Downloaded> = emptyList(), val draft: String = "", val updatedAt: Long = 0,
-    val projectId:String="integrated",val artifacts:List<Artifact> = emptyList())
+    val projectId:String="integrated",val artifacts:List<Artifact> = emptyList(),val draftImages:List<Artifact> = emptyList())
 
 class ChatHistory(private val directory: File) {
+    @Synchronized fun delete(id:String) {
+        require(Regex("[a-f0-9-]{36}").matches(id))
+        Files.deleteIfExists(File(directory,"$id.json").toPath())
+    }
     fun list(): List<SavedChat> = directory.listFiles().orEmpty().filter { it.extension == "json" }
         .sortedByDescending { it.lastModified() }.mapNotNull { runCatching { read(it) }.getOrNull() }
     @Synchronized fun save(chat: SavedChat) {
@@ -100,7 +104,7 @@ class ChatHistory(private val directory: File) {
         val value = JSONObject().put("id", chat.id).put("title", chat.title).put("thread", chat.thread ?: JSONObject.NULL)
             .put("model", chat.model ?: JSONObject.NULL).put("effort", chat.effort ?: JSONObject.NULL)
             .put("files", JSONArray(chat.files.map { it.json() })).put("draft", chat.draft).put("updated_at", chat.updatedAt)
-            .put("projectId",chat.projectId).put("artifacts",JSONArray(chat.artifacts.map {it.json()}))
+            .put("projectId",chat.projectId).put("artifacts",JSONArray(chat.artifacts.map {it.json()})).put("draftImages",JSONArray(chat.draftImages.map {it.json()}))
             .put("messages", JSONArray(chat.messages.map { JSONObject().put("id", it.id).put("role", it.role).put("text", it.text) }))
         atomicWrite(File(directory, "${chat.id}.json"), value.toString().toByteArray(Charsets.UTF_8))
     }
@@ -115,6 +119,7 @@ class ChatHistory(private val directory: File) {
             value.opt("model") as? String, value.opt("effort") as? String,
             (0 until files.length()).map { files.getJSONObject(it).let { f -> Downloaded(f.getLong("file_id"), f.getString("name"), f.getString("workspace_path"), f.getLong("bytes")) } },
             value.optString("draft"), value.optLong("updated_at", 0),value.optString("projectId","integrated"),
-            value.optJSONArray("artifacts")?.let {a->(0 until a.length()).map {Artifact.parse(a.getJSONObject(it))}}.orEmpty())
+            value.optJSONArray("artifacts")?.let {a->(0 until a.length()).map {Artifact.parse(a.getJSONObject(it))}}.orEmpty(),
+            value.optJSONArray("draftImages")?.let {a->(0 until a.length()).map {Artifact.parse(a.getJSONObject(it))}}.orEmpty())
     }
 }

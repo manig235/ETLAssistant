@@ -35,6 +35,52 @@
       "grades": true,
       "personal": true,
       "completion": true
-    }
-  }
+    },
+    "announcements": []
+  },
+  "school": {
+    "settings": {
+      "casual": false,
+      "study": true,
+      "quiet": false,
+      "quietStart": 1320,
+      "quietEnd": 480,
+      "brief": false,
+      "briefTimes": [
+        480
+      ],
+      "classAlerts": true,
+      "classLead": 10,
+      "newFiles": true,
+      "changes": true,
+      "submissions": true,
+      "submitOk": true,
+      "examDone": true,
+      "hideContent": false,
+      "retentionDays": 0,
+      "deadlineWindows": [
+        4320,
+        1440,
+        180,
+        10
+      ],
+      "hideTimetable": [],
+      "theme": "light",
+      "updates": true
+    },
+    "courseModes": {},
+    "stats": [],
+    "timetable": {
+      "courses": [],
+      "errors": [],
+      "fetchedAt": 0
+    },
+    "changes": [],
+    "todayClasses": [],
+    "cancelledClasses": [],
+    "briefText": "",
+    "briefAt": 0,
+    "lastCleanup": null
+  },
+  "approvals": []
 }

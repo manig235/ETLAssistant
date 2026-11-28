@@ -27,13 +27,33 @@ class MultiSessionTest {
         override fun cancelLogin() {}
         override fun logout() {}
         override fun thread(saved: String?, choice: ModelChoice,instructions:String) = saved ?: UUID.randomUUID().toString()
-        override fun send(thread: String, text: String, choice: ModelChoice): String { sent += Sent(thread,text,choice); return "turn-$thread" }
+        override fun send(thread: String, text: String, choice: ModelChoice): String { sent += Sent(thread,text,choice); return "turn-$thread"+if(sent.count {it.thread==thread}>1)"-retry"else "" }
         override fun interrupt(thread: String, turn: String) { interrupted += thread to turn }
         override fun close() {}
         fun delta(thread: String, text: String) = onNotification("item/agentMessage/delta", JSONObject().put("threadId",thread).put("itemId","same-item-id").put("delta",text))
         fun done(thread: String) = onNotification("turn/completed",JSONObject().put("threadId",thread).put("turn",JSONObject().put("id","turn-$thread").put("status","completed")))
     }
 
+    @Test fun automaticModelRejectionRetriesOnceBeforeAnyProgressAndKeepsAutoPreference() = runBlocking {
+        val root=Files.createTempDirectory("youngmini-fallback").toFile();val backend=Backend();val app=AppController(AppPaths(root),backend=backend)
+        try {
+            withContext(Dispatchers.Main){app.start()};withTimeout(3000){app.state.first {it.ready&&it.models.isNotEmpty()}}
+            val id=app.state.value.activeChatId;withContext(Dispatchers.Main){app.send(id,"자동 모델 질문")};withTimeout(3000){while(backend.sent.isEmpty())delay(10)};val thread=backend.sent[0].thread
+            backend.onNotification("turn/completed",JSONObject().put("threadId",thread).put("turn",JSONObject().put("id","turn-$thread").put("status","failed").put("error",JSONObject().put("message","The 'gpt-6.2-sol' model is not supported when using Codex with a ChatGPT account."))))
+            withTimeout(3000){while(backend.sent.size<2)delay(10)};assertEquals("sol",backend.sent[1].choice.model);assertNull(app.state.value.sessions.single().choice.model);assertEquals(1,app.state.value.sessions.single().messages.size)
+            backend.onNotification("turn/completed",JSONObject().put("threadId",thread).put("turn",JSONObject().put("id","turn-$thread-retry").put("status","completed")));withTimeout(3000){app.state.first {it.sessions.single().phase=="done"}};assertEquals(2,backend.sent.size)
+        }finally{withContext(Dispatchers.Main){app.close()};root.deleteRecursively()}
+    }
+    @Test fun attachedDocumentsAreListedForTheReaderAndGeneratedImageEventsBecomeCards() = runBlocking {
+        val root=Files.createTempDirectory("youngmini-document-input").toFile();val backend=Backend();val paths=AppPaths(root);val app=AppController(paths,backend=backend)
+        try {
+            withContext(Dispatchers.Main){app.start()};withTimeout(3000){app.state.first {it.ready}}
+            val id=app.state.value.activeChatId;val fileId=UUID.randomUUID().toString();val file=java.io.File(paths.workspace,"uploads/$fileId.txt").apply {parentFile.mkdirs();writeText("한글 첨부 문서")};val artifact=Artifact(fileId,"요약할 문서.txt","uploads/$fileId.txt",file.length(),"document-attachment")
+            withContext(Dispatchers.Main){app.attachImages(id,listOf(artifact));app.send(id,"")};withTimeout(3000){while(backend.sent.isEmpty())delay(10)};assertTrue(backend.sent[0].text.contains(artifact.path));assertTrue(backend.sent[0].text.contains("etl_read_file"))
+            val image=java.util.Base64.getEncoder().encodeToString(java.io.File("ui/public/robot.png").readBytes());backend.onNotification("item/completed",JSONObject().put("threadId",backend.sent[0].thread).put("item",JSONObject().put("type","imageGeneration").put("status","completed").put("id","pic1").put("result",image)))
+            withTimeout(3000){app.state.first {it.sessions.single().artifacts.any {a->a.kind=="generated"}}};assertTrue(app.artifactFile(app.state.value.sessions.single().artifacts.last().id).isFile)
+        }finally{withContext(Dispatchers.Main){app.close()};root.deleteRecursively()}
+    }
     @Test fun concurrentSessionsKeepTheirOwnEffortMessagesAndCompletionEvenWhenFocusChanges() = runBlocking {
         val root=Files.createTempDirectory("youngmini-multi").toFile(); val backend=Backend(); val app=AppController(AppPaths(root),backend=backend)
         try {
@@ -96,6 +116,39 @@ class MultiSessionTest {
         } finally {withContext(Dispatchers.Main) {app.close()};root.deleteRecursively()}
     }
 
+    @Test fun renamedEmptySessionKeepsItsNameAndDeletedHistoryCannotBeResurrected() = runBlocking {
+        val root=Files.createTempDirectory("youngmini-delete").toFile();val paths=AppPaths(root);val backend=Backend();val app=AppController(paths,backend=backend)
+        try {
+            withContext(Dispatchers.Main){app.start()};withTimeout(3000){app.state.first {it.ready&&it.models.isNotEmpty()}}
+            val first=app.state.value.activeChatId
+            withContext(Dispatchers.Main){app.renameChat(first,"직접 정한 이름");app.send(first,"첫 질문")}
+            withTimeout(3000){while(backend.sent.isEmpty())delay(10)}
+            assertEquals("직접 정한 이름",app.state.value.sessions.single().title)
+            backend.done(backend.sent.single().thread);withTimeout(3000){app.state.first {it.sessions.single().phase=="done"}}
+            val second=withContext(Dispatchers.Main){app.newChat().also {app.setDraft(it,"남길 초안")}}
+            withContext(Dispatchers.Main){repeat(50){app.setDraft(first,"저장 중 $it")};app.deleteChat(first)}
+            withTimeout(3000){app.state.first {s->s.sessions.none {it.id==first}}}
+            assertEquals(second,app.state.value.activeChatId);assertFalse(java.io.File(paths.chats,"$first.json").exists())
+            withContext(Dispatchers.Main){app.setDraft(first,"늦은 초안");app.close()}
+            val restored=ChatHistory(paths.chats).list();assertFalse(restored.any {it.id==first});assertEquals("남길 초안",restored.single {it.id==second}.draft)
+        }finally{withContext(Dispatchers.Main){app.close()};root.deleteRecursively()}
+    }
+    @Test fun busySessionIsProtectedAndDeletingIdleSessionKeepsOtherWorkRunning() = runBlocking {
+        val root=Files.createTempDirectory("youngmini-delete-busy").toFile();val backend=Backend();val app=AppController(AppPaths(root),backend=backend)
+        try {
+            withContext(Dispatchers.Main){app.start()};withTimeout(3000){app.state.first {it.ready}}
+            val first=app.state.value.activeChatId
+            val second=withContext(Dispatchers.Main){app.send(first,"실행 중");app.newChat()}
+            withTimeout(3000){while(backend.sent.isEmpty())delay(10)}
+            withContext(Dispatchers.Main){app.renameChat(first,"바꾸면 안 됨");app.deleteChat(first);app.deleteChat(second)}
+            withTimeout(3000){app.state.first {s->s.sessions.none {it.id==second}}}
+            assertEquals(first,app.state.value.activeChatId);assertTrue(app.state.value.sessions.single().busy);assertEquals("실행 중",app.state.value.sessions.single().title);assertTrue(backend.interrupted.isEmpty())
+            backend.done(backend.sent.single().thread);withTimeout(3000){app.state.first {it.sessions.single().phase=="done"}}
+            withContext(Dispatchers.Main){app.deleteChat(first)}
+            withTimeout(3000){app.state.first {s->s.sessions.none {it.id==first}}}
+            assertEquals(1,app.state.value.sessions.size);assertEquals("integrated",app.state.value.activeProjectId);assertEquals("새 대화",app.state.value.sessions.single().title)
+        }finally{withContext(Dispatchers.Main){app.close()};root.deleteRecursively()}
+    }
     @Test fun onlyTheExplicit2026SecondSemesterIsShown() {
         for (name in listOf("2026년 2학기","2026학년도 2학기","2026-2","26-2","2026 Fall","[2026-2] 전기에너지변환")) assertTrue(name,TermScope.matches(name))
         for (name in listOf("2026년 1학기","2025년 2학기","2027년 2학기","2026년 동계학기","2026-20","학기 없음")) assertFalse(name,TermScope.matches(name))

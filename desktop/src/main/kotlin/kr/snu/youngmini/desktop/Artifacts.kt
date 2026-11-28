@@ -27,6 +27,7 @@ class ToolContexts {
         contexts[c.key]=c;byChat[chatId]=c.key;return c
     }
     fun activate(chatId:String,value:Boolean) {byChat[chatId]?.let {contexts[it]?.active=value}}
+    @Synchronized fun remove(chatId:String) {byChat.remove(chatId)?.let {key->contexts.remove(key)?.active=false}}
     fun resolve(key:String):Context=contexts[key]?.takeIf {it.active}?:throw EtlException("대화 연결이 변경됐어요. 다시 질문해 주세요.")
     fun emit(context:Context,artifact:Artifact) {if(contexts[context.key]===context && context.active) onArtifact(context.chatId,artifact)}
     fun instructions(c:Context):String = """

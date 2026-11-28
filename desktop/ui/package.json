@@ -1,13 +1,13 @@
 {
   "name": "youngmini-desktop-ui",
-  "version": "0.3.1",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/security.test.cjs && playwright test",
+    "test": "node --test tests/security.test.cjs tests/etl-login.test.cjs tests/updates.test.cjs && playwright test",
     "start": "electron ."
   },
   "dependencies": {
