@@ -75,4 +75,40 @@ class GeneratedImagesTest {
         val a = GeneratedImages.attachment(item().put("id", "../../escape").put("result", Base64.getEncoder().encodeToString(png())), listOf(root))!!
         assertEquals(root.canonicalPath, File(a.path!!).parentFile!!.canonicalPath)
     }
+
+    @Test fun restoresLegacyMarkdownBareAndFileLinksOnce() {
+        val source = folder.newFolder("generated_images")
+        val image = File(source, "exec-image.png").apply { writeBytes(png()) }
+        val managed = File(folder.root, "workspace/etl-files/generated_images")
+        val text = "[이미지](${image.path})\n`${image.path}`\n![원](file://${image.path})"
+        val files = GeneratedImages.fromText(text, listOf(source), managed)
+        assertEquals(1, files.size)
+        assertArrayEquals(png(), File(files.single().path!!).readBytes())
+        assertTrue(GeneratedImages.fromText(text, listOf(source), managed, setOf(files.single().path!!)).isEmpty())
+    }
+
+    @Test fun legacyRecoveryNeverFetchesRemoteLinksOrImportsOutsideGeneratedRoots() {
+        val source = folder.newFolder("generated_images")
+        val image = File(source, "exec-image.png").apply { writeBytes(png()) }
+        val outside = File(folder.root, "private.png").apply { writeBytes(png()) }
+        val managed = File(folder.root, "managed")
+        for (text in listOf("![x](https://example.com${image.path})", "[x](${outside.path})", "[x](${source.path}/missing.png)")) {
+            assertTrue(text, GeneratedImages.fromText(text, listOf(source), managed).isEmpty())
+        }
+        val link = File(source, "escape.png")
+        Files.createSymbolicLink(link.toPath(), outside.toPath())
+        assertTrue(GeneratedImages.fromText(link.path, listOf(source), managed).isEmpty())
+    }
+
+    @Test fun restoresEncodedPathAndGeneratedDirectoryAlias() {
+        val source = folder.newFolder("generated images")
+        val image = File(source, "exec+image.png").apply { writeBytes(png()) }
+        val alias = File(folder.root, "alias")
+        Files.createSymbolicLink(alias.toPath(), source.toPath())
+        val managed = File(folder.root, "managed")
+        val files = GeneratedImages.fromText("[원](file://${alias.path}/exec+image.png)", listOf(source), managed)
+        assertEquals(1, files.size)
+        val encoded = image.path.replace(" ", "%20")
+        assertEquals(1, GeneratedImages.fromText("[원]($encoded)", listOf(source), managed).size)
+    }
 }

@@ -8,6 +8,40 @@ import java.io.File
 
 class ChatModelTest {
 
+    @Test fun legacyGeneratedImageLinksRestoreAndPersistWithoutDuplicates() {
+        val f = File.createTempFile("legacy-images", ".json")
+        try {
+            val model = ChatModel(f)
+            model.addUser("그려줘")
+            model.finishAssistant("legacy", "[사진](/data/data/app/generated_images/old.png)")
+            val image = Attachment("old.png", "image/png", 9, "/managed/old.png")
+            model.restoreGeneratedImages { _, _ -> listOf(image) }
+            assertEquals(listOf(Role.USER, Role.ASSISTANT, Role.FILES), model.messages.map { it.role })
+            assertEquals("[사진](/data/data/app/generated_images/old.png)", model.messages[1].text)
+            val loaded = ChatModel(f).also { it.load() }
+            loaded.restoreGeneratedImages { _, _ -> listOf(image) }
+            assertEquals(3, loaded.messages.size)
+            assertEquals(image, loaded.messages.last().attachments.single())
+        } finally { f.delete() }
+    }
+
+    @Test fun legacyRecoveryIgnoresUserTextAndAlreadyAttachedImages() {
+        val model = ChatModel(null)
+        val image = Attachment("old.png", "image/png", 9, "/managed/old.png")
+        model.addUser("[사진](/private.png)")
+        model.finishAssistant("a", "생성했어요")
+        model.addFiles(listOf(image))
+        var calls = 0
+        model.restoreGeneratedImages { text, known ->
+            calls++
+            assertEquals("생성했어요", text)
+            assertTrue(image.path in known)
+            listOf(image)
+        }
+        assertEquals(1, calls)
+        assertEquals(3, model.messages.size)
+    }
+
     private class Recorder : ChatModel.Listener {
         val added = mutableListOf<Int>()
         val changed = mutableListOf<Int>()

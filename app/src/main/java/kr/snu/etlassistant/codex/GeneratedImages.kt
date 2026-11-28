@@ -5,9 +5,29 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Base64
 
-/** Completed engine image artifacts only; paths supplied in assistant text are never imported. */
+/** Engine image artifacts and validated generated-image links from older chats. */
 object GeneratedImages {
     const val MAX_BYTES = 12 * 1024 * 1024
+    private val LOCAL_IMAGE = Regex("(?<![a-zA-Z0-9_:/])(?:file://)?/[^\\s<>\\\"'`\\)\\]]+\\.(?:png|gif|jpe?g|webp)(?=$|[\\s<>\\\"'`\\)\\].,!?])", RegexOption.IGNORE_CASE)
+
+    /** Older chats saved the assistant's local link but no FILES message. Recover
+     * only files in our generated-image directories; never fetch a remote URL or
+     * import a path merely because its filename has an image extension. */
+    fun fromText(text: String, roots: List<File>, destination: File, knownPaths: Set<String> = emptySet()): List<Attachment> {
+        val output = destination.canonicalFile
+        val seen = mutableSetOf<String>()
+        return LOCAL_IMAGE.findAll(text).take(16).mapNotNull { match ->
+            try {
+                val raw = match.value.removePrefix("file://")
+                val path = java.net.URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8")
+                val source = File(path).canonicalFile
+                val target = File(output, source.name).canonicalFile
+                if (target.parentFile != output || target.path in knownPaths || !seen.add(target.path)) return@mapNotNull null
+                attachment(JSONObject().put("type", "imageGeneration").put("status", "completed")
+                    .put("savedPath", source.path), roots + output, output)
+            } catch (_: Exception) { null }
+        }.toList()
+    }
 
     fun attachment(item: JSONObject, roots: List<File>, destination: File? = null): Attachment? {
         if (item.optString("type") != "imageGeneration" || item.optString("status") != "completed") return null

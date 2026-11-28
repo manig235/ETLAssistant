@@ -108,6 +108,31 @@ class ChatModel(file: File?) {
         save()
     }
 
+    /** Upgrade old assistant image links to the same persisted FILES rows used
+     * by current generation events. Keep the original answer and deduplicate
+     * against every row so reopening a chat cannot add another thumbnail. */
+    fun restoreGeneratedImages(resolve: (String, Set<String>) -> List<Attachment>) {
+        val known = messages.flatMap { it.attachments }.mapNotNull { it.path }.toMutableSet()
+        var changed = false
+        val restored = mutableListOf<Message>()
+        for (message in messages) {
+            restored += message
+            if (message.role != Role.ASSISTANT) continue
+            val files = try { resolve(message.text, known).filter { it.path != null && known.add(it.path) } }
+                catch (_: Exception) { emptyList() }
+            if (files.isNotEmpty()) {
+                restored += Message(nextId++, Role.FILES, "", attachments = files)
+                changed = true
+            }
+        }
+        if (changed) {
+            messages.clear()
+            messages.addAll(restored)
+            save()
+            listener?.onReset()
+        }
+    }
+
     fun addNotice(text: String): Message = add(Message(nextId++, Role.NOTICE, text))
 
     /** 스트리밍 중인 어시스턴트 메시지에 글을 덧붙인다. 없으면 만든다. */

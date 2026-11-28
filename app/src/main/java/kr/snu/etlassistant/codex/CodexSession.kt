@@ -288,7 +288,7 @@ object CodexSession {
         val current = AppSettings.currentChatId?.takeIf { ChatStore.isSafeId(it) } ?: chats.list().firstOrNull()?.id ?: chats.newId()
         chatId = current
         AppSettings.currentChatId = current
-        model = ChatModel(chats.fileFor(current)).also { it.load() }
+        model = loadModel(current)
         liveModels[current] = model
         // 비서가 eTL 파일을 받거나 PDF 쪽 이미지를 만들면 그 도구를 부른 대화에 카드로 붙인다. 답변 중일 때만(개발자 도구의 시험 실행은 제외).
         // 어느 대화인지는 도구 호출 순간에 정한다(곧 이어지는 turn/completed보다 먼저 메인 스레드에 올라간다).
@@ -769,7 +769,21 @@ object CodexSession {
         if (id == chatId) return model
         liveModels[id]?.let { return it }
         if (chats.get(id) == null) return null
-        return ChatModel(chats.fileFor(id)).also { it.load(); liveModels[id] = it }
+        return loadModel(id).also { liveModels[id] = it }
+    }
+
+    private fun loadModel(id: String) = ChatModel(chats.fileFor(id)).also {
+        it.load()
+        restoreGeneratedImages(it)
+    }
+
+    private fun restoreGeneratedImages(model: ChatModel) {
+        model.restoreGeneratedImages { text, known ->
+            GeneratedImages.fromText(text, listOf(
+                File(app.filesDir, "workspace/generated_images"),
+                File(app.filesDir, "codex-home/generated_images"),
+            ), File(kr.snu.etlassistant.files.WorkFileCleanup.root(app), "generated_images"), known)
+        }
     }
 
     private fun openChat(id: String) {
@@ -781,7 +795,7 @@ object CodexSession {
         old.listener = null
         chatId = id
         AppSettings.currentChatId = id
-        model = liveModels.getOrPut(id) { ChatModel(chats.fileFor(id)).also { it.load() } }
+        model = liveModels.getOrPut(id) { loadModel(id) }
         model.listener = l
         l?.onReset()
         cancelFinishNotification(id)
@@ -1010,7 +1024,10 @@ object CodexSession {
             "agentMessage" -> if (completed) {
                 val text = item.optString("text")
                 main.post {
-                    modelFor(chat)?.finishAssistant(id, text)
+                    modelFor(chat)?.let { m ->
+                        m.finishAssistant(id, text)
+                        restoreGeneratedImages(m)
+                    }
                     trackers[chat]?.let { setActivity(chat, it.messageDone()) }
                 }
             }
