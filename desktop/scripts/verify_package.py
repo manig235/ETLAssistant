@@ -50,7 +50,7 @@ def verify(path: Path) -> None:
         assert any("KaTeX_Main-Regular-" in n and n.endswith(".woff2") for n in names)
         assert any("pdf.worker.min-" in n and n.endswith(".mjs") for n in names), "Missing offline PDF.js worker"
         entry = json.loads(archive.read("YoungMini/resources/app/package.json"))
-        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.1"
+        assert entry["main"] == "electron/main.cjs" and entry["version"] == "0.5.2"
         assert "YoungMini/jre/bin/javaw.exe" in names
         assert "YoungMini/runtime/codex.exe" in names
         assert "YoungMini/runtime/codex-code-mode-host.exe" in names

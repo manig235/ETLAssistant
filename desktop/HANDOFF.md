@@ -1,6 +1,6 @@
 # 영민이 Windows 로컬 세션 인계
 
-2026-11-28 기준, 사용자와 확정한 요구사항 및 Windows 0.5.1 상태입니다. 대화 내용을 추측해서 새로 설계하지 말고 아래 결정을 유지합니다. 이 문서를 읽는 것만으로 새 기능 구현·배포·다른 세션 생성이 요청된 것은 아닙니다. 사용자의 다음 작업 요청을 기다립니다.
+2026-11-28 기준, 사용자와 확정한 요구사항 및 Windows 0.5.2 상태입니다. 대화 내용을 추측해서 새로 설계하지 말고 아래 결정을 유지합니다. 이 문서를 읽는 것만으로 새 기능 구현·배포·다른 세션 생성이 요청된 것은 아닙니다. 사용자의 다음 작업 요청을 기다립니다.
 
 ## 저장소와 구조
 
@@ -11,14 +11,14 @@
 - 본인 ChatGPT 계정으로 공식 Codex rust-v0.170.0/app-server/code-mode host를 사용합니다. API 키나 앱 운영 서버를 요구하는 구조로 바꾸지 않습니다. Android의 ‘채팅 화면이 열릴 때만 Codex 실행’ 규칙은 Windows 트레이 동작에 그대로 적용하지 않습니다.
 - Windows 사용자 데이터: `%LOCALAPPDATA%\YoungMini`. 로그인/eTL 토큰은 DPAPI 암호화, 대화·프로젝트·일정·알림 기록·파일은 로컬 저장입니다. 휴대폰과 자동 동기화하지 않습니다. 다른 앱의 로그인·대화·로그를 읽지 않습니다.
 
-## 0.5.1 GitHub 배포와 새 버전 알림
+## 0.5.2 GitHub 배포와 새 버전 알림
 
 - `electron/updates.cjs`가 GitHub 공개 releases 목록에서 windows-vX.Y.Z 태그와 정확히 일치하는 업로드 완료 ZIP만 선택합니다. Android 최신 endpoint를 Windows 조회에 사용하지 않습니다. 실행 시와 6시간마다 확인하며 캐시·요청 합치기·오프라인 보존·재시도·24시간 미루기를 지원합니다. 전용 비영구 공개 조회 세션을 사용하고 eTL/ChatGPT 토큰을 보내지 않습니다.
 - `SchoolFeatures.settings.updates`가 기본 true이며 설정에서 끕니다. 수동 확인은 꺼진 상태에서도 가능합니다. `UpdateNotice.tsx`는 배너/변경 사항/정확한 버전의 다운로드 버튼을 표시합니다. Windows 알림 클릭도 같은 화면을 엽니다. 알림 끄기는 자동 조회·배너·새 Windows 알림에 적용합니다.
 - 알림 기록과 버전 중복 방지는 `Agenda.windowsUpdate`가 원자적으로 저장합니다. 이 private 명령은 렌더러 명령 허용 목록에 넣지 않습니다. 다운로드는 확인한 Windows ZIP URL로만 이동하며 설치된 버전의 오래된 대기 알림은 띄우지 않습니다.
 - `.github/workflows/windows-preview.yml`은 수동 검증과 windows-v* 태그의 테스트→ZIP/체크섬 검증→draft 자산 업로드→정식 게시를 처리합니다. `--latest=false`로 Android 최신 릴리스와 youngmin.apk 별칭을 유지합니다. 배포 태그는 UI 버전과 같아야 하며 이미 공개한 배포를 덮어쓰지 않습니다.
 - 실제 앱의 `updates-native.cjs`는 합성 릴리스로 자동 확인→지속 알림 기록→네이티브 알림 dispatch/click→다운로드 선택, 6시간 캐시/재시작/하루 미루기/끄기를 확인합니다. 이 테스트는 Windows 알림 API를 fixture로 대체하므로 실사용 배너를 눈으로 확인한 것으로 보고하지 않습니다.
-- 직접 링크: Windows `/releases/download/windows-v0.5.1/youngmin-windows-x64-v0.5.1.zip`; Android `/releases/latest/download/youngmin.apk` (0.3.8 APK의 HTTP 200 확인). 로컬 exe는 package-check-v0.5.1/YoungMini/YoungMini.exe입니다.
+- 직접 링크: Windows `/releases/download/windows-v0.5.2/youngmin-windows-x64-v0.5.2.zip`; Android `/releases/latest/download/youngmin.apk` (0.3.8 APK의 HTTP 200 확인). 로컬 exe는 package-check-v0.5.2/YoungMini/YoungMini.exe입니다.
 
 ## 0.5.0 후속 구현
 

@@ -1,12 +1,12 @@
-# 영민이 Windows 0.5.1
+# 영민이 Windows 0.5.2
 
 공식 Wanted Montage UI를 쓰는 Windows x64 학습 비서입니다. 서울대학교 공식 서비스가 아닙니다.
 
-**[Windows 0.5.1 ZIP 바로 받기](https://github.com/manig235/ETLAssistant/releases/download/windows-v0.5.1/youngmin-windows-x64-v0.5.1.zip)** · **[Android 최신 APK 바로 받기](https://github.com/manig235/ETLAssistant/releases/latest/download/youngmin.apk)**
+**[Windows 0.5.2 ZIP 바로 받기](https://github.com/manig235/ETLAssistant/releases/download/windows-v0.5.2/youngmin-windows-x64-v0.5.2.zip)** · **[Android 최신 APK 바로 받기](https://github.com/manig235/ETLAssistant/releases/latest/download/youngmin.apk)**
 
 Windows ZIP을 모두 풀고 `YoungMini/YoungMini.exe`를 실행하세요. 업데이트할 때는 기존 앱을 먼저 종료합니다. 대화·설정은 이 PC의 사용자 데이터 폴더에 유지됩니다.
 
-0.5.1부터 실행 시와 이후 6시간마다 GitHub의 새 Windows 버전을 확인합니다. Windows 알림·앱 배너·알림 기록에서 알리고, 변경 사항을 확인한 뒤 ZIP을 받을 수 있습니다. 같은 버전의 알림은 반복하지 않으며 배너는 하루 미루거나 설정의 ‘새 Windows 버전 알림’에서 끌 수 있습니다. 오프라인에서는 기존 확인 결과를 보존하고 조용히 재시도합니다. 설정의 수동 확인도 유지합니다.
+0.5.2부터 실행 시와 이후 6시간마다 GitHub의 새 Windows 버전을 확인합니다. Windows 알림·앱 배너·알림 기록에서 알리고, 변경 사항을 확인한 뒤 ZIP을 받을 수 있습니다. 같은 버전의 알림은 반복하지 않으며 배너는 하루 미루거나 설정의 ‘새 Windows 버전 알림’에서 끌 수 있습니다. 오프라인에서는 기존 확인 결과를 보존하고 조용히 재시도합니다. 설정의 수동 확인도 유지합니다.
 
 Windows는 `windows-vX.Y.Z` 태그로 배포하고 GitHub의 Android ‘Latest’ 표시는 바꾸지 않습니다. 따라서 Android 최신 APK 바로 받기 주소는 버전이 올라가도 유지됩니다.
 
@@ -40,7 +40,7 @@ Windows 알림은 트레이에서 실행 중일 때 표시합니다. 첫 조회�
 
 ## 실행과 업데이트
 
-`youngmin-windows-x64-v0.5.1.zip`을 **새 폴더에 모두 압축 해제**하고 `YoungMini/YoungMini.exe`를 실행합니다. Java·Node·Codex를 따로 설치하지 않습니다. 이전 버전은 트레이에서 완전히 종료한 뒤 새 버전을 실행하세요.
+`youngmin-windows-x64-v0.5.2.zip`을 **새 폴더에 모두 압축 해제**하고 `YoungMini/YoungMini.exe`를 실행합니다. Java·Node·Codex를 따로 설치하지 않습니다. 이전 버전은 트레이에서 완전히 종료한 뒤 새 버전을 실행하세요.
 
 로그인·대화·다운로드는 `%LOCALAPPDATA%\YoungMini`를 계속 사용합니다. 이전 버전의 대화는 통합 프로젝트로 옮겨 읽고, 직접 담았던 파일도 카드로 복원합니다. 기존 데이터 폴더를 지울 필요가 없습니다.
 
@@ -109,7 +109,7 @@ JDK 17, Node.js 22.13 이상, Python 3.11 이상이 필요하며 Android SDK는 
 npm --prefix desktop/ui ci
 npm --prefix desktop/ui run build
 python desktop/scripts/package_windows.py
-python desktop/scripts/verify_package.py desktop/dist/youngmin-windows-x64-v0.5.1.zip
+python desktop/scripts/verify_package.py desktop/dist/youngmin-windows-x64-v0.5.2.zip
 ```
 
 Linux에서는 `./gradlew`를 사용합니다. 공식 Electron·Codex·code-mode host·Temurin JRE는 고정 SHA-256으로 검증합니다. 빌드가 업로드·게시를 수행하지 않습니다.

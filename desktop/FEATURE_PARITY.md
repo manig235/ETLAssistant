@@ -1,8 +1,8 @@
 # Android → Windows 기능 대조
 
-Android 기준은 원본 main 0.3.8 (`025ac84`), Windows는 0.5.1입니다. Android와 다른 세션의 작업을 덮어쓰지 않고 `tmp/windows-pet-motion`에서 구현했습니다.
+Android 기준은 원본 main 0.3.8 (`025ac84`), Windows는 0.5.2입니다. Android와 다른 세션의 작업을 덮어쓰지 않고 `tmp/windows-pet-motion`에서 구현했습니다.
 
-| 영역 | Windows 0.5.1 대응 |
+| 영역 | Windows 0.5.2 대응 |
 |---|---|
 | 계정 | 본인 ChatGPT 브라우저/기기 코드 로그인, DPAPI, eTL 토큰 검증/격리 창 자동 발급. 실제 SNU 인증 별도 확인 필요 |
 | 대화 | 저장/복원, 세션 이름 변경·삭제 확인, 초안, 모델/effort, 중단. 작업 중 대상 세션 편집·삭제 방지 |

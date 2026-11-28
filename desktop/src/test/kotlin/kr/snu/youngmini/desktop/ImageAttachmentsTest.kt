@@ -63,7 +63,7 @@ class ImageAttachmentsTest {
             withContext(Dispatchers.Main){app.attachImages(owner,listOf(photo));app.send(owner,"");app.newChat()}
             withTimeout(3000){while(backend.received==null)delay(10)}
             val input=backend.received!!.getJSONArray("input");assertEquals(2,input.length());assertEquals("localImage",input.getJSONObject(1).getString("type"))
-            assertEquals(File(paths.workspace,photo.path).absolutePath,input.getJSONObject(1).getString("path"))
+            assertTrue(Files.isSameFile(File(paths.workspace,photo.path).toPath(),File(input.getJSONObject(1).getString("path")).toPath()))
             val chat=app.state.value.sessions.single {it.id==owner};assertTrue(chat.draftImages.isEmpty());assertEquals(chat.messages.single().id,chat.artifacts.single().messageId)
             assertTrue(app.state.value.sessions.single {it.id!=owner}.artifacts.isEmpty());assertEquals(photo.id,app.artifact(photo.id)!!.id);assertTrue(app.artifactFile(photo.id).isFile)
             val encoded=StateJson.encode(app.state.value).getJSONArray("sessions");assertEquals(2,encoded.length())
