@@ -22,10 +22,10 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
     assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true);
     await page.getByRole('button',{name:'연결 · 설정',exact:true}).click();
     const toggle=page.getByRole('checkbox',{name:'Windows 로그인 시 자동 실행',exact:true});
-    await toggle.check();assert.equal((await page.evaluate(()=>window.youngmini.getState())).shell.startup.enabled,true);
+    await toggle.click();await page.waitForFunction(async()=>(await window.youngmini.getState()).shell.startup.enabled);assert.equal((await page.evaluate(()=>window.youngmini.getState())).shell.startup.enabled,true);
     const writes=await app.evaluate(()=>globalThis.loginWrites);
     assert.equal(writes.length,1);assert.equal(writes[0].path,path.resolve(process.env.YOUNGMIN_SMOKE_EXE));assert.deepEqual(writes[0].args,['--startup']);
-    await toggle.uncheck();assert.equal((await page.evaluate(()=>window.youngmini.getState())).shell.startup.enabled,false);
+    await toggle.click();await page.waitForFunction(async()=>!(await window.youngmini.getState()).shell.startup.enabled);assert.equal((await page.evaluate(()=>window.youngmini.getState())).shell.startup.enabled,false);
     console.log('PASS: packaged Windows --startup stays hidden with a ready backend; show opens settings; trusted IPC enables/disables the installed executable. No startup registry was changed.');
   } finally {
     if(app)await app.close().catch(()=>{});
